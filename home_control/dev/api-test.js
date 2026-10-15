@@ -386,4 +386,32 @@ await step('movement uses the night level inside the night window', async () => 
   await mock('POST', '/sensor', { entity: 'binary_sensor.hallway_motion', state: 'off' });
 });
 
+await step('a group can be shown on the dashboard card always, only in its season, or never', async () => {
+  const card = async () => {
+    await sleep(3500); // the lighting sensor is written at most every 3 seconds
+    const pub = (await mock('GET', '/published')).states['sensor.home_lighting'];
+    return Object.fromEntries(pub.attributes.groups.map((g) => [g.id, [g.card, g.shown]]));
+  };
+  const today = new Date();
+  const md = (d) => `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const later = new Date(today.getTime() + 40 * 86400000); const later2 = new Date(today.getTime() + 60 * 86400000);
+  const base = { name: 'Office', devices: ['light.office_desk'] };
+  await app('POST', '/api/lighting/groups', base).catch(() => {});
+  assert.deepEqual((await card()).office, ['show', true], 'shown by default');
+  await app('PUT', '/api/lighting/groups/office', { ...base, card: 'hide' });
+  assert.deepEqual((await card()).office, ['hide', false]);
+  // only in season: a season that starts in 40 days, so not shown today
+  await app('PUT', '/api/lighting/groups/office', { ...base, season: { from: md(later), to: md(later2) }, card: 'season' });
+  assert.deepEqual((await card()).office, ['season', false]);
+  // a season that includes today
+  await app('PUT', '/api/lighting/groups/office', { ...base, season: { from: md(new Date(today.getTime() - 86400000)), to: md(later) }, card: 'season' });
+  assert.deepEqual((await card()).office, ['season', true]);
+  // saving without the setting (an older page, a script) leaves it as it was
+  await app('PUT', '/api/lighting/groups/office', { ...base, season: { from: md(later), to: md(later2) } });
+  assert.deepEqual((await card()).office, ['season', false]);
+  // no season any more: "only in season" makes no sense, so it's shown
+  await app('PUT', '/api/lighting/groups/office', { ...base });
+  assert.deepEqual((await card()).office, ['show', true]);
+});
+
 console.log(`\n${passed} API checks passed`);

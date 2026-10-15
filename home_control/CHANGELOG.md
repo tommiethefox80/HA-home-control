@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.0
+- **Choose which light groups the dashboard card shows.** Each group (Lighting → Settings → Edit) has a new **Dashboard** setting: Show, Hide, or, for a group with a season, show only between its dates. Good for Christmas lights that should only appear in December, or lights you never switch from the dashboard. Hidden groups still follow their schedules and are all still in the app. The Settings list notes which groups are hidden.
+- `sensor.home_lighting` lists each group's `card` setting and whether it's `shown`, so other dashboards can follow it too.
+
 ## 1.3.0
 - **Updates in one press.** Home Control now comes from its own app repository on GitHub, so new versions show up in Home Assistant like any other app's: press Update (or turn on Auto update).
 - **The dashboard card keeps itself up to date.** Every time the app starts it copies its card into Home Assistant's `www` folder and points your dashboards' resource at that version, adding the resource if there isn't one. No more copying the card or editing the resource after an update.

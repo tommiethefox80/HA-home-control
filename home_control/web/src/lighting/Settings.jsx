@@ -84,6 +84,7 @@ export function Settings({ state, run, go, old }) {
                   <span className="fine">
                     {[lights && plural(lights, 'light'), sockets && plural(sockets, 'socket')].filter(Boolean).join(' and ') || 'Nothing in it yet'}
                     {g.motion ? ', movement sensor' : ''}{g.lux ? ', light sensor' : ''}{g.livedIn ? ', looks lived in when away' : ''}
+                    {g.card === 'hide' ? ', hidden from the dashboard' : g.card === 'season' && g.season ? `, on the dashboard ${describeMonthDay(g.season.from)} to ${describeMonthDay(g.season.to)}` : ''}
                   </span>
                   {missing > 0 && <span className="warn-text"><Icon name="warn" size={14} /> {plural(missing, 'device')} no longer in Home Assistant</span>}
                 </div>
@@ -206,6 +207,7 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
   const [season, setSeason] = useState(existing?.season || null);
   const [lux, setLux] = useState(existing?.lux || { entity: '', threshold: 50 });
   const [livedIn, setLivedIn] = useState(!!existing?.livedIn);
+  const [card, setCard] = useState(existing?.card || 'show');
   const [onBrightness, setOnBrightness] = useState(existing?.onBrightness ?? 100);
   const [query, setQuery] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -240,7 +242,7 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
   const save = async () => {
     setBusy(true); setErr(null);
     try {
-      const body = { name, devices, motion: motion.entity ? { ...motion, night } : null, lux: lux.entity ? lux : null, livedIn, onBrightness, season };
+      const body = { name, devices, motion: motion.entity ? { ...motion, night } : null, lux: lux.entity ? lux : null, livedIn, onBrightness, season, card: card === 'season' && !season ? 'show' : card };
       await run(() => (existing ? api('PUT', `groups/${existing.id}`, body) : api('POST', 'groups', body)));
       onSaved();
     } catch (e) { setErr(e.message); setBusy(false); }
@@ -371,6 +373,18 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
           </div>
         )}
         {season && <p className="fine">Runs {describeMonthDay(season.from)} to {describeMonthDay(season.to)} every year.</p>}
+      </section>
+
+      <section className="sheet-section">
+        <h3>Dashboard</h3>
+        <Field label="On the Home Control card" htmlFor="gcard" help="Hidden groups still follow their schedules and are all here in the app; they're just left off the dashboard card.">
+          <select id="gcard" value={card === 'season' && !season ? 'show' : card} onChange={(e) => setCard(e.target.value)}>
+            <option value="show">Show</option>
+            {season && <option value="season">Show only in its season</option>}
+            <option value="hide">Hide</option>
+          </select>
+        </Field>
+        {!season && <p className="fine">To show it only part of the year, set its season above.</p>}
       </section>
 
       <section className="sheet-section">

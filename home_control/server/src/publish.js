@@ -128,6 +128,9 @@ export function lightingState(snap, panel = null) {
       on_count: c.onCount ?? 0, total: c.total ?? g.devices.length,
       kind: kinds.size > 1 ? 'mixed' : kinds.has('socket') ? 'sockets' : 'lights',
       status: g.status?.text || '',
+      // whether the Home Control card shows it (a group's setting: show, only in season, or hide)
+      card: g.card || 'show',
+      shown: g.onCard !== false,
       // so a dashboard can switch the group: what's in it, and the level "on" means right now
       available: g.devices.some((d) => d.available !== false),
       devices: g.devices.map((d) => ({ id: d.id, dimmable: !!d.dimmable, ct: !!d.ct, available: d.available !== false })),

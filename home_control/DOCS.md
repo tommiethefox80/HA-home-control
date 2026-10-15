@@ -63,7 +63,7 @@ The app keeps three sensors up to date in Home Assistant, for dashboards, automa
 | `sensor.home_heating` | Schedules, Away or Off | `boiler` ("Boiler on for Lounge"), `boiler_on`, `boiler_today` ("1h 30m"), `boiler_today_minutes`, `boiler_fires_today`, `mode_text`, `boost`, `attention`, and `rooms`: each room's `name`, `temp`, `target`, `calling` and `status` |
 | `binary_sensor.home_boiler` | on while the boiler is firing | |
 | `sensor.home_boiler_today` | minutes the boiler has run today (resets at midnight; Home Assistant keeps daily statistics) | `fires`: how many times it started |
-| `sensor.home_lighting` | how many lights and sockets are on | `summary` ("3 lights on in Lounge and Kitchen"), `mode_text`, `paused`, `step`, and `groups`: each group's `name`, `on`, `level` ("45%"), `brightness`, `kelvin`, `status`, and its `devices` and `turn_on` level for switching it from a dashboard |
+| `sensor.home_lighting` | how many lights and sockets are on | `summary` ("3 lights on in Lounge and Kitchen"), `mode_text`, `paused`, `step`, and `groups`: each group's `name`, `on`, `level` ("45%"), `brightness`, `kelvin`, `status`, its `devices` and `turn_on` level for switching it from a dashboard, and `card` (show, season or hide) and `shown` (whether the card shows it today) |
 
 Both `sensor.home_heating` and `sensor.home_lighting` also have `panel`: the app's address in Home Assistant, for buttons that open it.
 
@@ -75,6 +75,7 @@ A dashboard card that shows the heating or the lighting at a glance, in the app'
 
 - **Heating:** every room's temperature, what it's aiming for and why, and the boiler, with how long it has run today. Tap it to open the app.
 - **Lighting:** every group, with a power button and, where its lights dim, minus and plus (in the brightness step from Lighting settings). Switching on uses the level the group's schedule uses at that time of day. A change made here counts as a change in Home Assistant by whoever made it, so it lasts until the group's next scheduled change. Tap a group's name, or the title, to open the app.
+- **Which groups it shows:** each group has a **Dashboard** setting (Lighting → Settings → Edit the group): **Show**, **Hide**, or, for a group with a season, show only between its dates (Christmas lights only in December, say). Hidden groups still follow their schedules and are all still in the app.
 
 The app looks after the card itself. Every time it starts it copies the card into Home Assistant's `www` folder and points your dashboards' resource at that version (`/local/home-control-card.js?v=1.3.0`), adding the resource if there isn't one. So after an update, a refresh of the page brings the new card. (If the `www` folder didn't exist before, restart Home Assistant once so it serves it. If your dashboards' resources are set in YAML, add `/local/home-control-card.js?v=` plus the version there yourself.)
 

@@ -7,6 +7,36 @@ A Home Assistant app for the heating and lighting of the whole house, in one pan
 - **One Away** for both, switched by hand or by people's phones.
 - **Dashboard card and sensors**: the Home Control card shows every room and light group at a glance, and switches and dims lights. The app installs and updates the card itself.
 
+## Screenshots
+
+**Heating**: every room's temperature, what it's aiming for and why, today's graph, and the boiler.
+
+![Heating](docs/screenshots/heating.png)
+
+**Lighting**: each group in the colour of its light, with power, dimming and its schedule for the day.
+
+![Lighting](docs/screenshots/lighting.png)
+
+**Schedules**: a week at a glance, coloured by temperature for rooms and by light for groups.
+
+![Heating schedules](docs/screenshots/heating-schedules.png)
+
+![Lighting schedules](docs/screenshots/lighting-schedules.png)
+
+**On a phone**, light or dark:
+
+<p>
+  <img src="docs/screenshots/phone-heating.png" width="300" alt="Heating on a phone">
+  &nbsp;
+  <img src="docs/screenshots/phone-lighting.png" width="300" alt="Lighting on a phone">
+</p>
+
+**The dashboard card**: the heating at a glance, and every light group with power and dimming. Groups can be hidden from the card, or shown only in their season.
+
+![Dashboard cards](docs/screenshots/dashboard-cards.png)
+
+![Dashboard cards, dark](docs/screenshots/dashboard-cards-dark.png)
+
 ## Install
 
 [![Add this repository to your Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Ftommiethefox80%2Fha-home-control)

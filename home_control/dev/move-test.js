@@ -18,6 +18,7 @@ const SCRATCH = process.env.SCRATCH || fs.mkdtempSync(path.join(os.tmpdir(), 'mo
 const OLD_APP = process.env.OLD_APP || '/tmp/claude-0/-home-claude/ab8679e5-0b51-5ccd-8645-88778a0517cc/scratchpad/old120/heating_control';
 const PY = process.env.SECURETAR_PY || '/tmp/claude-0/-home-claude/ab8679e5-0b51-5ccd-8645-88778a0517cc/scratchpad/st/bin/python';
 const ME = 'bea84e52_home_control';
+const VERSION = JSON.parse(fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '../server/package.json'), 'utf8')).version;
 const APP = 'http://localhost:8099'; const OLD = 'http://localhost:8097'; const MOCK = 'http://localhost:8124';
 const OUT = path.join(HERE, 'screens');
 fs.mkdirSync(OUT, { recursive: true });
@@ -67,9 +68,9 @@ await step('a fresh install says nothing to Home Assistant, and keeps its dashbo
   assert.equal(st.empty, true);
   assert.equal(st.panel, `/${ME}`);
   const card = fs.readFileSync(path.join(dirs.ha, 'www/home-control-card.js'), 'utf8');
-  assert.match(card, /const VERSION = '1\.3\.0'/);
+  assert.ok(card.includes(`const VERSION = '${VERSION}'`), 'card copied');
   const res = await j('GET', `${MOCK}/resources`);
-  assert.deepEqual(res.map((r) => r.url), ['/local/home-control-card.js?v=1.3.0'], JSON.stringify(res));
+  assert.deepEqual(res.map((r) => r.url), [`/local/home-control-card.js?v=${VERSION}`], JSON.stringify(res));
   assert.equal(st.card.resource, 'updated');
 });
 
@@ -157,7 +158,7 @@ async function ws(msg) {
   if (endpoint === '/addons') {
     return { addons: [
       { slug: 'local_heating_control', name: 'Home Control', version: '1.2.0', state: sup.old.state },
-      { slug: ME, name: 'Home Control', version: '1.3.0', state: 'started' },
+      { slug: ME, name: 'Home Control', version: VERSION, state: 'started' },
       { slug: 'local_lighting_control', name: 'Lighting Control', version: '0.2.4', state: 'stopped' },
     ] };
   }

@@ -889,6 +889,9 @@ export class Engine extends EventEmitter {
       ? { entity: input.lux.entity, threshold: clamp(Math.round(Number(input.lux.threshold) || 0), 0, 100000) }
       : null;
     g.livedIn = !!input.livedIn;
+    // the Home Control dashboard card: show, show only while in season, or hide (left as it was if not sent)
+    if (input.card !== undefined) g.card = input.card === 'hide' ? 'hide' : input.card === 'season' && g.season ? 'season' : 'show';
+    else if (g.card === 'season' && !g.season) g.card = 'show';
     g.onBrightness = input.onBrightness != null && input.onBrightness !== '' ? clamp(Math.round(Number(input.onBrightness)) || 100, 1, 100) : 100;
     if (g.motion && !this.motion.has(g.id)) this.motion.set(g.id, { active: this.states.get(g.motion.entity)?.state === 'on', offAt: 0 });
     this.addActivity(existingId ? `${name} group updated.` : `${name} group added.`, g.id);
@@ -1214,6 +1217,8 @@ export class Engine extends EventEmitter {
       const tgt = handsOff(gt.override) ? null : gt.level;
       return {
         id: g.id, name: g.name, livedIn: !!g.livedIn,
+        card: g.card || 'show',
+        onCard: g.card === 'hide' ? false : g.card === 'season' && g.season ? inSeason(today, g.season) : true,
         devices: infos,
         current: { ...cur, onCount, total: infos.length },
         settling: infos.some((i) => i.settling),

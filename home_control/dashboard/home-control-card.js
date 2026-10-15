@@ -11,7 +11,7 @@
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 
@@ -160,7 +160,7 @@ class HomeControlCard extends HTMLElement {
   getCardSize() {
     const a = this._last?.attributes;
     if (!a) return 2;
-    return this._config.show === 'heating' ? 2 + Math.ceil((a.rooms?.length || 0) * 0.8) : 2 + Math.ceil((a.groups?.length || 0) / 3);
+    return this._config.show === 'heating' ? 2 + Math.ceil((a.rooms?.length || 0) * 0.8) : 2 + Math.ceil(shownGroups(a).length / 3);
   }
 
   // no rows: Home Assistant sizes the card to fit everything in it
@@ -345,9 +345,10 @@ class HomeControlCard extends HTMLElement {
 
   _lighting(st) {
     const a = st.attributes || {};
-    const groups = a.groups || [];
+    const all = a.groups || [];
+    const groups = shownGroups(a); // each group's setting in the app: show, only in season, or hide
     const title = this._config.title || 'Lighting';
-    const anyOn = groups.some((g) => g.on);
+    const anyOn = all.some((g) => g.on);
     const modeText = a.paused ? 'Paused' : a.mode_text || 'Schedules';
     const step = Number(a.step) || 10;
     const rows = groups.map((g) => {
@@ -383,10 +384,14 @@ class HomeControlCard extends HTMLElement {
         <span class="pill${a.mode === 'away' || a.paused ? ' strong' : ''}">${esc(modeText)}</span>${ICON.chev.replace('<svg', '<svg class="chev"')}
       </div>
       ${err}
-      ${rows ? `<div class="groups">${rows}</div>` : '<div class="empty">No groups yet. Add them in Home → Lighting → Settings.</div>'}
+      ${rows ? `<div class="groups">${rows}</div>`
+    : all.length ? '<div class="empty">Every group is hidden from this card. Change that in Home → Lighting → Settings.</div>'
+      : '<div class="empty">No groups yet. Add them in Home → Lighting → Settings.</div>'}
     </div>`;
   }
 }
+
+function shownGroups(a) { return (a.groups || []).filter((g) => g.shown !== false); }
 
 if (!customElements.get('home-control-card')) {
   customElements.define('home-control-card', HomeControlCard);
