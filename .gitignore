@@ -1,0 +1,7 @@
+node_modules
+home_control/dev/data/
+home_control/dev/logs/
+home_control/dev/screens/
+*.zip
+*.tmp
+.DS_Store

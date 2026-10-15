@@ -1,0 +1,10 @@
+{
+  "name": "home-control-dev",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.18.0",
+    "puppeteer-core": "^24.0.0",
+    "@sparticuz/chromium": "^153.0.0"
+  }
+}

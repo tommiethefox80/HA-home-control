@@ -1,0 +1,329 @@
+# Home Control
+
+Heating and lighting for the whole house in one panel. **Home** in the sidebar opens on Heating; the **Heating / Lighting** switch at the top flips between them. A small dot on the other side of the switch means something's on over there (the boiler firing, or lights on).
+
+- **Heating**: room-by-room schedules for Hive and Zigbee TRVs, with the boiler fired whenever a room needs heat. Works with Hive TRVs (through the Hive integration) and Zigbee TRVs (ZHA or Zigbee2MQTT), side by side. The boiler can be a Hive thermostat (`climate.*`) or a relay (`switch.*` / `input_boolean.*`).
+- **Lighting**: lights and smart sockets in groups, with on/off, dimming and warmth schedules, scenes, and a lived-in Away pattern.
+- **One Away** for both, switched by hand or by people's phones.
+
+Both halves share one connection to Home Assistant and run independently, so a problem in one can't stop the other.
+
+## Installing and updating
+
+Home Control comes from its own app repository on GitHub, `https://github.com/tommiethefox80/ha-home-control`, so new versions show up in Home Assistant like any other app's.
+
+1. Settings → Apps (or Add-ons) → **App store** → **⋮ → Repositories**, add `https://github.com/tommiethefox80/ha-home-control` and press **Add**.
+2. Find **Home Control** in the store (under its own Home Control heading), press **Install**, then **Start**, then **Open web UI**. If you had the Home Control installed by hand, it offers to move everything across (below), and puts itself in the sidebar. Otherwise turn on **Show in sidebar** on the app's page.
+
+**Updating:** when there's a new version, Home Assistant shows "Update available" under Settings and on the app's page. Press **Update**. Turn on **Auto update** on the app's page if you'd rather it updated by itself. The dashboard card updates with it (see "The Home Control card" below).
+
+## Moving in from the Home Control installed by hand
+
+Versions up to 1.2 were installed by copying a folder into `/addons` ("Local apps"). Home Assistant treats the copy from the repository as a different app, with its own data folder and its own address, so the first time you open it, it offers to bring everything across. One press of **Move everything here**:
+
+1. Makes a backup of the old app (it stays in Settings → System → Backups).
+2. Copies everything here from that backup: rooms, schedules, boiler and settings; lighting groups, schedules and scenes; and Activity and history.
+3. Stops the old app, keeps it from starting with Home Assistant and takes it out of the sidebar.
+4. Restarts this app with everything, and points the links on your dashboards that opened the old app (`/local_heating_control`) at this one. Dashboards kept in YAML files can't be changed by the app: it names them so you can change their links by hand.
+
+It takes about a minute. Radiators go back to their own schedules for a moment while it switches over, as they do whenever the app restarts. If anything goes wrong part-way, it puts everything back as it was and says what happened. Once you're happy, uninstall the old Home Control from Settings → Apps.
+
+This needs you to be signed in to Home Assistant as an administrator, and the backup to be kept on this device (if your backups go to a network drive by default, the move still keeps this one local).
+
+## Bringing your lights across from Lighting Control
+
+If the old Lighting Control app is installed, the Lighting page offers **Bring them across**. One press copies its groups, schedules, scenes and settings here. Then:
+
+1. Lighting here starts **paused**: nothing is sent to your lights, so the two apps don't fight. Check the groups and schedules look right.
+2. Press **Stop Lighting Control and start here**. That stops the old app, stops it starting again after a restart, and starts lighting here. Nothing changes on your lights at that moment: each group carries on as it is until its next scheduled change.
+3. Once you're happy, uninstall Lighting Control from Home Assistant's settings.
+
+This needs you to be signed in to Home Assistant as an administrator (it asks Home Assistant to read and stop the old app). If it can't, it says so: stop Lighting Control yourself in Home Assistant's settings and press **Start lighting here**, or add your groups again from Settings (starting from your Home Assistant areas is quick).
+
+Lighting Control's own "Away automatically" setting isn't brought across, because Away is now shared (below). **Settings → Lighting Control app** lets you bring everything across again later, replacing what's here.
+
+## Away for the whole house
+
+Away is one switch for the heating and the lights:
+
+- **Away on the Heating page** (by hand, until a date, or automatically from phones) puts the lights on Away too. Coming back to Schedules brings both back.
+- **Away on the Lighting page** puts the heating on Away too, and Schedules brings it back. Home Assistant scripts using `lighting_control_mode` do the same.
+- **Heating switched Off** (say for the summer) is left alone: Away on the Lighting page then only changes the lights. While the heating is off, the same people, wait and distance settings still switch the lights to Away when everyone's out and back when someone's on the way home.
+
+The people, wait and distance are set once, in **Heating → Settings → Away automatically**.
+
+In Away, every room drops to the away temperature, and lights stay off except groups set to look lived in.
+
+## Your dashboard
+
+The app keeps three sensors up to date in Home Assistant, for dashboards, automations and history:
+
+| Sensor | State | Attributes |
+|---|---|---|
+| `sensor.home_heating` | Schedules, Away or Off | `boiler` ("Boiler on for Lounge"), `boiler_on`, `boiler_today` ("1h 30m"), `boiler_today_minutes`, `boiler_fires_today`, `mode_text`, `boost`, `attention`, and `rooms`: each room's `name`, `temp`, `target`, `calling` and `status` |
+| `binary_sensor.home_boiler` | on while the boiler is firing | |
+| `sensor.home_boiler_today` | minutes the boiler has run today (resets at midnight; Home Assistant keeps daily statistics) | `fires`: how many times it started |
+| `sensor.home_lighting` | how many lights and sockets are on | `summary` ("3 lights on in Lounge and Kitchen"), `mode_text`, `paused`, `step`, and `groups`: each group's `name`, `on`, `level` ("45%"), `brightness`, `kelvin`, `status`, and its `devices` and `turn_on` level for switching it from a dashboard |
+
+Both `sensor.home_heating` and `sensor.home_lighting` also have `panel`: the app's address in Home Assistant, for buttons that open it.
+
+Home Assistant forgets them when it restarts; the app writes them again as soon as it reconnects. A new install with nothing set up yet doesn't write them. Temperatures are written at most every 20 seconds; mode, boiler and light changes straight away.
+
+### The Home Control card
+
+A dashboard card that shows the heating or the lighting at a glance, in the app's colours.
+
+- **Heating:** every room's temperature, what it's aiming for and why, and the boiler, with how long it has run today. Tap it to open the app.
+- **Lighting:** every group, with a power button and, where its lights dim, minus and plus (in the brightness step from Lighting settings). Switching on uses the level the group's schedule uses at that time of day. A change made here counts as a change in Home Assistant by whoever made it, so it lasts until the group's next scheduled change. Tap a group's name, or the title, to open the app.
+
+The app looks after the card itself. Every time it starts it copies the card into Home Assistant's `www` folder and points your dashboards' resource at that version (`/local/home-control-card.js?v=1.3.0`), adding the resource if there isn't one. So after an update, a refresh of the page brings the new card. (If the `www` folder didn't exist before, restart Home Assistant once so it serves it. If your dashboards' resources are set in YAML, add `/local/home-control-card.js?v=` plus the version there yourself.)
+
+Add the cards:
+
+```yaml
+type: custom:home-control-card
+show: heating
+```
+
+```yaml
+type: custom:home-control-card
+show: lighting
+```
+
+The card opens the app wherever it is: the app writes its own address into the sensors (the `panel` attribute). Add `panel: /some_path` to a card to send it somewhere else.
+
+## Opening from a dashboard
+
+The Dashboard button at the top of either page goes back to the dashboard set in **Heating → Settings → Dashboard button**.
+
+To open Home from a dashboard, use the app's address. It's `/` followed by the app's name in Home Assistant, which is in the address bar when Home is open (for example `/bea84e52_home_control`), and it's shown in **Lighting → Settings → Getting started**:
+
+```yaml
+type: button
+name: Heating
+icon: mdi:radiator
+tap_action:
+  action: navigate
+  navigation_path: /bea84e52_home_control
+```
+
+To open straight onto Lighting, add `?section=lighting`:
+
+```yaml
+type: button
+name: Lighting
+icon: mdi:lightbulb-group
+tap_action:
+  action: navigate
+  navigation_path: /bea84e52_home_control?section=lighting
+```
+
+Moving in from the Home Control installed by hand points buttons that opened `/local_heating_control` here by itself.
+
+# Heating
+
+## How it works
+
+Every 30 seconds, and whenever a valve or thermometer changes:
+
+1. Each room's **target** is worked out, in this order of priority:
+   - **Off** mode: frost protection temperature
+   - a **boost**, **hold**, or a change someone made **on the radiator**
+   - **Away** mode: away temperature
+   - the room's **schedule**
+2. Every TRV in the room is set to that target (only when it differs, and spaced out so Hive's cloud API isn't hammered).
+3. A room **calls for heat** when it falls 0.3° (configurable) below target, and stops when it reaches target, or a set amount below it if you use **Stop heating this far below target** to let the radiators' leftover heat finish the job.
+4. If any room is calling, the **boiler fires**. With a Hive thermostat this means setting it to 30° in manual mode; when every room is satisfied it goes back to 7°. Minimum run and rest times stop short cycling.
+
+The room temperature comes from the TRVs' own readings, or from a separate thermometer if you pick one (more accurate: a TRV sits next to a hot radiator).
+
+### Stopping early, and learning each radiator
+
+Radiators keep giving off heat after they shut off, so a room can carry on warming past its target. Each room has a **Stop heating early** setting (Settings → Rooms → Edit):
+
+- **Learn automatically** (the default): after every heat-up the app watches how far the room keeps rising, then nudges that room's stop point. If it overshot, it stops earlier next time; if it fell short, it stops later. Changes are small (at most 0.3° per heat-up, never more than 1.5° early), so one odd day can't throw it out, and most rooms settle within a few heat-ups. The room's settings show what it has learned and the last few heat-ups, with **Forget and relearn** if you move furniture or change a radiator.
+- **Fixed %**: always stop a set percentage below the target (2% of 21° is about 0.4°). After a heat-up it suggests a percentage based on how far the room actually rose.
+- **House setting**: use the single value under Settings → Temperatures.
+
+When a room stops calling early, its valves are turned down to the stop point too, so they close even if the boiler is still firing for another room. When the room needs heat again, they go back up to the target.
+
+### Warm by the scheduled time
+
+Each room learns how quickly it warms (degrees per hour) from every heat-up of 20 minutes or more, and how cold it was outside at the time. Before a scheduled rise, the app works out how long the room needs, allowing for tonight's outside temperature, and starts that much early, so the room is at the new temperature by the scheduled time instead of only starting to warm then. The room shows "Warming early to reach 20.5° by 16:30" while it does. Turn it off or limit how early it can start (2 hours by default) in **Settings → Warm by the scheduled time**. A room's learned speed is shown in its settings.
+
+### Open windows
+
+If a room drops sharply (1° within 10 minutes by default), it's probably a window or door. The room's valves go to frost protection for 20 minutes, the room shows "Window open? Heating paused", and an optional phone alert can tell you. Press **Window's closed, resume heating** in the room to carry on straight away. Adjust or turn off in **Settings → Open windows**. Hive valves report every few minutes, so very short draughts may be missed; Zigbee valves and room thermometers catch them sooner.
+
+### Away automatically
+
+With **Settings → Away automatically** on, the app watches the people you tick (Home Assistant "person" entities, which use the location from the Home Assistant app on each phone). When everyone has been out for 15 minutes, the house switches to Away: the heating and the lights. When anyone is home or within 2 miles, it switches back to Schedules so the house is warming as they arrive. A mode you pick by hand always wins: if you choose Schedules while everyone is out, it stays on Schedules until someone has been home. See [Away for the whole house](#away-for-the-whole-house).
+
+### Needs attention
+
+A card above the rooms appears only when something needs looking at:
+
+- a room that has been calling for heat for over an hour without warming (a cold radiator, an airlock, or a stuck valve);
+- a radiator valve that's offline, or whose battery is at 20% or less;
+- the boiler control being offline, or the boiler not reporting that it's heating 10 minutes after being asked.
+
+### Changes made on a radiator
+
+If someone turns a TRV or changes it in the Hive app, the room holds that temperature until its next scheduled change, then goes back to the schedule. Turn this off in Settings if you'd rather the schedule always wins.
+
+### Back to schedule
+
+Whenever a room is boosted, held, or was changed on the radiator, its card shows **Back to schedule**. One tap drops the change and the room follows its schedule straight away, without waiting for the boost or hold to run out. The same button is at the top of the room's details, showing the temperature it will go back to. If the house is in Away, it says **Back to Away** and returns the room to the away temperature. A room taken out of a house boost this way leaves the boost; the other rooms carry on.
+
+### When the add-on stops
+
+On a clean stop (update, restart, uninstall) the add-on puts Hive devices back into Hive's own schedule mode, so the thermostat is never left stuck at 30°. Zigbee valves without a schedule mode keep their last temperature. If the whole machine loses power, devices keep their last setting until it's back. Lights and sockets are always left exactly as they are; if a scheduled change was missed while the app was stopped, it catches up on start.
+
+## Snooze a room
+
+To stop heating a room for a while, say a spare room nobody's using, tap the room's name and choose **Snooze**. Pick how long (2 hours, 6 hours, 1 day, 2 days, 1 week, or any number of hours or days up to 90 days), or **Until I turn it back on**. The room ignores its schedule and is kept at the frost protection temperature (7° unless you've changed it), or whatever you set under **Keep it at**.
+
+The card shows "Snoozed at 7° until Wed 19:00" and a **Back to schedule** button that ends the snooze. Switching the house to Away, Off and back doesn't end a snooze. If someone boosts the room, holds it with − / +, or turns its radiator, that works as normal and the room goes back to its snooze afterwards ("…, then snoozed again"). **Boost** for the whole house leaves snoozed rooms unticked. Snoozed rooms don't send open-window alerts, since they're meant to cool down.
+
+## Boost the house
+
+The **Boost** button next to Schedules, Away and Off warms several rooms at once for a while. It opens with the temperature and length from **Settings → Temperatures** (22° and 30 minutes to start with) and every room ticked. Untick any rooms you want left alone, adjust the temperature or length, and press **Boost**.
+
+While it runs, the button shows the time left. When it ends, or when you press **Stop boost**, each room goes back to exactly what it was doing before: its schedule, or a hold or boost it already had if that hasn't run out. Changing the whole-house mode cancels a boost, and you can't boost while the heating is Off. If someone turns a radiator by hand during a boost, that room keeps their setting instead.
+
+## Today, gas and outside
+
+Each room's card has a small graph of today: the room's temperature since midnight, with orange shading where that room was calling for heat, plus how many times it fired and for how long ("Fired 3 times · 2h 10m today") and the day's low and high. It sits right above the schedule strip on the same 00:00–24:00 scale, so you can see the room warming during each scheduled period. Tap or hover for the exact time and temperature. The Boiler card shows how many times the boiler itself fired today.
+
+Turn the graph and the fired count on or off in **Settings → Room cards** (for everyone in the house). With only the count on, cards show just the "Fired…" line.
+
+The heating shading and the fired count are recorded by the add-on, so on the day you first install it they only cover the time since then, and the card says so ("Fired twice since 18:10"). The total time and the temperatures are there straight away.
+
+Under the rooms you get a 24-hour chart for each room: actual temperature, target, outside temperature, and shading where the boiler fired. Tap or hover for exact values, or switch to a table. Beside it are today's gas cost (with yesterday's), how long the boiler has run today, and the outside temperature.
+
+**All rooms** (the first choice above the chart, and where it starts) puts every room on one chart, one coloured line each, so you can compare them. Pick what to show:
+
+- **Temperature** (the default): how warm each room actually was.
+- **Target**: what each room was aiming for. Rooms sharing a target are drawn just apart so none hide.
+- **vs target**: how far above or below its target each room was. A room that sits well below 0° for long spells is struggling to warm.
+
+Under the All rooms chart, **Calling for heat** has a lane per room, in the same colours, marking when each room asked for heat. The boiler shading runs down through the lanes, so you can see which room set it off. Tap or hover inside a firing period and the readout says what fired the boiler and why, for example "Fired by Lounge (schedule) · then Kitchen (boost)". Rooms that were calling at that moment are marked in the list. The reasons are schedule, warming early, boost, hold, changed on the radiator, away and snooze. The table view's Boiler column says the same. Reasons are recorded from this version on; earlier heat-ups show without one.
+
+Tap a room's name under the chart to pick it out (tap again to show all). Tap or hover for every room's value at that time, listed warmest first. Your choice of room and measure is remembered on each device.
+
+Room temperatures and boiler runs come from Home Assistant's history, so the chart fills in straight away. Targets are recorded by the add-on from when it's installed; before that the chart shows the schedule.
+
+Pick the gas cost sensor and the outside temperature in **Settings → Gas cost and outside temperature**, or leave them on **Find automatically**. Any sensor that counts today's cost and resets at midnight works, such as Octopus Energy's "Current Accumulative Cost Gas". For outside, use a weather entity or an outdoor thermometer.
+
+## Insights
+
+The **Insights** tab shows the last 30 days:
+
+- **Gas, last 7 days**, compared with the 7 days before.
+- **Gas cost per day** as a bar chart. Costs come from Home Assistant's long-term statistics, so the history is there from the day you install.
+- **Cost per cold degree.** A day's cold degrees are how far its average outside temperature fell below 15.5°. Dividing the cost by them takes the weather out, so a cold week doesn't look like a bad week. Weather entities only keep about 10 days of history, so this fills in over time (an outdoor thermometer sensor gives the full 30 days).
+- **Boiler hours**, compared week to week once both weeks are recorded.
+- **Rooms compared**: how fast each room warms, how much it overshoots, how early it now stops, how long it spent heating over the last week, and its average temperature. Useful for spotting a radiator that needs bleeding.
+
+Comparisons only appear when both weeks have enough recorded days; otherwise the card says what's missing.
+
+## Phone alerts
+
+In **Settings → Phone alerts** you can have Home Assistant notify a device when the heating comes on, when it goes off, and when a window looks open. Each alert has its own switch and its own device, chosen from your `notify` services: a phone running the Home Assistant app (`notify.mobile_app_…`), or a notify group to reach several devices at once. **Send test** sends a sample straight away.
+
+The "on" alert names the rooms that fired the boiler and their temperatures. The "off" alert says how long the boiler ran. Alerts replace each other on the phone rather than stacking up. They follow the boiler's minimum run and rest times, so a boiler that cycles a lot will send a lot of alerts.
+
+## Child locks
+
+If a TRV has a child lock entity in Home Assistant (ZHA and Zigbee2MQTT usually create one), a **Child lock** switch appears next to it in the room's details, and **Settings → Child locks** can lock or unlock them all at once. Locked valves ignore their own buttons and dial, but the add-on can still set them.
+
+## Setup
+
+1. Open **Home** in the sidebar (it opens on Heating), go to **Settings**.
+2. Under **Boiler**, pick your Hive thermostat (usually `climate.heating`, or `climate.<zone>_heating`).
+3. Under **Rooms**, add each room, tick its TRVs, and optionally pick a room thermometer.
+4. Go to **Schedules** and set each room's week. New rooms start with a typical weekday and weekend pattern.
+
+### Before you switch on: disable your old heating automations
+
+Your existing automations that turn the Hive thermostat up when a TRV calls for heat will fight this add-on. Disable them (Settings → Automations, toggle off) once the add-on is set up. Keep them for a week or two rather than deleting, in case you want to roll back.
+
+### Hive's own schedules
+
+With "Switch radiators to manual mode" on (the default), the add-on moves the Hive thermostat and Hive TRVs into manual mode so their schedules in the Hive app stop applying. Your Hive app schedules are not deleted; they come back into play if the add-on stops.
+
+## Where your data is kept
+
+Two places (for heating; lighting keeps everything in `lighting.json`):
+
+- **Home Assistant's own history** (its recorder database, `home-assistant_v2.db` in your config folder unless you've moved it to MariaDB or similar). The add-on reads from it but never writes to it: room and valve temperatures, the boiler's on/off, outside temperature and gas cost. Detailed history is kept for 10 days by default; the daily statistics behind Insights are kept indefinitely.
+- **The app's own folder** (`/data` inside the app; on the Home Assistant machine it's the Supervisor's data folder for this app). It isn't visible in File editor or Samba, but it is included in Home Assistant backups.
+
+| File | What's in it | Kept for (Settings → History) |
+|---|---|---|
+| `heating.json` | Settings, rooms, schedules, current holds, boosts and snoozes, and what each room has learned (stop early, warm-up speed) | Always |
+| `activity.json` | The Activity log | Activity log: 30 days to start with (1–365) |
+| `daily.json` | Each day's totals: boiler hours, average outside temperature, each room's heating time and average temperature, gas cost | Daily totals: 400 days (30–1100) |
+| `targets.json` | What each room was aiming for, for the 24-hour chart | Room detail: 7 days (1–90) |
+| `calls.json` | When each room called for heat, for the room cards | Room detail, as above |
+| `lighting.json` | Lighting: groups, schedules, scenes, settings and the lighting Activity log (last 300 entries) | Always |
+
+**Settings → History** shows how much each uses. Lowering a number deletes the older records when you save. The Activity tab shows the latest 60 entries; **Show older** pages back through the rest. Home Assistant's own history isn't changed by these settings: set `purge_keep_days` under `recorder:` in Home Assistant's configuration for that.
+
+Uninstalling the add-on can remove this folder, so take a backup first if you might want it back.
+
+## Who can use it
+
+The panel is visible to every Home Assistant user, not just admins, so give each person in the house their own HA login and they can use it from the Home Assistant app on their phone, at home or away (over your existing remote access).
+
+## Troubleshooting
+
+- **A room shows "No temperature reading"**: its TRVs and thermometer are all unavailable. It won't call for heat until a reading comes back.
+- **Hive changes take a minute to show**: Hive is polled through the cloud. The add-on waits 3 minutes (configurable) before re-sending a command.
+- **The screen looks out of date**: it updates live. If that connection drops without saying so (common when the Home Assistant phone app has been in the background), the panel refreshes as soon as you come back to it and reconnects by itself within about a minute. Anything you press updates the screen straight away either way.
+- **The Activity tab** records every boiler start and stop, boost, schedule change and change made on a radiator.
+
+Settings and schedules are stored in the add-on's `/data` folder and are included in Home Assistant backups.
+
+# Lighting
+
+## First steps with lighting
+
+1. Open **Home**, switch to **Lighting**, then **Settings → Add a group**, or start from one of your Home Assistant areas. A group can be a room, the Christmas lights or the outside sockets, and can mix lights and sockets. Each light or socket belongs to one group.
+2. Open **Schedules**, pick a group and tap a day to add changes: a clock time or around sunset/sunrise, on or off, brightness and warmth where the light supports them, and an optional slow fade for waking up and winding down. Use **Also use for** and **Also use in** to copy to other days and groups.
+3. Turn off any Home Assistant automations that already switch these lights on a timer. Toggle them off rather than deleting them so you can go back.
+
+## How it behaves
+
+- Changes at a wall switch, in the Home Assistant app or by voice are left alone until the group's next scheduled change. The Activity tab says who changed what.
+- Changes made in this app last until the next scheduled change, or for 30 min to 4 h if you pick that in the group's details.
+- Saving a schedule doesn't change any lights there and then: the new schedule takes over from its next change. To apply it straight away, open the group and press **Back to schedule**.
+- A few seconds after switching a Zigbee light (ZHA), the app asks Home Assistant to read the light's real state back, so a bulb that ignored the command is caught and switched again. After switching a light off it checks again at 20 and 50 seconds: a light that comes back on by itself within a minute, with nobody behind it, is switched off again and Activity says so. A person at a wall switch more than a minute after the off is respected as usual. The Log tab has a line for every command and anything a light did by itself.
+- **Away** keeps everything off, except groups set to look lived in, which come on a little after sunset and go off around a set time, varying each day. Away is shared with the heating: see [Away for the whole house](#away-for-the-whole-house).
+- **All off** (with the scene buttons) switches everything off until each group's next scheduled change. Schedules keep running.
+- A movement sensor can turn a group on for a few minutes when it would otherwise be off. A light-level sensor stops a group switching on when it's already bright.
+- When the app stops or updates, lights and sockets are left exactly as they are. If a scheduled change was missed while it was stopped, it catches up on start.
+
+## Scenes
+
+Scenes are buttons at the top of the Lights page that set several groups at once. Make and edit them in **Settings → Scenes**. For each group you can leave it alone, turn it on at a brightness and warmth, or turn it off, and optionally only for a few minutes before it goes back to its schedule. A scene lasts until each group's next scheduled change, or "until the morning" (the first scheduled change after 05:00, which you can change).
+
+A **Goodnight** scene is included: everything off until the morning.
+
+To run a scene from Home Assistant (a dashboard button, an automation, or Alexa via a script), make a script:
+
+```yaml
+alias: Goodnight
+sequence:
+  - event: lighting_control_scene
+    event_data:
+      scene: Goodnight
+```
+
+Use `scene: All off` to switch everything off. The mode can be changed the same way with the `lighting_control_mode` event and `mode: away` or `schedules`. Because Away is shared, that sets the heating too (unless the heating is switched off). These event names are unchanged from Lighting Control, so existing scripts keep working.
+
+## Seasons and night-time movement
+
+In a group's settings:
+- **Season**: run the schedule only between two dates each year. Outside them the schedule sleeps and the group is left alone.
+- **Use a lower level at night**: movement turns the group on at a lower brightness between two times.

@@ -1,0 +1,232 @@
+// Puts a summary of the heating and the lighting into Home Assistant, for dashboards:
+//   sensor.home_heating    state: Schedules / Away / Off; attributes: boiler, every room
+//   binary_sensor.home_boiler   on while the boiler is firing (device_class heat)
+//   sensor.home_boiler_today    minutes the boiler has run today
+//   sensor.home_lighting   state: how many lights and sockets are on; attributes: every group
+// The Home Control card (dashboard/home-control-card.js) draws these; any other card can use them too.
+//
+// They're written with Home Assistant's REST API (POST /api/states/…), so they aren't
+// saved by Home Assistant itself: they're written again whenever it (re)connects.
+
+const MODE_NAME = { auto: 'Schedules', away: 'Away', off: 'Off' };
+const LIGHT_MODE_NAME = { schedule: 'Schedules', away: 'Away' };
+
+const deg = (t) => (t == null ? '–' : `${Number(t).toFixed(1).replace(/\.0$/, '')}°`);
+const round1 = (n) => (n == null || Number.isNaN(Number(n)) ? null : Math.round(Number(n) * 10) / 10);
+const list = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// like the Lighting page: "Lounge, Kitchen and 2 more"
+const names = (a) => (a.length <= 3 ? list(a) : `${a[0]}, ${a[1]} and ${a.length - 2} more`);
+
+function clock(ms, tz, withDay) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const opts = { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+  const day = new Intl.DateTimeFormat('en-GB', { timeZone: tz, dateStyle: 'short' });
+  if (withDay || day.format(d) !== day.format(new Date())) opts.weekday = 'short';
+  return new Intl.DateTimeFormat('en-GB', opts).format(d);
+}
+function minutesLeft(ms) {
+  const m = Math.max(0, Math.round((ms - Date.now()) / 60000));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+}
+function today(tz) {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short' }).format(new Date()).toLowerCase().slice(0, 3);
+}
+
+/** The same words as the room cards in the app, as plain text. */
+export function roomStatus(z, tz) {
+  if (!z.enabled) return 'Not managed by this app';
+  if (z.snoozedUnder && z.source !== 'snooze' && ['boost', 'hold', 'manual'].includes(z.source)) {
+    return `${roomStatus({ ...z, snoozedUnder: false }, tz)}, then snoozed again`;
+  }
+  const next = z.scheduled?.next;
+  const at = (n) => (n ? `${n.day !== today(tz) ? `${n.day[0].toUpperCase()}${n.day.slice(1)} ` : ''}${n.time}` : '');
+  switch (z.source) {
+    case 'boost': return `Boost to ${deg(z.target)}, ${minutesLeft(z.until)} left`;
+    case 'preheat': return `Warming early to reach ${deg(z.target)} by ${z.readyBy}`;
+    case 'window': return `Window open? Heating paused until ${clock(z.until, tz)}`;
+    case 'hold': return `Held at ${deg(z.target)} until ${clock(z.until, tz)}`;
+    case 'manual': return `Changed on ${z.by || 'the radiator'} to ${deg(z.target)} until ${clock(z.until, tz)}`;
+    case 'snooze': return `Snoozed at ${deg(z.target)} ${z.forever ? 'until you turn it back on' : `until ${clock(z.until, tz)}`}`;
+    case 'away': return `Away mode, kept at ${deg(z.target)}`;
+    case 'off': return `Heating off, frost protection at ${deg(z.target)}`;
+    case 'no-schedule': return `No schedule yet, kept at ${deg(z.target)}`;
+    default: return next ? `On schedule, ${deg(next.temp)} from ${at(next)}` : 'On schedule';
+  }
+}
+
+const hm = (mins) => (mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}`);
+
+export function heatingState(snap, today = null, panel = null) {
+  const tz = snap.timeZone;
+  const rooms = snap.zones.map((z) => ({
+    id: z.id, name: z.name, temp: round1(z.current), target: round1(z.target),
+    calling: !!z.calling, enabled: z.enabled !== false, status: roomStatus(z, tz),
+  }));
+  const b = snap.boiler;
+  const calling = snap.zones.filter((z) => z.calling).map((z) => z.name);
+  const boiler = !b.entity ? 'No boiler chosen yet'
+    : !b.available ? 'Boiler control offline'
+      : b.on ? (calling.length ? `Boiler on for ${list(calling)}` : 'Boiler finishing its minimum run') : 'Boiler resting';
+  const mode = snap.mode;
+  let modeText = MODE_NAME[mode] || mode;
+  if (mode === 'away' && snap.awayUntil) modeText = `Away until ${clock(snap.awayUntil, tz, true)}`;
+  return {
+    state: MODE_NAME[mode] || mode,
+    attributes: {
+      friendly_name: 'Heating',
+      icon: mode === 'off' ? 'mdi:radiator-off' : 'mdi:radiator',
+      mode,
+      mode_text: modeText,
+      away_auto: !!snap.presence?.auto,
+      boiler_on: !!b.on,
+      boiler,
+      // today's run time, as on the app's "Boiler today" card
+      boiler_today_minutes: today ? today.minutes : null,
+      boiler_today: today ? hm(today.minutes) : null,
+      boiler_fires_today: today ? today.fires : null,
+      boost: snap.houseBoost ? { temp: snap.houseBoost.temp, until: new Date(snap.houseBoost.until).toISOString(), text: `Boosting to ${deg(snap.houseBoost.temp)}, ${minutesLeft(snap.houseBoost.until)} left` } : null,
+      attention: (snap.attention || []).map((a) => a.text),
+      rooms,
+      connected: !!snap.haConnected,
+      panel, // where the app is, so a dashboard card can open it
+    },
+  };
+}
+
+/** Minutes the boiler has run today: a number Home Assistant keeps history and daily statistics for. */
+export function boilerTodayState(today) {
+  return {
+    state: today.minutes,
+    attributes: {
+      friendly_name: 'Boiler today', icon: 'mdi:fire-circle',
+      unit_of_measurement: 'min', device_class: 'duration', state_class: 'total_increasing',
+      fires: today.fires,
+    },
+  };
+}
+
+export function boilerState(snap) {
+  return {
+    state: snap.boiler.on ? 'on' : 'off',
+    attributes: { friendly_name: 'Boiler', device_class: 'heat', icon: snap.boiler.on ? 'mdi:fire' : 'mdi:fire-off' },
+  };
+}
+
+export function lightingState(snap, panel = null) {
+  const groups = snap.groups.map((g) => {
+    const c = g.current || {};
+    const kinds = new Set(g.devices.map((d) => (d.kind === 'light' ? 'light' : 'socket')));
+    return {
+      id: g.id, name: g.name, on: !!c.on,
+      level: !c.on ? 'Off' : g.dimmable && c.brightness != null ? `${c.brightness}%` : 'On',
+      brightness: c.on && g.dimmable ? c.brightness ?? null : null,
+      kelvin: c.on ? c.kelvin ?? null : null,
+      on_count: c.onCount ?? 0, total: c.total ?? g.devices.length,
+      kind: kinds.size > 1 ? 'mixed' : kinds.has('socket') ? 'sockets' : 'lights',
+      status: g.status?.text || '',
+      // so a dashboard can switch the group: what's in it, and the level "on" means right now
+      available: g.devices.some((d) => d.available !== false),
+      devices: g.devices.map((d) => ({ id: d.id, dimmable: !!d.dimmable, ct: !!d.ct, available: d.available !== false })),
+      turn_on: g.turnOn ? { brightness: g.dimmable ? g.turnOn.brightness ?? null : null, kelvin: g.ct ? g.turnOn.kelvin ?? null : null } : null,
+    };
+  });
+  const onDevices = snap.groups.flatMap((g) => g.devices).filter((d) => d.on);
+  const lights = onDevices.filter((d) => d.kind === 'light').length;
+  const sockets = onDevices.length - lights;
+  const onIn = groups.filter((g) => g.on).map((g) => g.name);
+  const what = [lights && plural(lights, 'light'), sockets && plural(sockets, 'socket')].filter(Boolean).join(' and ');
+  const summary = snap.paused ? 'Paused while switching over from Lighting Control'
+    : !groups.length ? 'No groups yet'
+      : onDevices.length ? `${what} on in ${names(onIn)}` : 'Everything is off';
+  return {
+    state: onDevices.length,
+    attributes: {
+      friendly_name: 'Lighting',
+      icon: onDevices.length ? 'mdi:lightbulb-group' : 'mdi:lightbulb-group-outline',
+      mode: snap.mode,
+      mode_text: LIGHT_MODE_NAME[snap.mode] || snap.mode,
+      paused: !!snap.paused,
+      step: snap.settings?.stepSize || 10, // the brightness step for minus and plus, as in the app
+      summary,
+      groups,
+      connected: !!snap.connected,
+      panel,
+    },
+  };
+}
+
+export function createPublisher({ restBase, token, log, heating, lighting, client, panel = () => null, isEmpty = () => false }) {
+  const last = new Map();      // entity -> JSON last written
+  const lastAt = new Map();    // kind -> time of last write
+  const timers = new Map();
+  let failing = false;
+  // heating changes (temperatures) are frequent and slow-moving; lights should show promptly
+  const GAP = { heating: 20000, lighting: 3000 };
+
+  async function write(entity, { state, attributes }) {
+    const body = JSON.stringify({ state, attributes });
+    if (last.get(entity) === body) return;
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 10000);
+      const res = await fetch(`${restBase}/states/${entity}`, {
+        method: 'POST', body, signal: ctl.signal,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      }).finally(() => clearTimeout(t));
+      if (!res.ok) throw new Error(`Home Assistant answered ${res.status}`);
+      last.set(entity, body);
+      if (failing) { failing = false; log.info?.('Dashboard sensors are being written again'); }
+    } catch (err) {
+      if (!failing) { failing = true; log.warn?.(`Couldn't write the dashboard sensors (${entity}): ${err.message}. Will keep trying.`); }
+    }
+  }
+
+  async function flush(kind) {
+    timers.delete(kind);
+    lastAt.set(kind, Date.now());
+    if (!client.connected) return;
+    // a fresh install with nothing set up says nothing, so it can't cover up another copy of the app
+    if (isEmpty()) return;
+    try {
+      if (kind === 'heating') {
+        const snap = heating.snapshot();
+        const today = await heating.boilerToday?.().catch(() => null);
+        await write('sensor.home_heating', heatingState(snap, today, panel()));
+        await write('binary_sensor.home_boiler', boilerState(snap));
+        if (today) await write('sensor.home_boiler_today', boilerTodayState(today));
+      } else {
+        await write('sensor.home_lighting', lightingState(lighting.snapshot(), panel()));
+      }
+    } catch (err) { log.warn?.(`Dashboard sensors: ${err.message}`); }
+  }
+
+  function schedule(kind, soon = false) {
+    if (timers.has(kind)) {
+      if (!soon) return;
+      clearTimeout(timers.get(kind));
+    }
+    const wait = soon ? 1000 : Math.max(1000, GAP[kind] - (Date.now() - (lastAt.get(kind) || 0)));
+    timers.set(kind, setTimeout(() => flush(kind), wait));
+  }
+
+  // a new mode, the boiler starting or stopping, or a room starting to call shows straight away
+  let heatSig = '';
+  heating.engine.on('change', () => {
+    let sig = '';
+    try { sig = `${heating.store.data.runtime.mode}|${heating.engine.boilerView().on}|${heating.engine.views.filter((v) => v.calling).map((v) => v.id)}`; } catch { /* starting up */ }
+    const soon = sig !== heatSig;
+    heatSig = sig;
+    schedule('heating', soon);
+  });
+  lighting.engine.on('change', () => schedule('lighting'));
+  // Home Assistant forgets these when it restarts: write them all again on every (re)connect
+  client.on('ready', () => { last.clear(); setTimeout(() => { schedule('heating', true); schedule('lighting', true); }, 3000); });
+  // a slow refresh, so "minutes left" and clock times stay right on a quiet day
+  setInterval(() => { schedule('heating'); schedule('lighting'); }, 5 * 60000);
+
+  return { flushNow: async () => { await flush('heating'); await flush('lighting'); }, last };
+}

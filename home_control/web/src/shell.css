@@ -1,0 +1,83 @@
+/* Shared by both sections: the header layout and the Heating / Lighting switch.
+   Colours come from whichever section is showing, so the switch matches its page. */
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Dashboard button on the left, the switch in the middle (so it doesn't move when you switch),
+   the section's status on the right. */
+body .top.home-top {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center; gap: 12px; flex-wrap: nowrap;
+}
+body .home-top .home-top-l { justify-self: start; display: flex; align-items: center; min-width: 0; }
+body .home-top .home-top-r { justify-self: end; display: flex; justify-content: flex-end; min-width: 0; }
+body .home-top .home-top-r > * { max-width: 100%; }
+body.sec-lighting .top.home-top { padding-top: 16px; padding-bottom: 12px; }
+
+body .home-switch {
+  display: inline-flex; gap: 3px; padding: 3px; border-radius: 14px;
+  background: var(--panel); border: 1px solid var(--line);
+}
+body .home-switch a {
+  position: relative; display: inline-flex; align-items: center; gap: 7px;
+  min-height: 40px; padding: 6px 16px 6px 13px; border-radius: 11px;
+  font-weight: 620; font-size: 1rem; color: var(--ink-2); text-decoration: none; white-space: nowrap;
+}
+body .home-switch a:hover:not([aria-current]) { color: var(--ink); }
+body .home-switch a[aria-current='page'] { background: var(--ink); color: var(--bg); }
+body .home-switch svg { width: 19px; height: 19px; flex: none; }
+body .home-switch a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* "something's on over there" */
+body .hs-dot { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; }
+body .hs-heat { background: rgb(238 132 52); box-shadow: 0 0 0 2px rgb(238 132 52 / .25); }
+body .hs-light { background: rgb(255 182 98); box-shadow: 0 0 0 2px rgb(255 182 98 / .3); }
+
+@media (max-width: 560px) {
+  body .top.home-top { grid-template-columns: auto minmax(0, 1fr); row-gap: 10px; }
+  body .home-top .home-switch { justify-self: stretch; }
+  body .home-top .home-switch a { flex: 1; justify-content: center; padding: 6px 10px; }
+  body .home-top .home-top-r { grid-column: 1 / -1; justify-self: stretch; justify-content: stretch; }
+  body .home-top .home-top-r > * { flex: 1; }
+}
+
+/* ---------- moving in from the Home Control installed by hand ---------- */
+body .app.move { max-width: 760px; }
+body .move-what { margin: 0 0 12px; padding-left: 1.3em; display: grid; gap: 6px; font-size: .95rem; }
+body .move-steps { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; font-size: .95rem; }
+body .move-steps li { display: flex; gap: 10px; align-items: center; color: var(--ink-2); }
+body .move-steps li::before {
+  content: ''; flex: none; width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--line); box-sizing: border-box;
+}
+body .move-steps li.mv-done { color: var(--ink); }
+body .move-steps li.mv-done::before { background: var(--ok, #3f8a5f); border-color: var(--ok, #3f8a5f); }
+body .move-steps li.mv-now { color: var(--ink); font-weight: 600; }
+body .move-steps li.mv-now::before { border-color: var(--focus); border-top-color: transparent; animation: move-spin .9s linear infinite; }
+body .move-steps li.mv-failed { color: var(--danger, #b4392b); font-weight: 600; }
+body .move-steps li.mv-failed::before { background: var(--danger, #b4392b); border-color: var(--danger, #b4392b); }
+@keyframes move-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { body .move-steps li.mv-now::before { animation: none; border-top-color: var(--focus); } }
+body .move .banner { margin: 16px 0 0; }
+
+body .moved {
+  max-width: 1080px; margin: 16px auto 0; padding: 0 16px; display: flex;
+}
+body .moved > .moved-in {
+  flex: 1; min-width: 0; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  border-left: 4px solid var(--ok, #3f8a5f); border-radius: 12px 0 0 12px; border-right: 0;
+  padding: 12px 14px; font-size: .93rem;
+}
+body .moved p { margin: 0; }
+body .moved p + p { margin-top: 6px; color: var(--ink-2); }
+body .moved code { font-size: .88em; }
+body .moved-ok {
+  flex: none; border: 1px solid var(--line); border-left: 0; border-radius: 0 12px 12px 0; background: var(--panel-2);
+  color: var(--ink); font: inherit; font-weight: 620; padding: 0 18px; cursor: pointer;
+}
+body .moved-ok:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 560px) {
+  body .moved { flex-direction: column; }
+  body .moved > .moved-in { border-radius: 12px 12px 0 0; border-right: 1px solid var(--line); border-bottom: 0; }
+  body .moved-ok { border-left: 1px solid var(--line); border-radius: 0 0 12px 12px; padding: 10px; }
+}
