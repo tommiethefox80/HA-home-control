@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, thermal, deg } from './lib.js';
 import { Sheet } from './ui.jsx';
+import { HomeSettings } from '../HomeSettings.jsx';
 
 // Per-room "stop early": learned automatically, a fixed % of the target, or the house setting.
 function StopEarlyField({ room, form, setForm, live, houseStop, notify }) {
@@ -220,16 +221,6 @@ function HistorySettings({ s, set }) {
 function SmartSettings({ s, set, state }) {
   const pre = s.preheat || { enabled: true, maxMinutes: 120 };
   const win = s.window || { enabled: true, drop: 1, minutes: 10, pauseMinutes: 20 };
-  const pr = s.presence || { enabled: false, people: [], delayMinutes: 15, nearMiles: 2 };
-  const [people, setPeople] = useState([]);
-  useEffect(() => { api('people').then(setPeople).catch(() => setPeople([])); }, [state.haConnected]);
-  const togglePerson = (id) => {
-    const all = people.map((p) => p.entity_id);
-    const cur = pr.people?.length ? pr.people : all;
-    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-    set({ presence: { ...pr, people: next.length === all.length ? [] : next } });
-  };
-  const counted = (id) => !pr.people?.length || pr.people.includes(id);
   const learned = state.zones.filter((z) => z.warm?.samples).length;
   return (
     <>
@@ -263,35 +254,6 @@ function SmartSettings({ s, set, state }) {
         <small style={{ display: 'block', color: 'var(--ink-2)', fontSize: '.84rem' }}>Works best with valves or thermometers that report often. Hive valves can take a few minutes to report, so a quick blast of cold air may be missed.</small>
       </section>
 
-      <section className="section" id="set-away">
-        <h2>Away automatically</h2>
-        <label className="toggle">
-          <input type="checkbox" checked={!!pr.enabled} onChange={(e) => set({ presence: { ...pr, enabled: e.target.checked } })} />
-          <span>Use phone locations<small>When everyone below has been out for a while, the house switches to Away: the heating and the lights. When someone is home or on their way back, it switches back to Schedules. A mode you pick by hand always wins. While the heating is switched off, this still looks after the lights.</small></span>
-        </label>
-        {pr.enabled && (
-          <>
-            <div className="field" style={{ marginTop: 6 }}>
-              <span>People</span>
-              {people.length ? (
-                <div className="checklist">
-                  {people.map((p) => (
-                    <label key={p.entity_id}>
-                      <input type="checkbox" checked={counted(p.entity_id)} onChange={() => togglePerson(p.entity_id)} />
-                      {p.name}
-                      <small>{p.home ? 'Home' : p.miles != null ? `${p.miles} miles away` : p.state.replace(/_/g, ' ')}</small>
-                    </label>
-                  ))}
-                </div>
-              ) : <small>No people found. Add them in Home Assistant under Settings → People, with the Home Assistant app on their phone sharing location.</small>}
-            </div>
-            <div className="grid2">
-              <label className="field"><span>Everyone out for (minutes)</span><input type="number" step="5" value={pr.delayMinutes} onChange={(e) => set({ presence: { ...pr, delayMinutes: numIn(e.target.value) } })} /></label>
-              <label className="field"><span>Back on within (miles)</span><input type="number" step="0.5" value={pr.nearMiles} onChange={(e) => set({ presence: { ...pr, nearMiles: numIn(e.target.value) } })} /></label>
-            </div>
-          </>
-        )}
-      </section>
     </>
   );
 }
@@ -352,7 +314,7 @@ export default function Settings({ state, notify, focus }) {
   // links like #/settings/away (from the Lighting settings) open on that section
   useEffect(() => {
     if (!focus) return;
-    const t = setTimeout(() => document.getElementById(`set-${focus}`)?.scrollIntoView({ block: 'start' }), 50);
+    const t = setTimeout(() => document.getElementById(focus === 'away' ? 'home-away' : `set-${focus}`)?.scrollIntoView({ block: 'start' }), 50);
     return () => clearTimeout(t);
   }, [focus]);
   const [editing, setEditing] = useState(null);
@@ -365,7 +327,8 @@ export default function Settings({ state, notify, focus }) {
   const set = (patch) => { setS((x) => ({ ...x, ...patch })); setDirty(true); };
   const setB = (patch) => { setS((x) => ({ ...x, boiler: { ...x.boiler, ...patch } })); setDirty(true); };
   const save = async () => {
-    try { await api('settings', 'PUT', s); setDirty(false); notify('Settings saved'); } catch (e) { notify(e.message, true); }
+    const { presence, dashboardPath, ...mine } = s; // saved by the Home Control block, as you change them
+    try { await api('settings', 'PUT', mine); setDirty(false); notify('Settings saved'); } catch (e) { notify(e.message, true); }
   };
   const nameOf = (id) => entities.find((e) => e.entity_id === id)?.name || id;
   const [targets, setTargets] = useState([]);
@@ -377,12 +340,14 @@ export default function Settings({ state, notify, focus }) {
     });
     setDirty(true);
   };
-  const saveFirst = async () => { await api('settings', 'PUT', s); setDirty(false); };
+  const saveFirst = async () => { const { presence, dashboardPath, ...mine } = s; await api('settings', 'PUT', mine); setDirty(false); };
   const boilerOptions = entities.filter((e) => ['climate', 'switch', 'input_boolean'].includes(e.domain));
   const boilerIsClimate = s.boiler.entity?.startsWith('climate.');
 
   return (
     <>
+      <HomeSettings />
+
       <section className="section">
         <h2>Rooms</h2>
         <p>Each room groups its radiator valves and follows one schedule.</p>
@@ -485,15 +450,6 @@ export default function Settings({ state, notify, focus }) {
       </section>
 
       <HistorySettings s={s} set={set} />
-
-      <section className="section">
-        <h2>Dashboard button</h2>
-        <label className="field">
-          <span>Dashboard to go back to</span>
-          <small>Used by the Dashboard button on both the Heating and Lighting pages. The address after your Home Assistant URL, e.g. <code>/lovelace/0</code> or <code>/dashboard-home</code>. Leave as <code>/</code> for your default dashboard.</small>
-          <input value={s.dashboardPath ?? '/'} onChange={(e) => set({ dashboardPath: e.target.value })} placeholder="/" />
-        </label>
-      </section>
 
       <section className="section">
         <h2>Behaviour</h2>

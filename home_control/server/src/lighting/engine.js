@@ -332,7 +332,8 @@ export class Engine extends EventEmitter {
   // ---------- the loop ----------
 
   tick() {
-    if (!this.ready || this.data.paused) { this.changed(); return; } // paused: another app is still in charge
+    // paused: another app is still in charge; disabled: turned off in Home Control's settings
+    if (!this.ready || this.data.paused || this.disabled) { this.changed(); return; }
     const ms = this.now();
     this._checkPresence(ms);
     for (const g of this.data.groups) {
@@ -612,7 +613,7 @@ export class Engine extends EventEmitter {
     }
     if (motionHit) { this._soon(); return; }
 
-    if (this.data.paused) { this.changed(); return; }
+    if (this.data.paused || this.disabled) { this.changed(); return; }
     const g = this.groupOf(id);
     if (!g) { if (id === this.sunEntity()) this.changed(); return; }
     const info = this.deviceInfo(id, g.name);
@@ -1120,6 +1121,7 @@ export class Engine extends EventEmitter {
 
   _onHaEvent(type, data) {
     try {
+      if (this.disabled) return; // turned off in Home Control's settings: something else looks after the lights
       if (this.data.paused) { this.addActivity('Home Assistant asked for a scene or mode, but lighting is paused while you switch over.'); return; }
       if (type === 'lighting_control_scene') this.runScene(data.scene ?? data.name ?? data.id, { from: 'Home Assistant' });
       else if (type === 'lighting_control_mode') {

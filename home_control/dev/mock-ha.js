@@ -222,6 +222,15 @@ setState('light.lounge_lamp', { on: true, brightness: 45 });
 const published = [];
 const server = createServer(async (req, res) => {
   const m = /^\/api\/states\/([\w]+\.[\w]+)$/.exec(req.url);
+  if (req.method === 'DELETE' && m) { // as Home Assistant: removes the state, 404 if there's none
+    if (!/^Bearer \S+/.test(req.headers.authorization || '')) { res.writeHead(401); return res.end(); }
+    const old = states.get(m[1]);
+    if (!old) { res.writeHead(404, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ message: 'Entity not found.' })); }
+    states.delete(m[1]);
+    fireEvent('state_changed', { entity_id: m[1], old_state: publicState(old), new_state: null }, { id: randomUUID(), parent_id: null, user_id: null });
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ message: 'Entity removed.' }));
+  }
   if (req.method === 'POST' && m) {
     if (!/^Bearer \S+/.test(req.headers.authorization || '')) { res.writeHead(401); return res.end(); }
     let raw = ''; for await (const c of req) raw += c;

@@ -82,6 +82,7 @@ export class Engine extends EventEmitter {
 
   // ---- service calls, serialised and spaced out (Hive is a cloud API) ----
   #call(domain, service, data) {
+    if (this.disabled) return this.queue; // heating is turned off in Home Control's settings
     this.queue = this.queue.then(async () => {
       try { await this.ha.callService(domain, service, data); }
       catch (e) { this.note(`Failed ${domain}.${service}${data.entity_id ? ` on ${data.entity_id}` : ''}: ${e.message}`); }
@@ -339,6 +340,8 @@ export class Engine extends EventEmitter {
 
   // ---- main loop ----
   async tick() {
+    // turned off in Home Control's settings: something else looks after the heating
+    if (this.disabled) { this.views = []; this.emit('change'); return; }
     const now = Date.now();
     this.#expire(now);
     const next = Math.min(...Object.values(this.rt.overrides).map((o) => o.until), Infinity);
@@ -642,6 +645,7 @@ export class Engine extends EventEmitter {
 
   // ---- someone turned a TRV knob / changed it in the Hive app ----
   #onState(id, ns, os) {
+    if (this.disabled) return;
     const zone = this.zones.find((z) => z.enabled && ((z.trvs || []).includes(id) || z.sensor === id));
     if (/child_?lock/i.test(id)) this.requestTick(200);
     else if (zone || id === this.s.boiler.entity) this.requestTick(1500);
@@ -679,6 +683,13 @@ export class Engine extends EventEmitter {
   // On shutdown: hand Hive devices back to their own schedules so nothing is
   // left stuck (e.g. the thermostat at 30°). Zigbee valves without an 'auto'
   // mode keep their last setpoint.
+  /** Turned back on in Home Control's settings: forget what was last sent, so every device is put right now. */
+  resume() {
+    this.lastCmd.clear();
+    this.recent.clear();
+    this.requestTick(200);
+  }
+
   async handBack(timeoutMs = 5000) {
     if (!this.ha.connected) return;
     const ids = [...new Set([this.s.boiler.entity, ...this.zones.filter((z) => z.enabled).flatMap((z) => z.trvs || [])])];

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.0
+- **Turn heating or lighting off.** A new **Home Control** section at the top of Settings has a switch for each part, for houses where something else looks after the heating or the lights. Turning a part off asks first, then hands its devices back (radiators and the boiler go back to their own schedules; lights and sockets stay as they are), stops it reacting to Home Assistant, removes its dashboard sensors, and hides its pages and settings. Everything set up is kept: turning it back on carries on where it left off, and lights are left as they are until each group's next scheduled change. At least one part stays on.
+- With only one part on, the Heating / Lighting switch at the top gives way to the part's name.
+- The **Dashboard button** and **Away automatically** settings have moved into Settings → Home Control, as they're for the whole house. With the heating turned off, Away automatically still looks after the lights.
+
 ## 1.4.0
 - **Choose which light groups the dashboard card shows.** Each group (Lighting → Settings → Edit) has a new **Dashboard** setting: Show, Hide, or, for a group with a season, show only between its dates. Good for Christmas lights that should only appear in December, or lights you never switch from the dashboard. Hidden groups still follow their schedules and are all still in the app. The Settings list notes which groups are hidden.
 - `sensor.home_lighting` lists each group's `card` setting and whether it's `shown`, so other dashboards can follow it too.

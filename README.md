@@ -5,6 +5,7 @@ A Home Assistant app for the heating and lighting of the whole house, in one pan
 - **Heating**: room-by-room schedules for Hive and Zigbee radiator valves, with the boiler fired whenever a room needs heat. Boost, snooze, open-window detection, warming early to be ready on time, phone alerts, Insights and gas cost.
 - **Lighting**: lights and smart sockets in groups, with on/off, dimming and warmth schedules (including sunrise and sunset times and slow fades), scenes, movement and light-level sensors, seasons, and a lived-in Away pattern.
 - **One Away** for both, switched by hand or by people's phones.
+- **Use the parts you want**: heating or lighting can be turned off in Settings if something else looks after it.
 - **Dashboard card and sensors**: the Home Control card shows every room and light group at a glance, and switches and dims lights. The app installs and updates the card itself.
 
 ## Screenshots

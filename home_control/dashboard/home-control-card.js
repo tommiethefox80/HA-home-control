@@ -11,7 +11,7 @@
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 
@@ -181,7 +181,7 @@ class HomeControlCard extends HTMLElement {
     const st = this._last;
     const body = !st
       ? `<div class="card"><div class="head">${this._badge('quiet')}<div class="titles"><div class="title">${this._config.show === 'heating' ? 'Heating' : 'Lighting'}</div>
-           <div class="sub">Waiting for Home Control. Update it to 1.1 or later and make sure it's running (${esc(this._entity)} not found).</div></div></div></div>`
+           <div class="sub">Nothing from Home Control yet (${esc(this._entity)} not found). Check it's running. If ${this._config.show === 'heating' ? 'Heating' : 'Lighting'} is turned off in its settings, remove this card.</div></div></div></div>`
       : this._config.show === 'heating' ? this._heating(st) : this._lighting(st);
     this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card>${body}</ha-card>`;
     const root = this.shadowRoot;

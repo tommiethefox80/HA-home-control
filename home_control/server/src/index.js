@@ -46,10 +46,10 @@ if (!HA_TOKEN) { plain('No Home Assistant token: set HA_URL and HA_TOKEN when ru
 try { applyStagedMove(DATA_DIR, logObj); } catch (err) { logObj.error(`Couldn't finish moving in: ${err.message}`); }
 
 const client = new HAClient({ url: HA_URL, token: HA_TOKEN, log: logObj });
-const house = createHouse({ log: logObj });
+const house = createHouse({ log: logObj, dataDir: DATA_DIR });
 let lighting = null;
 const lightingSummary = () => {
-  if (!lighting) return null;
+  if (!lighting || !house.on('lighting')) return null;
   const groups = lighting.engine.data.groups.length;
   if (!groups) return { groups: 0 };
   let on = 0;
@@ -63,7 +63,7 @@ house.panel = panelPath;
 lighting.engine.on('change', () => heating.push());
 /** Nothing set up yet (a fresh install): no rooms, no boiler and no lighting groups. */
 const isEmpty = () => !heating.store.data.zones.length && !heating.store.data.settings.boiler?.entity && !lighting.store.data.groups.length;
-createPublisher({ restBase: REST_BASE, token: HA_TOKEN, log: logObj, heating, lighting, client, panel: panelPath, isEmpty });
+createPublisher({ restBase: REST_BASE, token: HA_TOKEN, log: logObj, heating, lighting, client, panel: panelPath, isEmpty, house });
 const card = createCardInstaller({ client, log: logObj, version: VERSION, source: CARD_FILE, configDir: HA_CONFIG_DIR });
 const move = createMove({ dataDir: DATA_DIR, backupDir: BACKUP_DIR, log: logObj, isEmpty, panel: panelPath, slug: selfSlug, card });
 
@@ -87,7 +87,8 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname.replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/';
   if (!p.startsWith('/api/')) return serveStatic(req, res, p === '/' ? '/index.html' : p);
-  if (p.startsWith('/api/move') || p === '/api/card') { if (await move.handle(req, res, p)) return; }
+  if (p === '/api/house') { if (await house.handle(req, res, p)) return; }
+  else if (p.startsWith('/api/move') || p === '/api/card') { if (await move.handle(req, res, p)) return; }
   else if (p.startsWith('/api/lighting/')) { if (await lighting.handle(req, res, url, p)) return; }
   else if (await heating.handle(req, res, url, p)) return;
   res.writeHead(404, { 'content-type': 'application/json' });

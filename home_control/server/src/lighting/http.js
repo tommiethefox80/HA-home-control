@@ -52,6 +52,7 @@ export function createLighting({ client, dataDir, log, house }) {
     if (!engine.ready) throw Object.assign(new UserError('Not connected to Home Assistant yet. Try again in a moment.'), { status: 503 });
   };
   const requireRunning = () => {
+    if (engine.disabled) throw Object.assign(new UserError('Lighting is turned off in Home Control\'s settings.'), { status: 409 });
     if (store.data.paused) throw new UserError('Lighting is paused while you switch over from the old Lighting Control app. Finish switching over on the Lights page.');
     requireConnected();
   };

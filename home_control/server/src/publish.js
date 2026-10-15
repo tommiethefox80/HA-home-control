@@ -162,7 +162,9 @@ export function lightingState(snap, panel = null) {
   };
 }
 
-export function createPublisher({ restBase, token, log, heating, lighting, client, panel = () => null, isEmpty = () => false }) {
+const ENTITIES = { heating: ['sensor.home_heating', 'binary_sensor.home_boiler', 'sensor.home_boiler_today'], lighting: ['sensor.home_lighting'] };
+
+export function createPublisher({ restBase, token, log, heating, lighting, client, panel = () => null, isEmpty = () => false, house = null }) {
   const last = new Map();      // entity -> JSON last written
   const lastAt = new Map();    // kind -> time of last write
   const timers = new Map();
@@ -188,10 +190,24 @@ export function createPublisher({ restBase, token, log, heating, lighting, clien
     }
   }
 
+  // a module turned off in Home Control's settings: take its sensors out of Home Assistant
+  const removed = new Set();
+  async function remove(entity) {
+    try {
+      const res = await fetch(`${restBase}/states/${entity}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok || res.status === 404) { removed.add(entity); last.delete(entity); }
+    } catch { /* tried again next time */ }
+  }
+
   async function flush(kind) {
     timers.delete(kind);
     lastAt.set(kind, Date.now());
     if (!client.connected) return;
+    if (house && !house.on(kind)) {
+      for (const e of ENTITIES[kind]) if (!removed.has(e)) await remove(e);
+      return;
+    }
+    for (const e of ENTITIES[kind]) removed.delete(e);
     // a fresh install with nothing set up says nothing, so it can't cover up another copy of the app
     if (isEmpty()) return;
     try {
@@ -227,7 +243,8 @@ export function createPublisher({ restBase, token, log, heating, lighting, clien
   });
   lighting.engine.on('change', () => schedule('lighting'));
   // Home Assistant forgets these when it restarts: write them all again on every (re)connect
-  client.on('ready', () => { last.clear(); setTimeout(() => { schedule('heating', true); schedule('lighting', true); }, 3000); });
+  client.on('ready', () => { last.clear(); removed.clear(); setTimeout(() => { schedule('heating', true); schedule('lighting', true); }, 3000); });
+  house?.events.on('modules', (changed) => { for (const m of changed) schedule(m, true); });
   // a slow refresh, so "minutes left" and clock times stay right on a quiet day
   setInterval(() => { schedule('heating'); schedule('lighting'); }, 5 * 60000);
 

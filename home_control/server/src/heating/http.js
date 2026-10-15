@@ -170,6 +170,9 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
         || route('DELETE', /^\/api\/zones\/([\w-]+)\/window$/) || route('POST', '/api/boost') || route('DELETE', '/api/boost')
         || route('POST', '/api/notify/test') || route('POST', '/api/childlock');
       if (!known) return false;
+      if (engine.disabled && (/^\/api\/(mode|boost|childlock|notify\/test)$/.test(p) || /\/override$/.test(p))) {
+        return json(res, 409, { error: 'Heating is turned off in Home Control\'s settings.' }), true;
+      }
 
       const body = ['POST', 'PUT'].includes(req.method) ? await readBody(req) : {};
       if (p === '/api/mode' && req.method === 'POST') engine.setMode(body.mode, body.until);

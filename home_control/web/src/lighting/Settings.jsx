@@ -4,6 +4,7 @@ import { Icon, Sheet, Toggle, Field, Notice, kindIcon } from './ui.jsx';
 import { ScenesSettings } from './Scenes.jsx';
 import { OldAppSettings } from './Import.jsx';
 import { describeMonthDay } from '../../../server/src/lighting/schedule.js';
+import { HomeSettings } from '../HomeSettings.jsx';
 
 export function Settings({ state, run, go, old }) {
   const [cfg, setCfg] = useState(null);
@@ -61,6 +62,7 @@ export function Settings({ state, run, go, old }) {
         <h2>Settings</h2>
         <span className="saved" role="status">{savedMsg ? <><Icon name="check" size={16} />{savedMsg}</> : 'Changes save as you make them'}</span>
       </div>
+      <HomeSettings />
       {!cfg.connected && <Notice tone="warn">Not connected to Home Assistant, so the lists below may be empty. They fill in once it reconnects.</Notice>}
       {error && <Notice tone="error">{error}</Notice>}
 
@@ -113,19 +115,6 @@ export function Settings({ state, run, go, old }) {
 
       <ScenesSettings cfg={cfg} state={state} run={run} reload={load} form={form} set={set} />
 
-      <section className="card settings-section" aria-labelledby="set-auto-away">
-        <h3 id="set-auto-away">Away automatically</h3>
-        <p className="fine">
-          Away is one switch for the whole house. The people, delay and distance are set once, on the heating side, and the lights follow:
-          when everyone has been out for a while, the heating and the lights go to Away together, and back to Schedules when someone is on their way home.
-          While the heating is switched off, the lights still follow.
-        </p>
-        <p className="fine">
-          {state?.house?.presence?.enabled ? 'It\'s switched on.' : 'It\'s switched off at the moment.'}{' '}
-          <a href="#/settings/away">Change it in Heating settings</a>
-        </p>
-      </section>
-
       <section className="card settings-section" aria-labelledby="set-behave">
         <h3 id="set-behave">How it behaves</h3>
         <Toggle label="Notice changes made elsewhere" checked={form.detectManual} onChange={(v) => set('detectManual', v)}
@@ -164,7 +153,6 @@ export function Settings({ state, run, go, old }) {
             {cfg.candidates.suns.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.id})</option>)}
           </select>
         </Field>
-        <p className="fine">The Dashboard button at the top goes to the dashboard set in <a href="#/settings">Heating settings</a>.</p>
       </section>
 
 

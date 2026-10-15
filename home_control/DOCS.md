@@ -42,6 +42,20 @@ This needs you to be signed in to Home Assistant as an administrator (it asks Ho
 
 Lighting Control's own "Away automatically" setting isn't brought across, because Away is now shared (below). **Settings → Lighting Control app** lets you bring everything across again later, replacing what's here.
 
+## Settings → Home Control
+
+The top of the Settings page, on either side, has the settings for the whole app:
+
+- **What it looks after.** A switch for **Heating** and one for **Lighting**. Turn one off if something else looks after it (another heating app, Hue's own schedules, automations). Turning it off asks first, then:
+  - Heating: radiators and the boiler are handed back to their own schedules, as when the app stops. Nothing is sent to them after that, and knobs turned by hand are left alone.
+  - Lighting: lights and sockets stay as they are, and scenes or modes asked for by Home Assistant scripts are ignored.
+  - Its pages and settings are hidden, and its dashboard sensors are removed from Home Assistant.
+  - Everything you set up is kept. Turning it back on carries on where it left off; lights are left as they are until each group's next scheduled change.
+
+  At least one part has to stay on. With only one on, the Heating / Lighting switch at the top shows just that part's name.
+- **Dashboard button.** Where the Dashboard button at the top of every page goes.
+- **Away automatically.** The people, wait and distance for switching the house to Away from phone locations (below).
+
 ## Away for the whole house
 
 Away is one switch for the heating and the lights:
@@ -50,7 +64,7 @@ Away is one switch for the heating and the lights:
 - **Away on the Lighting page** puts the heating on Away too, and Schedules brings it back. Home Assistant scripts using `lighting_control_mode` do the same.
 - **Heating switched Off** (say for the summer) is left alone: Away on the Lighting page then only changes the lights. While the heating is off, the same people, wait and distance settings still switch the lights to Away when everyone's out and back when someone's on the way home.
 
-The people, wait and distance are set once, in **Heating → Settings → Away automatically**.
+The people, wait and distance are set once, in **Settings → Home Control → Away automatically**. If the heating is turned off there, they still switch the lights.
 
 In Away, every room drops to the away temperature, and lights stay off except groups set to look lived in.
 
@@ -95,7 +109,7 @@ The card opens the app wherever it is: the app writes its own address into the s
 
 ## Opening from a dashboard
 
-The Dashboard button at the top of either page goes back to the dashboard set in **Heating → Settings → Dashboard button**.
+The Dashboard button at the top of either page goes back to the dashboard set in **Settings → Home Control → Dashboard button**.
 
 To open Home from a dashboard, use the app's address. It's `/` followed by the app's name in Home Assistant, which is in the address bar when Home is open (for example `/bea84e52_home_control`), and it's shown in **Lighting → Settings → Getting started**:
 
