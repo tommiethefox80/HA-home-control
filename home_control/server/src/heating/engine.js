@@ -3,6 +3,7 @@
 import { EventEmitter } from 'node:events';
 import { scheduledAt, localWeekPosition, normaliseSchedule, defaultSchedule } from './schedule.js';
 import { detectOutsideEntity, readOutside } from './history.js';
+import { nextHeat, heatingUntil, outsideCurve, toFive } from './forecast.js';
 
 const num = (v) => {
   const n = typeof v === 'number' ? v : parseFloat(v);
@@ -33,6 +34,11 @@ export class Engine extends EventEmitter {
     this.callSince = {};           // zoneId -> { at, temp } when it started calling (stuck-radiator check)
     this.attention = [];
     this.startedAt = Date.now();
+    this.model = null;             // { k: { zoneId: k }, houseK, at }: how fast each room loses heat (roomstats.js)
+    this.outsideForecast = null;   // [{ t, temp }] hourly, from the weather entity
+    this.nextCache = {};           // zoneId -> { at, key, value }: when each room next needs heat
+    this.boilerNext = null;        // { at, rooms } when the boiler is off
+    this.boilerUntil = null;       // when it's on: about when the last room calling is warm
   }
 
   get s() { return this.store.data.settings; }
@@ -102,17 +108,21 @@ export class Engine extends EventEmitter {
   }
 
   // ---- target calculation ----
-  targetFor(zone, now = Date.now()) {
+  // `now` can be a time to come (for predicting when a room will next need heat): a hold or boost
+  // running out hands back to what was under it, and Away with an end time ends. Warming early
+  // depends on the room's temperature then, so a prediction leaves it out ({ preheat: false }).
+  targetFor(zone, now = Date.now(), { preheat = true } = {}) {
     const pos = localWeekPosition(new Date(now), this.ha.timeZone);
     const sched = scheduledAt(zone.schedule, pos);
-    const ov = this.rt.overrides[zone.id];
+    let ov = this.rt.overrides[zone.id];
+    if (ov && ov.until <= now && ov.prev?.until > now) ov = ov.prev;
     if (this.rt.mode === 'off') return { temp: this.s.frostTemp, source: 'off', sched };
     const win = this.rt.windowPause?.[zone.id];
     if (win && win.until > now) return { temp: this.s.frostTemp, source: 'window', until: win.until, sched };
     if (ov && ov.until > now) return { temp: ov.temp, source: ov.kind, until: ov.until, by: ov.by, forever: !!ov.forever, sched };
-    if (this.rt.mode === 'away') return { temp: this.s.awayTemp, source: 'away', until: this.rt.awayUntil, sched };
+    if (this.rt.mode === 'away' && !(this.rt.awayUntil && this.rt.awayUntil <= now)) return { temp: this.s.awayTemp, source: 'away', until: this.rt.awayUntil, sched };
     if (!sched) return { temp: this.s.frostTemp, source: 'no-schedule', sched };
-    const pre = this.#preheat(zone, sched, now);
+    const pre = preheat ? this.#preheat(zone, sched, now) : null;
     if (pre) return { temp: pre.temp, source: 'preheat', until: pre.until, readyBy: pre.readyBy, sched };
     return { temp: sched.temp, source: 'schedule', sched };
   }
@@ -126,10 +136,9 @@ export class Engine extends EventEmitter {
   // ---- warm by the scheduled time ----
   // Predicted warm-up speed (°/hour) for a room, scaled for how cold it is outside
   // compared with the conditions it was learned in.
-  warmRateFor(zone, target) {
+  warmRateFor(zone, target, out = this.outsideNow()) {
     const w = this.rt.warm?.[zone.id];
     if (!w?.rate || !w.samples) return null;
-    const out = this.outsideNow();
     if (out == null || w.gap == null) return w.rate;
     const gap = Math.max(2, target - out);
     return w.rate * Math.min(1.5, Math.max(0.6, w.gap / gap));
@@ -138,15 +147,76 @@ export class Engine extends EventEmitter {
   #preheat(zone, sched, now) {
     const p = this.s.preheat || {};
     if (!p.enabled || !sched?.next || sched.next.temp <= sched.temp) return null;
-    const rate = this.warmRateFor(zone, sched.next.temp);
-    if (!rate) return null;
     const current = this.currentTemp(zone);
     if (current == null) return null;
-    const needed = sched.next.temp - current;
-    if (needed <= 0.1) return null;
-    const lead = Math.min(Number(p.maxMinutes) || 120, (needed / rate) * 60 + 10);
-    if (sched.next.inMinutes > lead) return null;
+    if (sched.next.temp - current <= 0.1) return null;
+    const lead = this.preheatLead(zone, sched.next.temp, current);
+    if (lead == null || sched.next.inMinutes > lead) return null;
     return { temp: sched.next.temp, until: now + sched.next.inMinutes * 60000, readyBy: sched.next.time };
+  }
+
+  /** Minutes a room needs to warm from `from` to `to` (at most the setting's limit), or null if it hasn't learned. */
+  preheatLead(zone, to, from, out = this.outsideNow()) {
+    const p = this.s.preheat || {};
+    if (!p.enabled) return null;
+    const rate = this.warmRateFor(zone, to, out);
+    if (!rate) return null;
+    return Math.min(Number(p.maxMinutes) || 120, ((to - from) / rate) * 60 + 10);
+  }
+
+  // ---- when each room next needs heat, so when the boiler next fires ----
+  #nextFor(zone, v, views, now) {
+    if (!zone.enabled || v.current == null) return null;
+    if (v.calling) {
+      // its stop point as time goes on: the schedule (or a boost ending) can lower it
+      const stopAt = (t) => {
+        const target = v.source === 'preheat' && t < (v.until || 0) ? v.target : this.targetFor(zone, t, { preheat: false }).temp;
+        return target - this.stopMarginFor(zone, target);
+      };
+      const h = heatingUntil({ now, current: v.current, stopAt, rate: v.warmRate });
+      return { heating: true, until: h ? toFive(h.at) : null, warm: h ? h.warm : null, temp: h?.temp ?? null, path: h?.path || null };
+    }
+    // an always-open radiator is warming whenever the boiler runs for another room
+    if (this.openRadiator(zone) && views.some((o) => o.id !== zone.id && o.enabled && o.calling)) return { withOthers: true };
+    const own = this.model?.k?.[zone.id];
+    const k = own ?? this.model?.houseK ?? null;
+    const c = this.rt.coast?.[zone.id];
+    // just after a heat-up the radiators' leftover heat holds it up for a while
+    const settleUntil = c && !c.done && c.at ? c.at + 45 * 60000 : 0;
+    const r = nextHeat({
+      now, current: v.current, k, settleUntil,
+      outsideAt: outsideCurve(this.outsideForecast, this.outsideNow(), now),
+      targetAt: (t) => this.targetFor(zone, t, { preheat: false }),
+      startGapFor: (target) => this.startGapFor(this.stopMarginFor(zone, target)),
+      leadFor: (to, from, out) => this.preheatLead(zone, to, from, out),
+    });
+    return {
+      at: r.at ? toFive(r.at) : null, reason: r.reason, target: r.target ?? null, threshold: r.threshold ?? null,
+      readyBy: r.readyBy ?? null, temp: r.temp ?? null,
+      basis: own != null ? 'room' : k != null ? 'house' : 'none', k, path: r.path,
+    };
+  }
+
+  #forecast(views, now) {
+    for (const v of views) {
+      const zone = this.zones.find((z) => z.id === v.id);
+      const others = this.openRadiator(zone) && views.some((o) => o.id !== v.id && o.enabled && o.calling);
+      const key = [v.calling, v.target, v.source, v.current, v.stopAt, others, this.model?.at, this.outsideForecastAt].join('|');
+      const c = this.nextCache[v.id];
+      if (c && c.key === key && now - c.at < 60000) { v.next = c.value; continue; }
+      let value = null;
+      try { value = this.#nextFor(zone, v, views, now); } catch (e) { this.log(`${v.name}: couldn't work out when it next needs heat: ${e.message}`); }
+      this.nextCache[v.id] = { at: now, key, value };
+      v.next = value;
+    }
+    const upcoming = views.filter((v) => v.enabled && v.next?.at).sort((a, b) => a.next.at - b.next.at);
+    const first = upcoming[0];
+    this.boilerNext = !this.rt.boiler.on && first
+      ? { at: first.next.at, rooms: upcoming.filter((v) => v.next.at - first.next.at <= 10 * 60000).map((v) => v.name) }
+      : null;
+    const heating = views.filter((v) => v.enabled && v.calling);
+    this.boilerUntil = this.rt.boiler.on && heating.length && heating.every((v) => v.next?.until)
+      ? Math.max(...heating.map((v) => v.next.until)) : null;
   }
 
   // Learn warm-up speed from each heat-up that lasted at least 20 minutes.
@@ -355,6 +425,7 @@ export class Engine extends EventEmitter {
     if (this.ha.connected) this.#presence(now);
     const views = [];
     for (const zone of this.zones) views.push(this.#runZone(zone, now));
+    this.#forecast(views, now);
     this.views = views;
     if (this.ha.connected) await this.#runBoiler(views, now);
     this.#computeAttention(views, now);
@@ -658,6 +729,8 @@ export class Engine extends EventEmitter {
       available: !!st && !UNAVAILABLE.has(st.state),
       action: st?.attributes?.hvac_action || st?.state || null,
       lastSwitch: this.rt.boiler.lastSwitch || null,
+      next: this.boilerNext,    // off: about when it next fires, and for which rooms
+      until: this.boilerUntil,  // on: about when the last room calling is warm
     };
   }
 

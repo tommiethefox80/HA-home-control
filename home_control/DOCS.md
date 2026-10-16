@@ -76,13 +76,14 @@ In Away, every room drops to the away temperature, and lights stay off except gr
 
 ## Your dashboard
 
-The app keeps three sensors up to date in Home Assistant, for dashboards, automations and history:
+The app keeps these sensors up to date in Home Assistant, for dashboards, automations and history:
 
 | Sensor | State | Attributes |
 |---|---|---|
-| `sensor.home_heating` | Schedules, Away or Off | `boiler` ("Boiler on for Lounge"), `boiler_on`, `boiler_today` ("1h 30m"), `boiler_today_minutes`, `boiler_fires_today`, `mode_text`, `boost`, `attention`, and `rooms`: each room's `name`, `temp`, `target`, `calling` and `status` |
+| `sensor.home_heating` | Schedules, Away or Off | `boiler` ("Boiler resting, next on about 22:05"), `boiler_on`, `boiler_next` and `boiler_next_rooms` (when it should next fire, and for which rooms), `boiler_until` (while it's on, about when it'll be done), `boiler_today` ("1h 30m"), `boiler_today_minutes`, `boiler_fires_today`, `mode_text`, `boost`, `attention`, and `rooms`: each room's `name`, `temp`, `target`, `calling`, `status`, `next` ("Next heat about 22:05"), `next_why` ("as it cools to 20.7°"), `next_heat` and `heating_until` (times) |
 | `binary_sensor.home_boiler` | on while the boiler is firing | |
 | `sensor.home_boiler_today` | minutes the boiler has run today (resets at midnight; Home Assistant keeps daily statistics) | `fires`: how many times it started |
+| `sensor.home_boiler_next` | when the boiler should next fire (a timestamp; unknown while it's on, or if nothing needs heat in the next 24 hours) | `rooms`, `reason` ("as it cools to 20.7°"), `on_until` (while it's on) |
 | `sensor.home_lighting` | how many lights and sockets are on | `summary` ("3 lights on in Lounge and Kitchen"), `mode_text`, `paused`, `step`, and `groups`: each group's `name`, `on`, `level` ("45%"), `brightness`, `kelvin`, `status`, its `devices` and `turn_on` level for switching it from a dashboard, and `card` (show, season or hide) and `shown` (whether the card shows it today) |
 
 Both `sensor.home_heating` and `sensor.home_lighting` also have `panel`: the app's address in Home Assistant, for buttons that open it.
@@ -93,7 +94,7 @@ Home Assistant forgets them when it restarts; the app writes them again as soon 
 
 A dashboard card that shows the heating or the lighting at a glance, in the app's colours.
 
-- **Heating:** every room's temperature, what it's aiming for and why, and the boiler, with how long it has run today. Tap it to open the app.
+- **Heating:** every room's temperature, what it's aiming for and why, when it next heats ("Next heat about 22:05", or "Heating until about 21:15"), and the boiler, with when it next fires and how long it has run today. Tap it to open the app. Add `next: false` to leave out the next-heat lines.
 - **Lighting:** every group, with a power button and, where its lights dim, minus and plus (in the brightness step from Lighting settings). Switching on uses the level the group's schedule uses at that time of day. A change made here counts as a change in Home Assistant by whoever made it, so it lasts until the group's next scheduled change. Tap a group's name, or the title, to open the app.
 - **Which groups it shows:** each group has a **Dashboard** setting (Lighting → Settings → Edit the group): **Show**, **Hide**, or, for a group with a season, show only between its dates (Christmas lights only in December, say). Hidden groups still follow their schedules and are all still in the app.
 
@@ -169,6 +170,18 @@ Radiators keep giving off heat after they shut off, so a room can carry on warmi
 - **House setting**: use the single value under Settings → Temperatures.
 
 When a room stops calling early, its valves are turned down to the stop point too, so they close even if the boiler is still firing for another room. When the room needs heat again, they go back up to the target.
+
+### When each room heats next
+
+Every room card says when the room should next need heat, and so when the boiler should next fire for it: "Next heat about 22:05, once it's cooled to 20.7°", "Next heat about 05:50, to be 20° by 06:30", or while it's heating, "Heating until about 21:15". Its mini graph carries on from now as a dashed line, with a dot where it should start heating (or be warm). **Next heat**, beside the rooms, has the next time the boiler should fire and for which room (while it's on, **Boiler on until**). Tap a room for how it was worked out.
+
+It's worked out from:
+- how fast the room loses heat (measured from the last week, as in [Insights](#insights); a room still being measured goes by the house's other rooms), and the weather forecast from your weather entity (the outside reading now, easing into the forecast). A room cools faster the colder it is outside;
+- the room's targets as they'll be: its schedule, a hold or boost running out, Away ending;
+- the same rules the app heats by: a room starts heating once it's below its target by the start gap, earlier for a scheduled rise if it warms early, and the radiators' leftover heat holds a room up for a while after it stops;
+- for a room heating now, how fast it's learned it warms.
+
+It's a prediction: sun, cooking, people and doors move it, so it says "about". It looks a day ahead, and is worked out again every minute or so.
 
 ### Warm by the scheduled time
 

@@ -128,9 +128,7 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
       if (p === '/api/people' && req.method === 'GET') return json(res, 200, engine.presenceView(true)), true;
       // how each room warms, loses and holds heat: a week of history, so kept for 20 minutes
       if (p === '/api/insights/rooms' && req.method === 'GET') {
-        if (!roomStatsCache.data || Date.now() - roomStatsCache.at > 20 * 60000 || url.searchParams.has('fresh')) {
-          roomStatsCache = { at: Date.now(), data: await buildRoomStats(engine, { days: 7 }) };
-        }
+        if (!roomStatsCache.data || Date.now() - roomStatsCache.at > 20 * 60000 || url.searchParams.has('fresh')) await refreshModel();
         return json(res, 200, roomStatsCache.data), true;
       }
       if (p === '/api/insights' && req.method === 'GET') {
@@ -208,7 +206,54 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
     }
   }
 
-  function start() { engine.start(); }
+  // How fast each room loses heat (from a week of history) and the weather forecast: what the
+  // engine predicts each room's next heat from. Every half hour, and every two minutes until the
+  // first works (Home Assistant may still be starting).
+  async function refreshModel() {
+    const data = await buildRoomStats(engine, { days: 7 }).catch((e) => ({ error: e.message }));
+    roomStatsCache = { at: Date.now(), data };
+    if (data && !data.error) {
+      engine.model = { at: Date.now(), houseK: data.houseK, k: Object.fromEntries(data.rooms.filter((r) => r.loss?.k != null).map((r) => [r.id, r.loss.k])) };
+      engine.requestTick();
+    }
+    return data;
+  }
+  function forecastEntity() {
+    const s = store.data.settings;
+    if (s.outsideEntity?.startsWith('weather.')) return s.outsideEntity;
+    const auto = detectOutsideEntity(ha);
+    if (auto?.startsWith('weather.')) return auto;
+    for (const st of ha.states.values()) if (st.entity_id.startsWith('weather.') && st.attributes?.temperature != null) return st.entity_id;
+    return null;
+  }
+  async function refreshForecast() {
+    const id = forecastEntity();
+    if (!id) { engine.outsideForecast = null; return; }
+    for (const type of ['hourly', 'twice_daily']) {
+      try {
+        const r = await ha.send({ type: 'call_service', domain: 'weather', service: 'get_forecasts', service_data: { type }, target: { entity_id: id }, return_response: true }, 20000);
+        const list = (r?.response?.[id]?.forecast || [])
+          .map((f) => ({ t: Date.parse(f.datetime), temp: Number(f.temperature) }))
+          .filter((f) => Number.isFinite(f.t) && Number.isFinite(f.temp));
+        if (list.length) { engine.outsideForecast = list; engine.outsideForecastAt = Date.now(); engine.requestTick(); return; }
+      } catch { /* this weather entity doesn't give that kind of forecast */ }
+    }
+  }
+  let modelTimer = null;
+  async function modelLoop() {
+    if (!engine.disabled && ha.connected) {
+      await refreshModel().catch(() => {});
+      await refreshForecast().catch(() => {});
+    }
+    modelTimer = setTimeout(modelLoop, engine.model ? 30 * 60000 : 2 * 60000);
+    modelTimer.unref?.();
+  }
+
+  function start() {
+    engine.start();
+    modelTimer = setTimeout(modelLoop, 8000);
+    modelTimer.unref?.();
+  }
 
   async function shutdown() {
     try { store.flush(); } catch {}

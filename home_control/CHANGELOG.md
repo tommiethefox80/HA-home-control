@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.0
+- **When each room heats next.** Every room predicts when it'll next need heat, so when the boiler will next fire: from how fast the room loses heat (the figures from 1.8.0), the weather forecast, its schedule, and the rules the app heats by (the start gap, warming early, leftover radiator heat).
+  - Room cards: "Next heat about 22:05, once it's cooled to 20.7°", "Next heat about 04:30, to be 20° by 06:30", or while heating, "Heating until about 21:15" (or "when its target drops"). The mini graph carries on from now as a dashed line, with a dot where it should start heating.
+  - **Next heat** beside the rooms: the boiler's next start and for which room (and the one after), or while it's on, **Boiler on until**. The boiler at the top says it too ("Boiler resting, next on about 22:05").
+  - Each room's page says how it was worked out ("It's losing about 0.6° an hour now, with 7.8° outside").
+  - Dashboard card: a "Next heat about 22:05" line under each room, and the boiler's next start in the heading (`next: false` leaves the room lines out).
+  - New `sensor.home_boiler_next` (a timestamp) for dashboards and automations, and `boiler_next`, `boiler_until` and each room's `next_heat` on `sensor.home_heating`.
+
 ## 1.8.1
 - **Settings is one menu for the whole app.** **General** is at the top (what it looks after, Away automatically, the Dashboard button), then a group for each part that's on: Heating, Lighting, Cameras and Wi-Fi, each split into short pages (Heating: Rooms, Boiler, Temperatures, Warm by the scheduled time, Open windows, How it behaves, Phone alerts, Room cards, Gas cost and outside, History).
   - On a computer or tablet the menu is on the left with the page beside it; the other parts' groups fold away until opened. On a phone the menu is a list and each page opens on its own, with **All settings** to go back.

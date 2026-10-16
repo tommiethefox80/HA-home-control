@@ -60,6 +60,12 @@ await step('dashboard sensors: heating, boiler and lighting are written to Home 
   assert.equal(bt.attributes.unit_of_measurement, 'min');
   assert.equal(bt.attributes.state_class, 'total_increasing');
   assert.ok(pub['sensor.home_lighting'], 'sensor.home_lighting written');
+  // when the boiler next fires: a timestamp sensor, unknown while it's on
+  const bn = pub['sensor.home_boiler_next'];
+  assert.ok(bn, 'sensor.home_boiler_next written');
+  assert.equal(bn.attributes.device_class, 'timestamp');
+  assert.equal(bn.state, 'unknown');
+  assert.ok(h.attributes.rooms.every((r) => 'next' in r && 'next_heat' in r), 'rooms carry their next heat');
   // a mode change shows within a couple of seconds, not at the next slow refresh
   await heat('POST', 'mode', { mode: 'off' });
   await sleep(2500);

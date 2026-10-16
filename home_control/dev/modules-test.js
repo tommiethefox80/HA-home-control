@@ -38,7 +38,7 @@ await step('heating off: radiators handed back, sensors removed, nothing more se
   const c = await calls();
   assert.ok(c.some((x) => x.domain === 'climate' && x.service === 'set_hvac_mode' && x.data.hvac_mode === 'auto'), `handed back: ${JSON.stringify(c)}`);
   const pub = (await mock('GET', '/published')).states;
-  assert.ok(!pub['sensor.home_heating'] && !pub['binary_sensor.home_boiler'] && !pub['sensor.home_boiler_today'], `still there: ${Object.keys(pub)}`);
+  assert.ok(!pub['sensor.home_heating'] && !pub['binary_sensor.home_boiler'] && !pub['sensor.home_boiler_today'] && !pub['sensor.home_boiler_next'], `still there: ${Object.keys(pub)}`);
   assert.ok(pub['sensor.home_lighting'], 'lighting sensor kept');
   // a knob turned by hand is no business of ours now, and nothing is sent back
   await mock('POST', '/reset-calls');

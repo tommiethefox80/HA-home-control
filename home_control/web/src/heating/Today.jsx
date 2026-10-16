@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, deg } from './lib.js';
+import { api, deg, fmtTime } from './lib.js';
 
 // ---------- data ----------
 export function useToday(enabled) {
@@ -31,6 +31,45 @@ const hm = (mins) => (mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${mins 
 const clock = (t, tz) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(t));
 
 // ---------- side cards ----------
+const list = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+const NEXT_WHY = {
+  cooling: (n) => `as it cools to ${deg(n.threshold)}`,
+  preheat: (n) => `warming for ${n.readyBy}`,
+  schedule: (n) => `up to ${deg(n.target)}`,
+  change: (n) => `back to ${deg(n.target)}`,
+};
+
+/** When the boiler next fires (predicted from each room), or while it's on, about when it'll be done. */
+function NextHeat({ state }) {
+  const b = state.boiler;
+  const tz = state.timeZone;
+  if (!b.entity) return null;
+  const rooms = state.zones.filter((z) => z.enabled);
+  if (b.on) {
+    const heating = rooms.filter((z) => z.calling).map((z) => z.name);
+    return (
+      <section className="stat" aria-label="Boiler on until">
+        <h2>Boiler on until</h2>
+        <p className="stat-num num">{b.until ? fmtTime(b.until, tz) : '–'}</p>
+        <p className="stat-sub">{heating.length ? `${b.until ? 'About then: ' : ''}${list(heating)} warming${b.until ? '' : '; learning how fast'}` : 'Finishing its minimum run'}</p>
+      </section>
+    );
+  }
+  const up = rooms.filter((z) => z.next?.at).sort((x, y) => x.next.at - y.next.at);
+  const learning = rooms.some((z) => z.next && !z.next.at && z.next.basis === 'none');
+  const [first, second] = up;
+  return (
+    <section className="stat" aria-label="Next heat">
+      <h2>Next heat</h2>
+      <p className="stat-num num">{first ? fmtTime(first.next.at, tz) : '–'}</p>
+      <p className="stat-sub">
+        {first
+          ? <>About then: {first.name} {NEXT_WHY[first.next.reason]?.(first.next) || ''}{second ? <>, then {second.name} {fmtTime(second.next.at, tz)}</> : ''}</>
+          : learning ? 'Learning how fast each room cools' : 'Not needed in the next 24 hours'}
+      </p>
+    </section>
+  );
+}
 export function SideCards({ state, today }) {
   const ex = state.extras || {};
   const outsideSeries = (today?.outside?.series || []).filter((v) => v != null);
@@ -56,6 +95,7 @@ export function SideCards({ state, today }) {
           </>
         ) : <p className="stat-sub"><a href="#/settings/boiler">Choose your boiler in Settings</a></p>}
       </section>
+      <NextHeat state={state} />
       <section className="stat" aria-label="Outside">
         <h2>Outside</h2>
         {ex.outside ? (

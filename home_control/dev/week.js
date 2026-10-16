@@ -26,6 +26,10 @@ for (const [k, d] of Object.entries(sim.days)) {
   days[k] = { boilerMin: d.boilerMin, outSum: d.outSum, outN: d.outN, rooms: Object.fromEntries(Object.entries(d.rooms).filter(([n]) => idOf[n]).map(([n, r]) => [idOf[n], r])) };
 }
 fs.writeFileSync(path.join(DATA, 'daily.json'), JSON.stringify({ days }));
+// and how fast each room warms up, as the app would have learned it
+heating.runtime ||= {};
+heating.runtime.warm = { ...(heating.runtime.warm || {}), ...Object.fromEntries(Object.entries(sim.warm || {}).filter(([n]) => idOf[n]).map(([n, w]) => [idOf[n], w])) };
+fs.writeFileSync(path.join(DATA, 'heating.json'), JSON.stringify(heating, null, 2));
 
 // start it again, as dev/run.sh does
 const media = path.join(DATA, 'media');

@@ -2,6 +2,7 @@
 //   sensor.home_heating    state: Schedules / Away / Off; attributes: boiler, every room
 //   binary_sensor.home_boiler   on while the boiler is firing (device_class heat)
 //   sensor.home_boiler_today    minutes the boiler has run today
+//   sensor.home_boiler_next     when the boiler should next fire (a prediction; unknown while it's on)
 //   sensor.home_lighting   state: how many lights and sockets are on; attributes: every group
 // The Home Control card (dashboard/home-control-card.js) draws these; any other card can use them too.
 //
@@ -66,18 +67,40 @@ function baseStatus(z, tz) {
 }
 
 const hm = (mins) => (mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}`);
+const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
+
+/** When a room next needs heat (the app's prediction), short for a dashboard card. */
+export function nextText(z, tz) {
+  const n = z.next;
+  if (!z.enabled || !n) return null;
+  if (z.calling) return n.until ? `Heating until about ${clock(n.until, tz)}` : null;
+  if (n.withOthers) return 'Warming with the other rooms';
+  if (!n.at) return null;
+  return `Next heat ${n.reason === 'schedule' ? '' : 'about '}${clock(n.at, tz)}`;
+}
+
+/** Why, to go with it. */
+export function nextWhy(z) {
+  const n = z.next;
+  if (!z.enabled || !n) return null;
+  if (z.calling) return n.until ? (n.warm ? `when it reaches ${deg(z.stopAt)}` : 'when its target drops') : null;
+  if (!n.at) return null;
+  return { cooling: `as it cools to ${deg(n.threshold)}`, preheat: `to be ${deg(n.target)} by ${n.readyBy}`, schedule: `its schedule goes up to ${deg(n.target)}`, change: `back to ${deg(n.target)}` }[n.reason] || null;
+}
 
 export function heatingState(snap, today = null, panel = null) {
   const tz = snap.timeZone;
   const rooms = snap.zones.map((z) => ({
     id: z.id, name: z.name, temp: round1(z.current), target: round1(z.target),
     calling: !!z.calling, enabled: z.enabled !== false, status: roomStatus(z, tz),
+    next: nextText(z, tz), next_why: nextWhy(z), next_heat: iso(!z.calling && z.next?.at), heating_until: iso(z.calling && z.next?.until),
   }));
   const b = snap.boiler;
   const calling = snap.zones.filter((z) => z.calling).map((z) => z.name);
   const boiler = !b.entity ? 'No boiler chosen yet'
     : !b.available ? 'Boiler control offline'
-      : b.on ? (calling.length ? `Boiler on for ${list(calling)}` : 'Boiler finishing its minimum run') : 'Boiler resting';
+      : b.on ? (calling.length ? `Boiler on for ${list(calling)}${b.until ? ` until about ${clock(b.until, tz)}` : ''}` : 'Boiler finishing its minimum run')
+        : `Boiler resting${b.next ? `, next on about ${clock(b.next.at, tz)}` : ''}`;
   const mode = snap.mode;
   let modeText = MODE_NAME[mode] || mode;
   if (mode === 'away' && snap.awayUntil) modeText = `Away until ${clock(snap.awayUntil, tz, true)}`;
@@ -91,6 +114,10 @@ export function heatingState(snap, today = null, panel = null) {
       away_auto: !!snap.presence?.auto,
       boiler_on: !!b.on,
       boiler,
+      // predicted: when it next fires (and for which rooms), or while it's on, about when it's done
+      boiler_next: iso(!b.on && b.next?.at),
+      boiler_next_rooms: !b.on && b.next ? b.next.rooms : [],
+      boiler_until: iso(b.on && b.until),
       // today's run time, as on the app's "Boiler today" card
       boiler_today_minutes: today ? today.minutes : null,
       boiler_today: today ? hm(today.minutes) : null,
@@ -112,6 +139,23 @@ export function boilerTodayState(today) {
       friendly_name: 'Boiler today', icon: 'mdi:fire-circle',
       unit_of_measurement: 'min', device_class: 'duration', state_class: 'total_increasing',
       fires: today.fires,
+    },
+  };
+}
+
+/** When the boiler should next fire: a timestamp sensor, for dashboards and automations. */
+export function boilerNextState(snap) {
+  const b = snap.boiler;
+  const at = !b.on && b.next?.at ? b.next.at : null;
+  const z = at ? snap.zones.find((x) => x.next?.at === at && b.next.rooms.includes(x.name)) : null;
+  const why = z ? nextWhy(z) : null;
+  return {
+    state: at ? new Date(at).toISOString() : 'unknown',
+    attributes: {
+      friendly_name: 'Boiler next on', icon: 'mdi:fire-alert', device_class: 'timestamp',
+      rooms: at ? b.next.rooms : [],
+      reason: why,
+      on_until: b.on && b.until ? new Date(b.until).toISOString() : null,
     },
   };
 }
@@ -169,7 +213,7 @@ export function lightingState(snap, panel = null) {
   };
 }
 
-const ENTITIES = { heating: ['sensor.home_heating', 'binary_sensor.home_boiler', 'sensor.home_boiler_today'], lighting: ['sensor.home_lighting'], cameras: ['sensor.home_cameras'], wifi: ['sensor.home_wifi'] };
+const ENTITIES = { heating: ['sensor.home_heating', 'binary_sensor.home_boiler', 'sensor.home_boiler_today', 'sensor.home_boiler_next'], lighting: ['sensor.home_lighting'], cameras: ['sensor.home_cameras'], wifi: ['sensor.home_wifi'] };
 
 /** sensor.home_cameras: how many cameras are online; every camera's state, for dashboards. */
 export function camerasState(snap, panel = null) {
@@ -292,6 +336,7 @@ export function createPublisher({ restBase, token, log, heating, lighting, camer
         const today = await heating.boilerToday?.().catch(() => null);
         await write('sensor.home_heating', heatingState(snap, today, panel()));
         await write('binary_sensor.home_boiler', boilerState(snap));
+        await write('sensor.home_boiler_next', boilerNextState(snap));
         if (today) await write('sensor.home_boiler_today', boilerTodayState(today));
       } else if (kind === 'cameras') {
         if (cameras) await write('sensor.home_cameras', camerasState(cameras.snapshot(), panel()));

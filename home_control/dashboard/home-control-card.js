@@ -8,10 +8,11 @@
 //   type: custom:home-control-card
 //   show: heating            # or: lighting, cameras or wifi
 //   panel: /local_heating_control   # optional: where the Home app is (the app says, from 1.3)
+//   next: false              # heating: leave out each room's "Next heat about 22:05" line
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.8.1';
+const VERSION = '1.9.0';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 
@@ -61,6 +62,7 @@ const ICON = {
   bulb: `<svg viewBox="0 0 24 24" ${P}><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>`,
   chev: `<svg viewBox="0 0 24 24" ${P}><path d="M9 6l6 6-6 6"/></svg>`,
   alert: `<svg viewBox="0 0 24 24" ${P}><path d="M12 4 2.8 19.5h18.4L12 4Z"/><path d="M12 10v4.5M12 17.2v.3"/></svg>`,
+  clock: `<svg viewBox="0 0 24 24" ${P}><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>`,
   power: `<svg viewBox="0 0 24 24" ${P} stroke-width="2"><path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>`,
   minus: `<svg viewBox="0 0 24 24" ${P} stroke-width="2"><path d="M5 12h14"/></svg>`,
   plus: `<svg viewBox="0 0 24 24" ${P} stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`,
@@ -99,6 +101,10 @@ const STYLE = `
   .rname { font-weight: 600; color: var(--primary-text-color); font-size: .95rem; display: flex; align-items: center; gap: 6px; }
   .rname svg { width: 15px; height: 15px; color: rgb(238 132 52); }
   .rstatus { font-size: .8rem; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rnext { font-size: .8rem; color: var(--primary-text-color); display: flex; align-items: center; gap: 5px; margin-top: 1px; min-width: 0; }
+  .rnext svg { width: 13px; height: 13px; flex: none; color: var(--secondary-text-color); }
+  .rnext span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rnext.hot svg { color: rgb(238 132 52); }
   .temps { text-align: right; display: flex; align-items: baseline; gap: 8px; }
   .now { font-size: 1.45rem; font-weight: 650; color: var(--primary-text-color); line-height: 1; }
   .target { font-size: .8rem; font-weight: 650; padding: 3px 8px; border-radius: 8px; color: var(--primary-text-color); }
@@ -444,6 +450,7 @@ class HomeControlCard extends HTMLElement {
         <div style="min-width:0">
           <div class="rname">${esc(r.name)}${r.calling ? ICON.flame : ''}</div>
           <div class="rstatus" title="${esc(r.status)}">${esc(r.status)}</div>
+          ${r.next && this._config.next !== false ? `<div class="rnext${r.calling ? ' hot' : ''}" title="${esc(`${r.next}${r.next_why ? `, ${r.next_why}` : ''} (predicted)`)}">${r.calling ? ICON.flame : ICON.clock}<span>${esc(r.next)}</span></div>` : ''}
         </div>
         <div class="temps">
           <span class="now num">${deg(r.temp)}</span>

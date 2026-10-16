@@ -12,7 +12,10 @@ export const hm = (mins) => (mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h
 const times = (n) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
 
 // show: { spark, fires } from Settings → Room cards. Either can be off; with both off nothing shows.
-export default function DaySpark({ room, today, tz, current, show = { spark: true, fires: true } }) {
+// next: when the room next needs heat (from the app's prediction): its expected temperature from now
+// is drawn dashed to the end of the day, with a mark where it should start heating (or, while it's
+// heating, where it should be done).
+export default function DaySpark({ room, today, tz, current, next = null, show = { spark: true, fires: true } }) {
   const [hv, setHv] = useState(null);
   const d = useMemo(() => {
     if (!room || !today?.dayStart) return null;
@@ -24,15 +27,22 @@ export default function DaySpark({ room, today, tz, current, show = { spark: tru
     if (current != null && now > start && now < start + DAY && (!pts.length || now > pts[pts.length - 1].t)) pts.push({ t: now, v: current });
     if (pts.length < 2) return null;
     const vals = pts.map((p) => p.v);
-    let lo = Math.min(...vals);
-    let hi = Math.max(...vals);
+    // what's expected from now until midnight
+    const end = start + DAY;
+    const fore = now < end && pts.length ? [pts[pts.length - 1], ...(next?.path || []).filter(([t]) => t > now && t <= end).map(([t, v]) => ({ t, v, predicted: true }))] : [];
+    const markAt = next?.at || next?.until;
+    const mark = markAt && markAt > now && markAt <= end && fore.length > 1 ? { t: markAt, v: fore[fore.length - 1].v, fire: !!next.at } : null;
+    const all = [...vals, ...fore.map((p) => p.v)];
+    let lo = Math.min(...all);
+    let hi = Math.max(...all);
     if (hi - lo < 3) { const mid = (hi + lo) / 2; lo = mid - 1.5; hi = mid + 1.5; }
     const x = (t) => ((t - start) / DAY) * 1440; // viewBox x is minutes of the day
     const y = (v) => 3 + (1 - (v - lo) / (hi - lo)) * (H - 9);
     const path = pts.map((p, k) => `${k ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
     const calls = (room.calls || []).map(([a, b]) => [Math.max(a, start), b]).filter(([a, b]) => b > a);
-    return { start, pts, path, calls, x, y, lo: Math.min(...vals), hi: Math.max(...vals) };
-  }, [room, today, current]);
+    const forePath = fore.length > 1 ? fore.map((p, k) => `${k ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join('') : null;
+    return { start, pts: [...pts, ...fore.slice(1)], path, forePath, mark, calls, x, y, lo: Math.min(...vals), hi: Math.max(...vals) };
+  }, [room, today, current, next]);
 
   const showSpark = show.spark !== false;
   const showFires = show.fires !== false;
@@ -60,7 +70,7 @@ export default function DaySpark({ room, today, tz, current, show = { spark: tru
     const t = d.start + f * DAY;
     let best = d.pts[0];
     for (const p of d.pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
-    setHv({ ...best, f: (best.t - d.start) / DAY, heating: d.calls.some(([a, b]) => best.t >= a && best.t <= b) });
+    setHv({ ...best, f: (best.t - d.start) / DAY, heating: !best.predicted && d.calls.some(([a, b]) => best.t >= a && best.t <= b) });
   };
 
   return (
@@ -79,11 +89,16 @@ export default function DaySpark({ room, today, tz, current, show = { spark: tru
             </g>
           ))}
           <path className="spark-line" d={d.path} />
+          {d.forePath && <path className="spark-fore" d={d.forePath} />}
           {hv && <line className="spark-cross" x1={hv.f * 1440} x2={hv.f * 1440} y1="0" y2={H} />}
         </svg>
+        {d.mark && (
+          <span className={`spark-mark${d.mark.fire ? ' fire' : ''}`} style={{ left: `${(d.x(d.mark.t) / 1440) * 100}%`, top: `${d.y(d.mark.v)}px` }}
+            title={`${d.mark.fire ? 'Should start heating' : 'Should be warm'} about ${clock(d.mark.t, tz)}`} />
+        )}
         {hv && (
           <div className="spark-tip" style={{ left: `${Math.min(Math.max(hv.f, 0.14), 0.86) * 100}%` }} role="status">
-            {clock(hv.t, tz)} · <b>{deg(hv.v)}</b>{hv.heating ? ' · heating' : ''}
+            {clock(hv.t, tz)} · <b>{deg(hv.v)}</b>{hv.predicted ? ' · expected' : hv.heating ? ' · heating' : ''}
           </div>
         )}
       </div>

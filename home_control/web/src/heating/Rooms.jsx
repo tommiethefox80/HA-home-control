@@ -39,6 +39,55 @@ export function waitLine(z) {
     : <>Not heating yet: heats again below <b>{deg(z.startAt)}</b></>;
 }
 
+/**
+ * When a room next needs heat (so when the boiler fires for it), short for the card. Predicted by
+ * the app from how fast the room loses heat, the weather forecast and its schedule.
+ */
+export function nextLine(z, tz) {
+  const n = z.next;
+  if (!z.enabled || !n) return waitLine(z);
+  const at = n.at ? fmtTime(n.at, tz) : null;
+  if (z.calling) return n.until ? <>Heating until about <b>{fmtTime(n.until, tz)}</b>{n.warm ? <>, when it reaches {deg(z.stopAt)}</> : ', when its target drops'}</> : null;
+  if (n.withOthers) return <>Warming while the boiler runs for other rooms</>;
+  if (z.waiting && (!at || n.reason === 'cooling')) {
+    const when = at ? <>, about <b>{at}</b></> : null;
+    return z.coasting
+      ? <>Leftover heat should carry it to {deg(z.target)}. Heats again below <b>{deg(z.startAt)}</b>{when}</>
+      : <>Not heating yet: heats again below <b>{deg(z.startAt)}</b>{when}</>;
+  }
+  if (!at) return null;
+  if (n.reason === 'preheat') return <>Next heat about <b>{at}</b>, to be {deg(n.target)} by {n.readyBy}</>;
+  if (n.reason === 'schedule') return <>Next heat <b>{at}</b>, when its schedule goes up to {deg(n.target)}</>;
+  if (n.reason === 'change') return <>Next heat about <b>{at}</b>, back to {deg(n.target)}</>;
+  return <>Next heat about <b>{at}</b>, once it's cooled to {deg(n.threshold)}</>;
+}
+
+/** How the prediction was made, for the room's own page. `out`: the outside temperature now. */
+function nextWhy(z, tz, out) {
+  const n = z.next;
+  if (!z.enabled || !n) return null;
+  if (z.calling) {
+    if (!n.until) return 'Heating now. Once it has learned how fast it warms, this says when it should be done.';
+    return n.warm
+      ? `Heating now. At the speed it's learned (about ${deg(z.warmRate)} an hour) it should reach ${deg(z.stopAt)}, where it stops, about ${fmtTime(n.until, tz)}.`
+      : `Heating now, until its target drops about ${fmtTime(n.until, tz)}. At the speed it's learned (about ${deg(z.warmRate)} an hour) it should be about ${deg(n.temp)} by then.`;
+  }
+  if (n.withOthers) return 'Its radiator is always open, so it\'s warming while the boiler runs for the other rooms.';
+  const rate = n.k && out != null && z.current > out ? Math.round(n.k * (z.current - out) * 10) / 10 : null;
+  const cools = n.k
+    ? `${rate != null ? `It's losing about ${deg(rate)} an hour now, with ${deg(out)} outside, a little less as it cools` : 'It cools towards the outside temperature'}${n.basis === 'house' ? ' (going by the house\'s other rooms until its own rate is worked out)' : ''}.`
+    : '';
+  if (!n.at) return n.k ? `${cools} It shouldn't need heat in the next 24 hours.` : 'Still learning how quickly it cools: a prediction appears once it\'s had some time with the heating off (overnight is ideal).';
+  const at = fmtTime(n.at, tz);
+  const then = n.temp != null ? ` It should be about ${deg(n.temp)} by then.` : '';
+  switch (n.reason) {
+    case 'preheat': return `Next heat about ${at}, so it's ${deg(n.target)} by ${n.readyBy}.${then} ${cools}`;
+    case 'schedule': return `Next heat at ${at}, when its schedule goes up to ${deg(n.target)}.${then} ${cools}`;
+    case 'change': return `Next heat about ${at}, when it goes back to ${deg(n.target)}.${then} ${cools}`;
+    default: return `Next heat about ${at}, when it should have cooled to ${deg(n.threshold)}, where it starts heating. ${cools} Sun, cooking or a door left open can move it.`;
+  }
+}
+
 /** The same, in full, for the room's own page. */
 function waitWhy(z) {
   if (!z.waiting || z.startAt == null) return null;
@@ -117,9 +166,9 @@ function RoomCard({ z, state, onOpen, notify, today }) {
           </button>
         )}
       </div>
-      {pending == null && waitLine(z) && <div className="wait"><Icon.clock /><span>{waitLine(z)}</span></div>}
+      {pending == null && nextLine(z, tz) && <div className="wait"><Icon.clock /><span>{nextLine(z, tz)}</span></div>}
       {z.warnings.length > 0 && <div className="warn">{z.warnings.join('. ')}</div>}
-      {z.enabled && <DaySpark room={today?.rooms?.find((r) => r.id === z.id)} today={today} tz={tz} current={z.current} show={state.settings.cards} />}
+      {z.enabled && <DaySpark room={today?.rooms?.find((r) => r.id === z.id)} today={today} tz={tz} current={z.current} next={pending == null ? z.next : null} show={state.settings.cards} />}
       <Ribbon schedule={state.schedules[z.id]} day={nowLocal(tz).day} tz={tz} showNow />
     </article>
   );
@@ -199,6 +248,7 @@ function RoomSheet({ z, state, onClose, notify }) {
     <Sheet onClose={onClose} label={z.name}>
       <h2>{z.name}</h2>
       <p className="lede">{deg(z.current)} now. {statusLine(z, tz)}.{waitWhy(z) ? ` ${waitWhy(z)}` : z.coasting ? ` Heat stopped at ${deg(z.stopAt)}; the radiators' leftover heat should carry it to ${deg(z.target)}.` : ''}</p>
+      {nextWhy(z, tz, state.extras?.outside?.now) && <p className="lede next-why"><Icon.clock />{nextWhy(z, tz, state.extras?.outside?.now)}</p>}
       {overridden && !blocked && (
         <div className="actions back-row">
           <button className="btn primary" disabled={busy} onClick={cancel}>

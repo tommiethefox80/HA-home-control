@@ -27,7 +27,8 @@ function BoilerChip({ state }) {
   return (
     <span className={`boiler${b.on ? ' on' : ''}`} role="status">
       <Icon.flame />
-      {b.on ? (calling.length ? `Boiler on for ${list(calling)}` : 'Boiler finishing its minimum run') : 'Boiler resting'}
+      {b.on ? (calling.length ? `Boiler on for ${list(calling)}${b.until ? ` until about ${fmtTime(b.until, state.timeZone)}` : ''}` : 'Boiler finishing its minimum run')
+        : `Boiler resting${b.next ? `, next on about ${fmtTime(b.next.at, state.timeZone)}` : ''}`}
     </span>
   );
 }

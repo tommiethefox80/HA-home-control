@@ -318,7 +318,7 @@ function fireEvent(type, data, context = { id: randomUUID(), parent_id: null, us
 // days), and keep warming a little after the heat goes off (leftover radiator heat). Lounge holds
 // its heat well; Bedroom loses it faster. What each room called for, and a daily log like the app's,
 // are at GET /sim-log, so a test can give the app the week it would have recorded.
-const SIM = { calls: { Lounge: [], Bedroom: [] }, days: {} };
+const SIM = { calls: { Lounge: [], Bedroom: [] }, days: {}, warm: {} };
 function simulateWeek(end) {
   const start = end - 7 * 86400000; const step = 5 * 60000; const Hr = 3600000;
   const DAY_SHIFT = [3, 0, -3, -1, 2, -2, 1, 0];
@@ -340,7 +340,13 @@ function simulateWeek(end) {
     let any = false;
     for (const r of rooms) {
       r.calling = r.calling ? r.T < target : r.T < target - 0.3;
-      if (r.calling) { any = true; if (!r.open) r.open = t; } else if (r.open) { SIM.calls[r.name].push([r.open, t]); r.open = null; }
+      if (r.calling) { any = true; if (!r.open) { r.open = t; r.from = { T: r.T, out, target }; } } else if (r.open) {
+        SIM.calls[r.name].push([r.open, t]);
+        // its warm-up speed, as the app learns it (heat-ups of 20 minutes or more)
+        const mins = (t - r.open) / 60000;
+        if (mins >= 20 && r.T - r.from.T >= 0.3) (r.ups ||= []).push({ rate: (r.T - r.from.T) / (mins / 60), gap: r.from.target - r.from.out });
+        r.open = null;
+      }
       // the radiator warms over ~15 min while heating and cools over ~25 min after
       r.rad = r.calling ? Math.min(1, r.rad + step / (15 * 60000)) : r.rad * Math.exp(-step / (25 * 60000));
       const heatRate = r.heat * (1 - r.cold * (12 - out) / 2); // °/h at full radiator: slower on colder days
@@ -359,6 +365,14 @@ function simulateWeek(end) {
     history.push({ entity: 'climate.heating', t, s: 'heat', a: { hvac_action: any ? 'heating' : 'idle', temperature: any ? 30 : 7 } });
   }
   for (const r of rooms) if (r.open) SIM.calls[r.name].push([r.open, end]);
+  for (const r of rooms) {
+    const ups = r.ups || [];
+    if (ups.length) SIM.warm[r.name] = { rate: Math.round((ups.reduce((a, u) => a + u.rate, 0) / ups.length) * 100) / 100, gap: Math.round((ups.reduce((a, u) => a + u.gap, 0) / ups.length) * 10) / 10, samples: ups.length, history: [] };
+  }
+  // the same weather carries on into the forecast, and is what it's like outside now
+  SIM.outsideAt = outsideAt;
+  const w = states.get('weather.home');
+  if (w) w.attributes = { ...w.attributes, temperature: Math.round(outsideAt(end) * 10) / 10 };
 }
 
 // ---------- synthetic history for the last day ----------
@@ -518,6 +532,19 @@ wss.on('connection', (ws) => {
           if (service === 'set_temperature') setTimeout(() => setState(id, { attrs: { temperature: d.temperature } }, context), 200);
           if (service === 'set_hvac_mode') setTimeout(() => setState(id, { state: d.hvac_mode }, context), 200);
           return;
+        }
+        // weather.get_forecasts (with return_response): the simulated week's weather carried on
+        if (domain === 'weather' && service === 'get_forecasts') {
+          const id = m.target?.entity_id || d.entity_id;
+          if (!states.has(id)) return reply(null, false, { code: 'not_found', message: `Entity ${id} not found` });
+          if (!m.return_response) return reply(null, false, { code: 'service_validation_error', message: 'Service call requires responses but caller did not ask for responses' });
+          if (d.type !== 'hourly') return reply(null, false, { code: 'home_assistant_error', message: `Weather entity '${id}' does not support '${d.type}' forecast` });
+          const first = Math.ceil(Date.now() / 3600000) * 3600000;
+          const forecast = Array.from({ length: 48 }, (_, i) => {
+            const t = first + i * 3600000;
+            return { datetime: new Date(t).toISOString(), condition: 'cloudy', temperature: Math.round((SIM.outsideAt ? SIM.outsideAt(t) : 10) * 10) / 10 };
+          });
+          return reply({ context: { id: randomUUID() }, response: { [id]: { forecast } } });
         }
         if (domain === 'notify') {
           calls.push({ at: Date.now(), domain, service, data: d });
