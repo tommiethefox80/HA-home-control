@@ -75,6 +75,7 @@ add('zone.home', { friendly_name: 'Home', latitude: 53.26, longitude: -2.52, rad
 const PICTURES = new URL('./cameras/', import.meta.url).pathname;
 const MEDIA = process.env.MOCK_MEDIA_DIR || new URL('./data/media/', import.meta.url).pathname;
 const cameraPicture = {};
+const pictureMode = {}; // camera -> 'live' | 'still' | 'none' (see camera_proxy)
 function addCameraDevice(slug, name, { manufacturer, model, platform, area, stream = true, picture, camera, extras = [] }) {
   const device_id = `dev_cam_${slug}`;
   devices.push({ id: device_id, area_id: area, name, manufacturer, model, name_by_user: null });
@@ -303,8 +304,16 @@ const server = createServer(async (req, res) => {
     if (!/^Bearer \S+/.test(req.headers.authorization || '') && !/token=/.test(cp[2] || '')) { res.writeHead(401); return res.end(); }
     const st = states.get(cp[1]);
     if (!st || !cameraPicture[cp[1]]) { res.writeHead(404); return res.end(); }
-    if (st.state === 'unavailable') { res.writeHead(500); return res.end(); }
-    const buf = fs.readFileSync(path.join(PICTURES, cameraPicture[cp[1]]));
+    // live: a new picture each time (as a real camera's are); still: the same saved one; none: no answer.
+    // A camera Home Assistant shows as unavailable gives none, unless told otherwise (/picture).
+    const mode = pictureMode[cp[1]] || (st.state === 'unavailable' ? 'none' : 'live');
+    if (mode === 'none') { res.writeHead(500); return res.end(); }
+    let buf = fs.readFileSync(path.join(PICTURES, cameraPicture[cp[1]]));
+    if (mode === 'live') {
+      const note = Buffer.from(`mock ${Date.now()} ${Math.random()}`);
+      const com = Buffer.from([0xff, 0xfe, 0, 0]); com.writeUInt16BE(note.length + 2, 2); // a JPEG comment
+      buf = Buffer.concat([buf.subarray(0, 2), com, note, buf.subarray(2)]);
+    }
     res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': buf.length });
     return res.end(buf);
   }
@@ -398,6 +407,8 @@ wss.on('connection', (ws) => {
           const st = states.get(d.entity_id);
           if (!st) return reply(null, false, { code: 'not_found', message: `Entity ${d.entity_id} not found` });
           if (!String(d.filename || '').startsWith(MEDIA)) return reply(null, false, { code: 'home_assistant_error', message: `Cannot write \`${d.filename}\`, no access to path; \`allowlist_external_dirs\` may need to be adjusted in \`configuration.yaml\`` });
+          // as Home Assistant: a camera it shows as unavailable is quietly skipped
+          if (st.state === 'unavailable') return reply({ context: { id: randomUUID() } });
           if (service === 'record' && !(st.attributes.supported_features & 2)) return reply(null, false, { code: 'home_assistant_error', message: `${d.entity_id} does not support record service` });
           const from = service === 'snapshot' ? path.join(PICTURES, cameraPicture[d.entity_id]) : path.join(PICTURES, 'clip.mp4');
           // as Home Assistant: a picture straight away; a clip is written, and the call answered, once it's finished
@@ -470,6 +481,7 @@ createServer(async (req, res) => {
   if (req.url === '/knob') { setState(body.entity, { attrs: { temperature: body.temperature } }); return done({ ok: true }); }
   if (req.url === '/bounce') { const st = states.get(body.entity); st._bounces = body.times; st._silent = !!body.silent; st._bounceDelay = body.delay ?? 600; return done({ ok: true }); }
   if (req.url === '/lag') { const st = states.get(body.entity); st._lag = { at: body.at, value: body.value }; return done({ ok: true }); }
+  if (req.url === '/picture') { if (body.mode) pictureMode[body.entity] = body.mode; else delete pictureMode[body.entity]; return done({ ok: true }); }
   if (req.url === '/freeze') { frozen = true; return done({ ok: true }); }
   if (req.url === '/unfreeze') { frozen = false; return done({ ok: true }); }
   if (req.url === '/fire') { fireEvent(body.event_type, body.data || {}); return done({ ok: true }); }

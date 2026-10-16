@@ -9,7 +9,7 @@ const VIDEO = { '.mp4': 'video/mp4', '.jpg': 'image/jpeg' };
 
 export function createCameras({ client, dataDir, log, house, restBase, token, mediaDir, haMediaDir, panel }) {
   const store = new Store(dataDir, log);
-  const engine = new Engine({ ha: client, store, log, house, mediaDir, haMediaDir, panel });
+  const engine = new Engine({ ha: client, store, log, house, mediaDir, haMediaDir, panel, picture: getPicture });
   const snapshot = () => ({ ...engine.snapshot(), dashboardPath: house?.view?.()?.dashboardPath || '/' });
 
   // ---------- live updates ----------
@@ -56,21 +56,29 @@ export function createCameras({ client, dataDir, log, house, restBase, token, me
     } catch { return []; }
   }
 
-  /** A picture from the camera now, through Home Assistant (any make of camera). */
-  async function picture(res, id, url) {
-    const cam = engine.camera(id);
-    const width = Math.min(1920, Math.max(160, Number(url.searchParams.get('width')) || 0)) || null;
+  /** A picture from the camera now, from Home Assistant's camera proxy (any make of camera; it answers
+   *  even for a camera it shows as unavailable). */
+  async function getPicture(entity, width) {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 15000);
     try {
-      const r = await fetch(`${restBase}/camera_proxy/${cam.entity}${width ? `?width=${width}` : ''}`, { headers: { Authorization: `Bearer ${token}` }, signal: ctl.signal });
-      if (!r.ok) { res.writeHead(r.status === 404 ? 404 : 502, { 'Cache-Control': 'no-store' }); return res.end(); }
-      const buf = Buffer.from(await r.arrayBuffer());
-      res.writeHead(200, { 'Content-Type': r.headers.get('content-type') || 'image/jpeg', 'Content-Length': buf.length, 'Cache-Control': 'no-store' });
-      res.end(buf);
+      const r = await fetch(`${restBase}/camera_proxy/${entity}${width ? `?width=${width}` : ''}`, { headers: { Authorization: `Bearer ${token}` }, signal: ctl.signal });
+      if (!r.ok) return { status: r.status };
+      return { status: 200, type: r.headers.get('content-type') || 'image/jpeg', buf: Buffer.from(await r.arrayBuffer()) };
+    } finally { clearTimeout(t); }
+  }
+
+  async function picture(res, id, url) {
+    const cam = engine.camera(id);
+    const width = Math.min(1920, Math.max(160, Number(url.searchParams.get('width')) || 0)) || null;
+    try {
+      const pic = await getPicture(cam.entity, width);
+      if (!pic.buf) { res.writeHead(pic.status === 404 ? 404 : 502, { 'Cache-Control': 'no-store' }); return res.end(); }
+      res.writeHead(200, { 'Content-Type': pic.type, 'Content-Length': pic.buf.length, 'Cache-Control': 'no-store' });
+      res.end(pic.buf);
     } catch {
       res.writeHead(504, { 'Cache-Control': 'no-store' }); res.end();
-    } finally { clearTimeout(t); }
+    }
   }
 
   /** A saved clip or picture, with byte ranges so clips can be skipped through. */

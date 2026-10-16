@@ -10,6 +10,7 @@
 //   own schedule: always, when everyone's out, between set times, either, or never
 // - a camera that goes offline for a while is reported, and again when it's back
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { zonedParts } from '../lighting/schedule.js';
@@ -50,11 +51,13 @@ const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const TS = Number(process.env.HC_TIME_SCALE) || 1; // tests run minutes as fractions of a second
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'camera';
 const MAX_EVENTS = 600;
+const LIVE_FOR = 3 * 60000;     // pictures that changed this recently mean the camera is working
+const PROBE_EVERY = 60000;      // how often to look at the pictures of a camera Home Assistant says is down
 
 export class UserError extends Error { constructor(msg, status = 400) { super(msg); this.status = status; } }
 
 export class Engine extends EventEmitter {
-  constructor({ ha, store, log, house, mediaDir, haMediaDir, panel }) {
+  constructor({ ha, store, log, house, mediaDir, haMediaDir, panel, picture }) {
     super();
     this.ha = ha;
     this.store = store;
@@ -64,6 +67,8 @@ export class Engine extends EventEmitter {
     this.mediaDir = mediaDir;      // where this app sees recordings
     this.haMediaDir = haMediaDir;  // the same folder as Home Assistant sees it
     this.panel = panel || (() => null);
+    this.fetchPicture = picture || null; // (entity, width) => { status, buf } from Home Assistant's camera proxy
+    this.pics = new Map();         // camera id -> { hash, at, liveAt, busy } while Home Assistant says it's down
     this.states = new Map();
     this.reg = { entities: new Map(), devices: new Map() };
     this.tz = 'UTC';
@@ -83,11 +88,12 @@ export class Engine extends EventEmitter {
     this.ha.on('state_changed', (d) => this._onState(d));
     this.ha.on('disconnected', () => { this.ready = false; this.changed(); });
     this.timer = setInterval(() => this._checkOffline(), Math.max(200, 30000 * TS));
+    this.probeTimer = setInterval(() => this._probeAll(), Math.max(100, 15000 * TS));
     this.cleanTimer = setInterval(() => this.cleanUp(), 3600000);
     setTimeout(() => this.cleanUp(), 60000);
   }
 
-  stop() { clearInterval(this.timer); clearInterval(this.cleanTimer); this.store.flush(); }
+  stop() { clearInterval(this.timer); clearInterval(this.probeTimer); clearInterval(this.cleanTimer); this.store.flush(); }
 
   changed() { this.emit('change'); }
 
@@ -228,10 +234,10 @@ export class Engine extends EventEmitter {
       && (this.states.get(r.entity_id)?.attributes?.device_class || r.original_device_class) === 'connectivity')?.entity_id || null;
   }
 
-  /** Why a camera counts as offline (null when it's online), in words for the page. */
-  offlineReason(cam) {
+  /** What Home Assistant says is wrong with the camera (null when nothing is), in words for the page. */
+  haReason(cam) {
     const st = this.states.get(cam.entity);
-    if (!st) return { entity: cam.entity, text: `Home Assistant doesn't have ${cam.entity} any more (renamed or removed?)` };
+    if (!st) return { entity: cam.entity, missing: true, text: `Home Assistant doesn't have ${cam.entity} any more (renamed or removed?)` };
     if (st.state === 'unavailable') return { entity: cam.entity, text: `Home Assistant shows the camera (${cam.entity}) as unavailable` };
     const conn = this.connectivity(cam);
     const cs = conn && this.states.get(conn);
@@ -242,7 +248,64 @@ export class Engine extends EventEmitter {
     return null;
   }
 
+  /** Pictures that keep changing mean the camera is working, whatever Home Assistant shows: some
+   *  integrations mark a working camera unavailable (UniFi Protect can). The same picture over and
+   *  over is a saved one, which some cloud cameras hand out while they're offline, so doesn't count. */
+  picturesLive(cam, ms = Date.now()) {
+    const p = this.pics.get(cam.id);
+    return !!p?.liveAt && ms - p.liveAt < LIVE_FOR * TS;
+  }
+
+  /** Why a camera counts as offline (null when it's online). */
+  offlineReason(cam) {
+    const why = this.haReason(cam);
+    if (!why) return null;
+    if (!why.missing && this.picturesLive(cam)) return null;
+    return why;
+  }
+
   isOnline(cam) { return !this.offlineReason(cam); }
+
+  async _probe(cam) {
+    if (!this.fetchPicture) return;
+    const p = this.pics.get(cam.id) || {};
+    this.pics.set(cam.id, p);
+    if (p.busy) return;
+    p.busy = true;
+    try {
+      const pic = await this.fetchPicture(cam.entity, 320);
+      if (pic?.buf?.length) {
+        const hash = createHash('sha1').update(pic.buf).digest('hex');
+        if (p.hash && p.hash !== hash) p.liveAt = Date.now();
+        p.hash = hash;
+      }
+    } catch { /* no picture */ } finally { p.busy = false; p.at = Date.now(); p.n = (p.n || 0) + 1; }
+    if (this.data.cameras.includes(cam)) this._recheck(cam);
+  }
+
+  /** Home Assistant has just said a camera's down: look at its pictures twice, a few seconds apart. */
+  _checkPictures(cam) {
+    const p = this.pics.get(cam.id);
+    if (!this.fetchPicture || (p && (p.busy || Date.now() - (p.at || 0) < 10000 * TS))) return;
+    this._probe(cam).then(() => setTimeout(() => this._probe(cam).catch(() => {}), 4000 * TS)).catch(() => {});
+  }
+
+  _probeAll(ms = Date.now()) {
+    if (!this.ready || this.disabled) return;
+    for (const cam of this.data.cameras) {
+      const why = this.haReason(cam);
+      if (!why || why.missing) { this.pics.delete(cam.id); continue; }
+      const p = this.pics.get(cam.id);
+      if (!p || (!p.busy && ms - (p.at || 0) >= PROBE_EVERY * TS)) this._probe(cam).catch(() => {});
+      else this._recheck(cam, ms); // pictures that have stopped changing
+    }
+  }
+
+  _recheck(cam, ms = Date.now()) {
+    const was = this.offline.has(cam.id);
+    this._trackOnline(cam, ms);
+    if (was !== this.offline.has(cam.id)) this.changed();
+  }
 
   makeOf(entity) {
     const dev = this.deviceOf(entity);
@@ -278,7 +341,7 @@ export class Engine extends EventEmitter {
     this.data.cameras.push(cam);
     this.reindex();
     this.addEvent(cam, 'note', `${cam.name} added.`);
-    this._trackOnline(cam, Date.now(), true);
+    this._trackOnline(cam, Date.now(), true, true);
     this.store.save();
     this.changed();
     return cam;
@@ -328,6 +391,8 @@ export class Engine extends EventEmitter {
     this.data.cameras = this.data.cameras.filter((c) => c !== cam);
     this.store.data.cameras = this.data.cameras;
     this.offline.delete(id);
+    this.pics.delete(id);
+    if (this.data.toldOffline) delete this.data.toldOffline[id];
     this.reindex();
     this.store.save();
     this.changed();
@@ -475,6 +540,14 @@ export class Engine extends EventEmitter {
     if (recording) await recording.then(() => { this.store.save(); this.changed(); });
   }
 
+  /** "07:16" today, "Sun 11 Oct, 07:16" before that. */
+  sinceText(at, ms = Date.now()) {
+    const day = (t) => new Intl.DateTimeFormat('en-GB', { timeZone: this.tz, dateStyle: 'short' }).format(new Date(t));
+    if (day(at) === day(ms)) return this.clock(at);
+    const d = new Intl.DateTimeFormat('en-GB', { timeZone: this.tz, weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(at)).replace(',', '');
+    return `${d}, ${this.clock(at)}`;
+  }
+
   clock(ms) {
     return new Intl.DateTimeFormat('en-GB', { timeZone: this.tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
   }
@@ -498,6 +571,18 @@ export class Engine extends EventEmitter {
     (this.busyClip ||= new Map()).set(cam.id, `${name}.mp4`);
     ev.picture = `${name}.jpg`;
     ev.clip = `${name}.mp4`;
+    if (this.states.get(cam.entity)?.state === 'unavailable') {
+      // Home Assistant quietly skips a camera it shows as unavailable, so save its picture from here
+      ev.clip = null;
+      this.busyUntil.delete(cam.id);
+      try {
+        const pic = this.fetchPicture && await this.fetchPicture(cam.entity, null);
+        if (!pic?.buf?.length) throw new Error(`Home Assistant gave no picture (${pic?.status ?? 'no answer'})`);
+        fs.writeFileSync(path.join(dir, ev.picture), pic.buf);
+      } catch (err) { ev.picture = null; this._recordFailed(cam, `no picture: ${err.message}`, ms); }
+      this._recordFailed(cam, `no clip: Home Assistant shows the camera (${cam.entity}) as unavailable, so it won't record from it`, ms);
+      return;
+    }
     const picture = this.ha.callService('camera', 'snapshot', { entity_id: cam.entity, filename: `${haDir}/${name}.jpg` })
       .catch((err) => { ev.picture = null; this._recordFailed(cam, `no picture: ${err.message}`, ms); });
     // the call lasts as long as the clip, so allow for that
@@ -511,7 +596,8 @@ export class Engine extends EventEmitter {
     if (ms - last < 3600000) return; // say so once an hour at most
     this.recordWarned.set(cam.id, ms);
     const hint = /allowlist|no access to path/i.test(why) ? ' Home Assistant isn\'t allowed to save there: add the media folder to allowlist_external_dirs.'
-      : /does not support (record|play stream)/i.test(why) ? ' This camera doesn\'t give Home Assistant a video stream it can save, so only pictures are kept.' : '';
+      : /does not support (record|play stream)/i.test(why) ? ' This camera doesn\'t give Home Assistant a video stream it can save, so only pictures are kept.'
+        : /as unavailable/.test(why) ? ' Pictures are still saved. Reloading the camera\'s integration in Home Assistant (Settings → Devices & services) usually puts this right.' : '';
     this.addEvent(cam, 'note', `Couldn't save ${why.startsWith('no picture') ? 'a picture' : 'a clip'} from ${cam.name}: ${why.replace(/^no (picture|clip): /, '')}.${hint}`);
   }
 
@@ -540,17 +626,26 @@ export class Engine extends EventEmitter {
 
   // ---------- offline ----------
 
-  _trackOnline(cam, ms, quiet = false) {
+  /** quiet: starting up or just added, so offline since whenever the entity behind it last changed.
+   *  added: offline when it was added, so the phones aren't told (the page shows it). */
+  _trackOnline(cam, ms, quiet = false, added = false) {
     const why = this.offlineReason(cam);
     const online = !why;
+    if (why && !why.missing && !this.disabled) this._checkPictures(cam);
     const o = this.offline.get(cam.id);
-    // on start-up, offline since whenever the entity behind it last changed
-    if (!online && !o) this.offline.set(cam.id, { since: quiet ? (Date.parse(this.states.get(why.entity)?.last_changed) || ms) : ms, alerted: false });
+    // kept over restarts, so phones are told once: when they were told, or 'added' for one added while offline
+    const told = this.data.toldOffline || (this.data.toldOffline = {});
+    if (!online && !o) {
+      if (added) { told[cam.id] = 'added'; this.store.save(); }
+      this.offline.set(cam.id, { since: quiet ? (Date.parse(this.states.get(why.entity)?.last_changed) || ms) : ms, alerted: !!told[cam.id], told: typeof told[cam.id] === 'number' });
+    }
     if (online && o) {
       this.offline.delete(cam.id);
-      if (o.alerted && !this.disabled) {
+      if (told[cam.id]) { delete told[cam.id]; this.store.save(); }
+      if (o.told && !this.disabled) {
         const mins = Math.round((ms - o.since) / 60000);
-        this.addEvent(cam, 'online', `${cam.name} is back online after ${mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${mins % 60} min`}.`);
+        const took = mins < 60 ? `${mins} min` : mins < 48 * 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${Math.round(mins / 1440)} days`;
+        this.addEvent(cam, 'online', `${cam.name} is back online after ${took}.`);
         if (cam.offline) this.notify(cam, `Back online at ${this.clock(ms)}.`).catch(() => {});
       }
     }
@@ -563,9 +658,14 @@ export class Engine extends EventEmitter {
     for (const cam of this.data.cameras) {
       const o = this.offline.get(cam.id);
       if (!o || o.alerted || ms - o.since < after) continue;
+      // Home Assistant says it's down: wait until its pictures have been looked at twice
+      const p = this.pics.get(cam.id);
+      if (this.fetchPicture && !this.haReason(cam)?.missing && (p?.n || 0) < 2) continue;
       o.alerted = true;
-      this.addEvent(cam, 'offline', `${cam.name} has been offline since ${this.clock(o.since)}.`);
-      if (cam.offline) this.notify(cam, `Offline since ${this.clock(o.since)}.`).catch(() => {});
+      o.told = true;
+      (this.data.toldOffline ||= {})[cam.id] = o.since;
+      this.addEvent(cam, 'offline', `${cam.name} has been offline since ${this.sinceText(o.since, ms)}.`);
+      if (cam.offline) this.notify(cam, `Offline since ${this.sinceText(o.since, ms)}.`).catch(() => {});
       this.store.save();
       this.changed();
     }
@@ -618,11 +718,13 @@ export class Engine extends EventEmitter {
     const lastEv = this.data.events.find((e) => e.camera === cam.id && e.type === 'movement');
     const o = this.offline.get(cam.id);
     const why = this.offlineReason(cam);
+    const ha = this.haReason(cam);
     return {
       id: cam.id, entity: cam.entity, name: cam.name, ...this.makeOf(cam.entity),
       online: !why,
       offlineSince: o?.since || null,
       offlineWhy: why?.text || null,
+      haSays: !why && ha ? ha.text : null, // Home Assistant says it's down, but its pictures are coming through
       state: st?.state || 'unavailable',
       movingNow: used.some((m) => !m.event && this.states.get(m.id)?.state === 'on'),
       lastMovement: lastEv ? { at: lastEv.at, text: lastEv.text, kind: lastEv.kind } : null,

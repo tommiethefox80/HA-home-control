@@ -371,7 +371,11 @@ Alerts say what was seen, most specific first: "Someone at the door", "Person se
 
 **Offline cameras**: a camera that's been offline for a while (5 minutes to start with) is reported to the same phones, and again when it's back. A camera can be left out of these in its own settings.
 
-A camera counts as offline when Home Assistant shows it as unavailable, or when its own integration's "connected" sensor (Amcrest, Axis and Hikvision cameras have one) says it's disconnected. The Cameras page says which, under **Offline** on the camera and in its **Camera settings**. Sensors from other integrations that Home Assistant has put on the same device, such as a network tracker, don't count.
+A camera counts as offline when Home Assistant shows it as unavailable, or when its own integration's "connected" sensor (Amcrest, Axis and Hikvision cameras have one) says it's disconnected, and its pictures have stopped coming. The Cameras page says which, under **Offline** on the camera and in its **Camera settings**. Sensors from other integrations that Home Assistant has put on the same device, such as a network tracker, don't count.
+
+Some integrations (UniFi Protect among them) can show a camera as unavailable while it's working. When Home Assistant says a camera is down, Home Control looks at its pictures every minute: while they keep changing, the camera counts as online and its Camera settings say what Home Assistant shows. Home Assistant won't record from a camera it shows as unavailable, so until it shows it as working again only pictures are saved, and Activity says so. Reloading the camera's integration (Settings → Devices & services) usually puts it right.
+
+Phones are told about an offline camera once, even if Home Control restarts in between. A camera that's already offline when you add it isn't reported.
 
 ## Recordings
 

@@ -11,7 +11,7 @@
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.6.1';
+const VERSION = '1.6.2';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 
@@ -418,7 +418,7 @@ class HomeControlCard extends HTMLElement {
   _picture(c) {
     const cs = this._hass?.states?.[c.entity];
     const base = cs?.attributes?.entity_picture;
-    if (!base || cs.state === 'unavailable') return null;
+    if (!base || !c.online) return null; // the app's view: pictures can come through for a camera Home Assistant calls unavailable
     this._pics ??= {};
     const cached = this._pics[c.entity];
     if (!cached || cached.base !== base) this._pics[c.entity] = { base, url: `${base}${base.includes('?') ? '&' : '?'}t=${Date.now()}` };

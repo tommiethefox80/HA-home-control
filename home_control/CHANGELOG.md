@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.2
+- A camera Home Assistant shows as unavailable, but whose pictures keep coming through, now counts as working. UniFi Protect can mark a working camera unavailable; Home Control now looks at the pictures before calling a camera offline (a picture that never changes, as some cloud cameras give while offline, doesn't count). Its Camera settings explain what Home Assistant shows and what to do.
+- Home Assistant won't take pictures or clips from a camera it shows as unavailable, so in that case Home Control saves the picture itself, and Activity says why there's no clip.
+- Phones are no longer told about an offline camera again after Home Control restarts or updates, or about a camera that was already offline when it was added.
+- Offline alerts for a camera that's been down since before today give the day ("Offline since Sun 11 Oct, 07:16").
+- The dashboard card shows pictures from a camera Home Control counts as working, even when Home Assistant calls it unavailable.
+
 ## 1.6.1
 - Fixed a camera showing as offline while it was working, when another integration had added its own "connected" sensor to the camera's device in Home Assistant (UniFi Protect cameras could show this). Only the camera itself, or its own integration's connected sensor, now decides.
 - An offline camera now says why: on its picture on the Cameras page, in its Camera settings and in the Settings list (for example "Home Assistant shows the camera as unavailable").

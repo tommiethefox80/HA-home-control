@@ -201,6 +201,11 @@ function ControlsSheet({ cam, run, onClose, go, groups }) {
     <Sheet title={cam.name} subtitle={[cam.make, cam.model].filter(Boolean).join(' ') || null} onClose={onClose}
       footer={<button type="button" className="btn btn-quiet" onClick={() => { onClose(); go('settings', cam.id); }}>Alerts and recording for {cam.name}</button>}>
       {!cam.online && <p className="cam-why-note"><Icon name="warn" size={16} /> <span>Offline: {cam.offlineWhy || 'Home Assistant has no picture from it'}.</span></p>}
+      {cam.online && cam.haSays && (
+        <p className="cam-why-note"><Icon name="warn" size={16} />
+          <span>{cam.haSays}, but its pictures are coming through, so it counts as online. Until Home Assistant shows it as working again, it won't record clips from it (pictures are still saved). Reloading the camera's integration in Home Assistant (Settings → Devices &amp; services) usually puts this right.</span>
+        </p>
+      )}
       {!byGroup.length && <p className="fine">This camera doesn't have any settings Home Assistant can change. Alerts and recording still work.</p>}
       {byGroup.map((g) => (
         <section key={g.id} className="sheet-section">
@@ -360,6 +365,7 @@ function Settings({ state, run, edit, go }) {
                   Alerts {c.alerts.on ? whenText(c.alerts) : 'off'}; saving clips {whenText(c.record)}.
                 </span>
                 {!c.online && <span className="warn-text" title={c.offlineWhy || ''}><Icon name="warn" size={14} /> Offline{c.offlineWhy ? `: ${c.offlineWhy}` : ''}</span>}
+                {c.online && c.haSays && <span className="warn-text"><Icon name="warn" size={14} /> Working, but {c.haSays}: pictures only, no clips</span>}
               </div>
               <div className="group-li-actions">
                 <button type="button" className="icon-btn" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${c.name} up`}><Icon name="up" /></button>

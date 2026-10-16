@@ -30,13 +30,23 @@ let passed = 0;
 async function step(name, fn) { process.stdout.write(`- ${name} ... `); await fn(); passed++; console.log('ok'); }
 
 fs.rmSync(path.join(MEDIA, 'home_control'), { recursive: true, force: true });
-const app = spawn('node', [path.join(HERE, '../server/src/index.js')], {
-  env: { ...process.env, HA_URL: 'http://localhost:8123', HA_TOKEN: 'dev', DATA_DIR: DATA, PORT: '8097', MEDIA_DIR: MEDIA, HA_MEDIA_DIR: MEDIA, HC_TIME_SCALE: '0.02', HA_CONFIG_DIR: path.join(DATA, 'none') },
-  stdio: ['ignore', fs.openSync(path.join(DATA, 'app.log'), 'a'), fs.openSync(path.join(DATA, 'app.log'), 'a')],
-});
+let app;
+async function startApp() {
+  app = spawn('node', [path.join(HERE, '../server/src/index.js')], {
+    env: { ...process.env, HA_URL: 'http://localhost:8123', HA_TOKEN: 'dev', DATA_DIR: DATA, PORT: '8097', MEDIA_DIR: MEDIA, HA_MEDIA_DIR: MEDIA, HC_TIME_SCALE: '0.02', HA_CONFIG_DIR: path.join(DATA, 'none') },
+    stdio: ['ignore', fs.openSync(path.join(DATA, 'app.log'), 'a'), fs.openSync(path.join(DATA, 'app.log'), 'a')],
+  });
+  for (let i = 0; i < 40; i++) { try { await fetch(`${APP}/api/house`); break; } catch { await sleep(250); } }
+  await sleep(1500);
+}
+async function restartApp() {
+  const gone = new Promise((r) => app.once('exit', r));
+  app.kill();
+  await gone;
+  await startApp();
+}
 process.on('exit', () => { try { app.kill(); } catch { /* gone */ } });
-for (let i = 0; i < 40; i++) { try { await fetch(`${APP}/api/house`); break; } catch { await sleep(250); } }
-await sleep(1500);
+await startApp();
 
 await step('cameras start off, and say nothing to Home Assistant until turned on', async () => {
   assert.equal((await j('GET', `${APP}/api/house`)).modules.cameras, false);
@@ -215,18 +225,81 @@ await step('offline means the camera, or its own "connected" sensor, not another
   let by = Object.fromEntries(st.cameras.map((c) => [c.id, c]));
   assert.equal(by.garden.online, true, `a "disconnected" sensor from another integration doesn't count: ${by.garden.offlineWhy}`);
   assert.equal(by.garden.offlineWhy, null);
+  await mock('POST', '/picture', { entity: 'camera.driveway_fluent', mode: 'none' }); // as a disconnected camera
   await sensor('binary_sensor.driveway_online', 'off');
   await sleep(300);
   by = Object.fromEntries((await cam('GET', 'state')).cameras.map((c) => [c.id, c]));
   assert.equal(by.driveway.online, false, 'the camera\'s own one does');
   assert.match(by.driveway.offlineWhy, /"Online" \(binary_sensor\.driveway_online\) says it's disconnected/);
   await sensor('binary_sensor.driveway_online', 'on');
+  await mock('POST', '/picture', { entity: 'camera.driveway_fluent', mode: null });
   await sensor('camera.shed', 'unavailable');
   await sleep(300);
   by = Object.fromEntries((await cam('GET', 'state')).cameras.map((c) => [c.id, c]));
   assert.equal(by.driveway.online, true);
   assert.match(by.shed.offlineWhy, /shows the camera \(camera\.shed\) as unavailable/);
   await sensor('camera.shed', 'idle');
+});
+
+await step('Home Assistant calls a camera unavailable, but its pictures keep coming: working, pictures saved, no false alarm', async () => {
+  const CAM = 'camera.garden_high_resolution_channel';
+  await cam('PUT', 'settings', { offlineMinutes: 1 }); // 1.2 s here
+  await cam('PUT', 'cameras/garden', { alerts: { when: 'never' }, record: { when: 'always' }, movement: null });
+  await sleep(1000); // any clip from before has finished
+  await mock('POST', '/reset-calls');
+  await mock('POST', '/picture', { entity: CAM, mode: 'live' });
+  await sensor(CAM, 'unavailable');
+  await sleep(3000); // past the offline wait
+  let g = (await cam('GET', 'state')).cameras.find((c) => c.id === 'garden');
+  assert.equal(g.online, true, g.offlineWhy);
+  assert.match(g.haSays, /shows the camera \(camera\.garden_high_resolution_channel\) as unavailable/);
+  assert.equal((await calls('notify')).length, 0, 'no offline alert');
+  // Home Assistant would quietly skip it, so the picture is saved from here; no clip, and Activity says why
+  await sensor('binary_sensor.garden_motion', 'on'); await sleep(2500); await sensor('binary_sensor.garden_motion', 'off');
+  const items = (await cam('GET', 'activity?camera=garden')).items;
+  const mv = items.find((e) => e.type === 'movement');
+  assert.ok(mv.picture, 'picture saved');
+  assert.equal(mv.clip, null);
+  assert.ok((await fetch(`${APP}/api/cameras/media/garden/${mv.picture}`)).ok);
+  assert.ok(items.some((e) => /won't record from it\. Pictures are still saved\. Reloading/.test(e.text)), items.map((e) => e.text).join(' | '));
+  assert.equal((await calls('camera')).length, 0, 'not asked to record from a camera it would skip');
+  // the same picture over and over is a saved one: offline once the pictures stop changing, and the phones are told
+  await mock('POST', '/picture', { entity: CAM, mode: 'still' });
+  await sleep(9000);
+  g = (await cam('GET', 'state')).cameras.find((c) => c.id === 'garden');
+  assert.equal(g.online, false);
+  let n = (await calls('notify')).filter((c) => c.data.title === 'Garden');
+  assert.equal(n.length, 1, JSON.stringify(n));
+  assert.match(n[0].data.message, /^Offline since \d\d:\d\d\.$/);
+  await mock('POST', '/picture', { entity: CAM, mode: null });
+  await sensor(CAM, 'idle');
+  await sleep(800);
+  n = (await calls('notify')).filter((c) => c.data.title === 'Garden');
+  assert.match(n[1]?.data.message || '', /^Back online/);
+});
+
+await step('a camera offline when it\'s added isn\'t alerted, and an alert isn\'t repeated after a restart', async () => {
+  await mock('POST', '/reset-calls');
+  await cam('DELETE', 'cameras/shed');
+  await sensor('camera.shed', 'unavailable');
+  await cam('POST', 'cameras', { entity: 'camera.shed' });
+  await sleep(2500);
+  assert.equal((await calls('notify')).length, 0);
+  assert.equal((await cam('GET', 'state')).cameras.find((c) => c.id === 'shed').online, false);
+  await sensor('camera.shed', 'idle');
+  await sleep(500);
+  assert.equal((await calls('notify')).length, 0, 'nothing to say it\'s back either');
+  // offline, told once; the app restarts (an update, say) while it's still offline: not told again
+  const offline = async () => (await calls('notify')).filter((c) => /^Offline since/.test(c.data.message));
+  await sensor('camera.shed', 'unavailable');
+  await sleep(2500);
+  assert.equal((await offline()).length, 1);
+  await restartApp();
+  await sleep(2500);
+  assert.equal((await offline()).length, 1, 'not told again after a restart');
+  await sensor('camera.shed', 'idle');
+  await sleep(800);
+  assert.match((await calls('notify')).at(-1).data.message, /^Back online/);
 });
 
 await step('the dashboard sensor lists every camera and the settings chosen for the card', async () => {
