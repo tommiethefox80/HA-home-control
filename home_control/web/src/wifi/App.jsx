@@ -228,6 +228,10 @@ function ApCard({ d, state, run, go, ask }) {
         <strong>{d.online ? d.clients : '–'}</strong>
         <span>{d.online ? (d.clients === 1 ? 'device connected' : 'devices connected') : d.switchedOff ? 'switched off here' : 'not connected'}</span>
       </button>
+      {state.settings.clients?.aps && d.online && (
+        <ClientList list={state.clients.filter((c) => c.connected && c.apMac === d.mac)} total={d.clients}
+          detail={(c) => [c.network, c.band].filter(Boolean).join(' · ')} label={`Devices on ${d.name}`} />
+      )}
       {lineBits.length > 0 && <p className="fine wifi-ap-line">{lineBits.join(' · ')}</p>}
       {d.update && <p className="fine wifi-ap-line"><Icon name="restart" size={14} /> Firmware {d.update === 'available' ? 'update' : d.update} available (install it from the UniFi app or Home Assistant)</p>}
       <div className="cam-actions">
@@ -238,6 +242,38 @@ function ApCard({ d, state, run, go, ask }) {
         {d.restart && <button type="button" className="cam-chip" onClick={() => ask({ kind: 'restart', d })} disabled={!d.online}><Icon name="restart" size={18} /><span>Restart</span></button>}
       </div>
     </article>
+  );
+}
+
+/** The devices connected to an access point or a network, a few at a time. */
+function ClientList({ list, total, detail, label }) {
+  const SHOW = 6;
+  const [all, setAll] = useState(false);
+  const sorted = useMemo(() => [...list].sort((a, b) => a.name.localeCompare(b.name)), [list]);
+  // the access point's or network's own count can include devices Home Assistant isn't tracking
+  const untracked = Math.max(0, (total ?? list.length) - list.length);
+  if (!list.length && !untracked) return <p className="fine wifi-cl-none">Nothing connected right now.</p>;
+  const shown = all ? sorted : sorted.slice(0, SHOW);
+  return (
+    <div className="wifi-cl">
+      {list.length > 0 && (
+        <ul aria-label={label}>
+          {shown.map((c) => (
+            <li key={c.id} title={[c.name, c.network, c.ap, c.band, c.ip, c.maker].filter(Boolean).join(' · ')}>
+              <Icon name={c.wired ? 'plug' : 'phone'} size={16} />
+              <span className="wifi-cl-name">{c.name}{c.guest && <span className="wifi-tag">Guest</span>}</span>
+              <span className="wifi-cl-detail">{detail(c)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {(list.length > SHOW || untracked > 0) && (
+        <div className="wifi-cl-foot">
+          {list.length > SHOW && <button type="button" className="wifi-linkbtn" onClick={() => setAll(!all)} aria-expanded={all}>{all ? 'Show fewer' : `Show all ${list.length}`}</button>}
+          {untracked > 0 && <span className="fine">{list.length ? 'and ' : ''}{plural(untracked, list.length ? 'more' : 'device', list.length ? 'more' : 'devices')} not tracked in Home Assistant (<a href="#/wifi/devices">track them</a>)</span>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -268,6 +304,10 @@ function Networks({ state, run }) {
                 <button type="button" role="switch" aria-checked={n.on} className="switch" disabled={!n.available || state.disabled}
                   aria-label={`${n.name} ${n.on ? 'on' : 'off'}`} onClick={() => flip(n)}><span /></button>
               </div>
+              {state.settings.clients?.networks && n.on && (
+                <ClientList list={state.clients.filter((c) => c.connected && c.network === n.name)} total={n.clients}
+                  detail={(c) => [c.ap, c.band].filter(Boolean).join(' · ')} label={`Devices on ${n.name}`} />
+              )}
               <div className="cam-actions">
                 <a className="cam-chip" href={`#/wifi/devices/net-${encodeURIComponent(n.name)}`}><Icon name="phone" size={18} /><span>Who's on it</span></a>
                 {n.qr && <button type="button" className="cam-chip" onClick={() => setQr(n.id)}><Icon name="qr" size={18} /><span>QR code to join</span></button>}
@@ -496,6 +536,16 @@ function Settings({ state, run }) {
           </>
         )}
         {!withLed.length && <p className="fine">None of your UniFi devices has a light Home Assistant can switch.</p>}
+      </section>
+
+      <section className="card settings-section" aria-labelledby="wifi-cl-h">
+        <h3 id="wifi-cl-h">Connected devices {saved === 'clients' && <span className="saved-note" role="status">Saved</span>}</h3>
+        <Toggle label="List them on each access point" checked={!!view.settings.clients?.aps} onChange={(v) => put('settings', { clients: { aps: v } }, 'clients')}
+          description="The devices on each access point, under its count on the Access points page." />
+        <Toggle label="List them on each network" checked={!!view.settings.clients?.networks} onChange={(v) => put('settings', { clients: { networks: v } }, 'clients')}
+          description="The devices on each Wi-Fi network, on the Networks page." />
+        <Toggle label="List them on the dashboard card too" checked={!!view.settings.clients?.card} onChange={(v) => put('settings', { clients: { card: v } }, 'clients')}
+          description="Their names under each access point and network on the Wi-Fi dashboard card (show: wifi)." />
       </section>
 
       <section className="card settings-section" aria-labelledby="wifi-net-h">

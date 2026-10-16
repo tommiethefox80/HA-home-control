@@ -73,6 +73,23 @@ await step('access points, other devices, networks and who\'s connected are foun
   assert.deepEqual(pub.attributes.networks.map((n) => n.entity), ['switch.fox_guest', 'switch.fox_home', 'switch.fox_iot']);
 });
 
+await step('connected devices listed on each access point and network, and on the dashboard card when chosen', async () => {
+  let v = await wifi('GET', 'settings');
+  assert.deepEqual(v.settings.clients, { aps: true, networks: true, card: false });
+  let pub = (await mock('GET', '/published')).states['sensor.home_wifi'];
+  assert.equal(pub.attributes.access_points[0].devices, undefined, 'not on the card to start with');
+  v = await wifi('PUT', 'settings', { clients: { aps: false, card: true } });
+  assert.deepEqual(v.settings.clients, { aps: false, networks: true, card: true });
+  await sleep(6000);
+  pub = (await mock('GET', '/published')).states['sensor.home_wifi'];
+  assert.deepEqual(pub.attributes.access_points.find((a) => a.name === 'Lounge AP').devices, ['Galaxy S24', 'Living room TV', "Tom's iPhone"]);
+  assert.deepEqual(pub.attributes.networks.find((n) => n.name === 'Fox Guest').devices, ['Galaxy S24']);
+  assert.deepEqual(pub.attributes.networks.find((n) => n.name === 'Fox IoT').devices, ['Front Door doorbell'], 'only the ones Home Assistant tracks');
+  await wifi('PUT', 'settings', { clients: { aps: true, card: false } });
+  await assert.rejects(wifi('PUT', 'settings', { leds: { mode: 'on_between' } }), /off between two times/);
+  assert.deepEqual((await wifi('GET', 'settings')).settings.clients, { aps: true, networks: true, card: false });
+});
+
 await step('a status light, all the lights, and a network switched from here', async () => {
   await mock('POST', '/reset-calls');
   await wifi('POST', `devices/${LOUNGE}/led`, { on: false });

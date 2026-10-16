@@ -64,6 +64,23 @@ a.cam-chip { text-decoration: none; }
 .wifi-empty h2 { margin: 0; }
 .wifi-empty .fine { max-width: 58ch; margin: 0; }
 
+/* the devices on an access point or network */
+.wifi-cl { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+.wifi-cl ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.wifi-cl li { display: grid; grid-template-columns: 16px minmax(0, auto) minmax(0, 1fr); align-items: baseline; column-gap: 8px; padding: 3px 0; font-size: .9rem; }
+.wifi-cl li .icon { color: var(--ink-2); align-self: center; }
+.wifi-cl-name { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wifi-cl-detail { color: var(--ink-2); font-size: .8rem; text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wifi-cl-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.wifi-cl-foot a { color: inherit; font-weight: 600; }
+.wifi-cl-none { margin: 0; border-top: 1px solid var(--line); padding-top: 8px; }
+.wifi-linkbtn { border: 0; padding: 0; background: none; font: inherit; font-size: .88rem; font-weight: 650; color: var(--ink); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.wifi-linkbtn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+@media (max-width: 420px) {
+  .wifi-cl li { grid-template-columns: 16px minmax(0, 1fr); }
+  .wifi-cl-detail { grid-column: 2; text-align: left; }
+}
+
 /* devices */
 .page-head.wifi-devhead { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 .wifi-devhead .wifi-search {

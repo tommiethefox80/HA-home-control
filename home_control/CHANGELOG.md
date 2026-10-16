@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.1
+- **Who's on each access point and network.** Each access point on the Access points page, and each network on the Networks page, lists the devices connected to it, with the network or access point and the band each is using. The first six show, with **Show all** for the rest; devices UniFi counts but Home Assistant isn't tracking are noted.
+- **Wi-Fi → Settings → Connected devices** turns these lists on and off, for access points and networks separately, and can put the names on the dashboard card too (`show: wifi`). The `sensor.home_wifi` access points and networks then have `devices`.
+
 ## 1.7.0
 - **Wi-Fi.** A new part of Home Control for UniFi networks, off until you turn it on in Settings → Home Control. It uses Home Assistant's UniFi Network integration, so there's nothing else to set up.
   - **Access points**: each one with who's on it, whether it's online, how long it's been up and whether a firmware update is waiting; switch its status light, restart it, and switch it off and on through the PoE port it's plugged into.

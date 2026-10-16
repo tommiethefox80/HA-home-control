@@ -510,6 +510,11 @@ export class Engine extends EventEmitter {
       this.data.settings.leds = { ...s, devices };
       this._forget('led:');
     }
+    if (body.clients && typeof body.clients === 'object') {
+      const c = { ...this.data.settings.clients };
+      for (const k of ['aps', 'networks', 'card']) if (typeof body.clients[k] === 'boolean') c[k] = body.clients[k];
+      this.data.settings.clients = c;
+    }
     this.store.save();
     this.tick();
     this.changed();

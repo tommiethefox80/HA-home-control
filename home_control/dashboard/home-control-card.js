@@ -11,7 +11,7 @@
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.7.0';
+const VERSION = '1.7.1';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 
@@ -177,6 +177,7 @@ const STYLE = `
   .wname { font-weight: 600; font-size: .92rem; color: var(--primary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .wsub { font-size: .78rem; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .wsub.warn { color: rgb(196 66 45); }
+  .wdev { font-size: .76rem; color: var(--primary-text-color); opacity: .8; line-height: 1.35; margin-top: 3px; }
   .wchip { border: 0; margin: 0; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-size: .78rem; font-weight: 650;
     padding: 6px 11px; border-radius: 999px; min-height: 32px; color: var(--primary-text-color);
     background: var(--card-background-color, #fff); box-shadow: inset 0 0 0 1px var(--divider-color); white-space: nowrap; }
@@ -526,6 +527,13 @@ class HomeControlCard extends HTMLElement {
 
   _wifi(st) {
     const a = st.attributes || {};
+    // the devices on each, when chosen in the app (Wi-Fi → Settings → Connected devices)
+    const devs = (list, count) => {
+      if (!Array.isArray(list)) return '';
+      if (!list.length) return count ? '' : '<div class="wdev">Nothing connected</div>';
+      const more = list.length > 8 ? list.length - 8 : 0;
+      return `<div class="wdev">${list.slice(0, 8).map(esc).join(' · ')}${more ? ` · and ${more} more` : ''}</div>`;
+    };
     const title = this._config.title || 'Wi-Fi';
     const S = (id) => (id ? this._hass?.states?.[id] : null);
     const aps = (a.access_points || []).map((x) => {
@@ -535,13 +543,13 @@ class HomeControlCard extends HTMLElement {
       const led = x.led ? `<button type="button" class="wchip${ledOn ? ' lit' : ''}" data-ent="${esc(x.led.entity)}" aria-pressed="${ledOn}" ${!ls || ls.state === 'unavailable' ? 'disabled' : ''}
           title="Status light ${ledOn ? 'on' : 'off'}">${ICON.led}${ledOn ? 'Light on' : 'Light off'}</button>` : '';
       return `<div class="wrow${x.online ? '' : ' down'}">${ICON.ap}<div style="min-width:0"><div class="wname">${esc(x.name)}</div>
-        <div class="wsub${!x.online && !x.switched_off ? ' warn' : ''}">${esc(sub)}</div></div>${led}</div>`;
+        <div class="wsub${!x.online && !x.switched_off ? ' warn' : ''}">${esc(sub)}</div>${x.online ? devs(x.devices, x.clients) : ''}</div>${led}</div>`;
     }).join('');
     const nets = (a.networks || []).map((n) => {
       const ns = S(n.entity);
       const on = ns ? ns.state === 'on' : !!n.on;
       return `<div class="wrow${on ? '' : ' down'}">${ICON.wifi}<div style="min-width:0"><div class="wname">${esc(n.name)}</div>
-        <div class="wsub">${on ? `${n.clients} ${n.clients === 1 ? 'device' : 'devices'}` : 'Off'}</div></div>
+        <div class="wsub">${on ? `${n.clients} ${n.clients === 1 ? 'device' : 'devices'}` : 'Off'}</div>${on ? devs(n.devices, n.clients) : ''}</div>
         <button type="button" class="wchip${on ? ' on' : ''}" data-ent="${esc(n.entity)}" data-sure="Tap again to turn off" aria-pressed="${on}" ${!ns || ns.state === 'unavailable' ? 'disabled' : ''}>${on ? 'On' : 'Off'}</button></div>`;
     }).join('');
     const err = this._error ? `<div class="note">${ICON.alert}<span>${esc(this._error)}</span></div>` : '';

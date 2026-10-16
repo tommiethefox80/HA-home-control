@@ -203,7 +203,11 @@ export function camerasState(snap, panel = null) {
 export function wifiState(snap, panel = null) {
   const aps = snap.aps || [];
   const nets = snap.networks || [];
-  const connected = (snap.clients || []).filter((c) => c.connected).length;
+  const on = (snap.clients || []).filter((c) => c.connected);
+  const connected = on.length;
+  // the devices on each, for the card, when chosen in Wi-Fi → Settings
+  const lists = !!snap.settings?.clients?.card;
+  const names = (list) => list.map((c) => c.name).sort((a, b) => a.localeCompare(b));
   const down = aps.filter((a) => !a.online && !a.switchedOff).map((a) => a.name);
   const off = nets.filter((n) => !n.on).map((n) => n.name);
   const summary = !aps.length && !nets.length ? 'No UniFi access points or networks found'
@@ -219,8 +223,9 @@ export function wifiState(snap, panel = null) {
       access_points: aps.map((a) => ({
         id: a.id, name: a.name, model: a.modelName, online: a.online, switched_off: a.switchedOff, clients: a.clients,
         led: a.led ? { entity: a.led.entity, on: a.led.on } : null,
+        ...(lists ? { devices: names(on.filter((c) => c.apMac === a.mac)) } : {}),
       })),
-      networks: nets.map((n) => ({ id: n.id, name: n.name, entity: n.entity, on: n.on, clients: n.clients })),
+      networks: nets.map((n) => ({ id: n.id, name: n.name, entity: n.entity, on: n.on, clients: n.clients, ...(lists ? { devices: names(on.filter((c) => c.network === n.name)) } : {}) })),
       leds_schedule: snap.settings?.leds?.mode === 'off_between' ? `Off ${snap.settings.leds.from}–${snap.settings.leds.to}` : null,
       connected: !!snap.connected,
       panel,

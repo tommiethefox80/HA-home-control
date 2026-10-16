@@ -412,6 +412,8 @@ Each access point with its model, whether it's online, how many devices are on i
 - **Restart** restarts it. Devices on it drop off for a minute or two and move to another access point if they can.
 - **Switch off / Switch on**, once you've chosen the PoE port it's plugged into (below).
 
+Under the count, each access point lists the devices on it, with the network and band each is using (the first six, and **Show all** for the rest). Its count comes from UniFi, so it can include devices Home Assistant isn't tracking; the list says how many (see **Track them all** under Devices).
+
 Switches, the gateway and other UniFi devices are listed under **Other network devices**, with their lights and a restart button. Which is which is worked out from each device's model; change it in **Settings → What each device is**, or hide a device.
 
 ### Switching an access point off
@@ -423,6 +425,8 @@ An access point can then be switched off from its card, and **off between two ti
 ## Networks
 
 Each Wi-Fi network with a switch to turn it off and on everywhere, how many devices are on it, and its schedule. Turning a network off asks first: devices on it drop off until it's back, and if this page reaches you over that network, you'll lose it.
+
+Each network lists the devices on it, with the access point and band each is using, in the same way.
 
 **QR code to join** shows a code a phone's camera can read to join the network: handy for guests. The code holds the network's password, so share it with people you'd give the password to. Home Assistant keeps these codes turned off to start with; the first time, Home Control asks it to turn the code on, which takes about a minute.
 
@@ -442,6 +446,7 @@ In **Settings**:
 - **Status lights at night**: the lights on the access points and switches go off at the first time and back on at the second, every day. Choose which devices, or leave them all ticked.
 - **Network schedules**: each network can be **off between two times** (a children's network overnight) or **on only between two times** (a guest network in the day).
 - **Access points**: off between two times, once its PoE port is chosen.
+- **Connected devices**: list the devices on each access point, on each network, and on the dashboard card. The first two start on, the card off.
 
 Each change is made once, at its time (or when the device is next online, if it isn't then). Switching something by hand in between is left alone until the next scheduled change. Saving a schedule puts things as it says right away. Everything the schedules do, and every change made here, is listed on **Activity**.
 
@@ -452,6 +457,6 @@ type: custom:home-control-card
 show: wifi
 ```
 
-Each access point with how many devices are on it and a button for its status light, and each network with a button to turn it off and on (turning one off takes a second tap, so it can't happen by accident). Tap the title to open the Wi-Fi pages.
+Each access point with how many devices are on it and a button for its status light, and each network with a button to turn it off and on (turning one off takes a second tap, so it can't happen by accident). With **List them on the dashboard card too** on (Wi-Fi → Settings → Connected devices), the names of the devices on each are under it. Tap the title to open the Wi-Fi pages.
 
-`sensor.home_wifi` has how many devices are connected, a `summary` ("3 access points online · 24 devices connected"), `leds_schedule`, `access_points` (each one's `name`, `model`, `online`, `switched_off`, `clients` and `led`) and `networks` (each one's `name`, `entity`, `on` and `clients`).
+`sensor.home_wifi` has how many devices are connected, a `summary` ("3 access points online · 24 devices connected"), `leds_schedule`, `access_points` (each one's `name`, `model`, `online`, `switched_off`, `clients` and `led`) and `networks` (each one's `name`, `entity`, `on` and `clients`), and each one's `devices` (names) when they're listed on the card.

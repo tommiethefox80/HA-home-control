@@ -9,6 +9,8 @@ export const NO_SCHEDULE = { mode: 'none', from: '22:00', to: '07:00' };
 
 const DEFAULT_SETTINGS = {
   leds: { mode: 'none', from: '22:00', to: '07:00', devices: null }, // devices: null = every one with a light
+  // the devices connected, listed on each access point and network in the app, and on the dashboard card
+  clients: { aps: true, networks: true, card: false },
 };
 
 function defaults() {
@@ -33,7 +35,8 @@ export class Store {
       if (existsSync(this.file)) {
         const raw = JSON.parse(readFileSync(this.file, 'utf8'));
         const base = defaults();
-        this.data = { ...base, ...raw, settings: { ...base.settings, ...(raw.settings || {}), leds: { ...base.settings.leds, ...(raw.settings?.leds || {}) } } };
+        this.data = { ...base, ...raw, settings: { ...base.settings, ...(raw.settings || {}), leds: { ...base.settings.leds, ...(raw.settings?.leds || {}) },
+          clients: { ...base.settings.clients, ...(raw.settings?.clients || {}) } } };
       }
     } catch (err) {
       log.error?.(`Couldn't read the Wi-Fi settings, starting fresh: ${err.message}`);
