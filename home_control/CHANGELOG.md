@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.3
+- **Always-open radiators.** A room whose radiator has no TRV (usually the one with the boiler thermostat) gets heat whenever the boiler runs, for any room. Home Control now spots these (a room with no TRV of its own, only the boiler thermostat) and you can set it per room (Heating → Settings → Edit a room → Radiator valves).
+  - Its card counts that heat separately: "Not fired itself · heated twice with other rooms (45m)", or "Fired once · 20m, and twice with other rooms (45m)".
+  - Insights shows the extra heat under "Heating, 7 days" ("+ 3.2 h with other rooms") and explains it, as it's why such a room often sits above its target.
+  - Its learning ignores heat-ups where another room kept the boiler running after it stopped, so that warmth isn't mistaken for overshoot and doesn't make it stop ever earlier.
+
 ## 1.7.2
 - **"Heats again below…"** A room that's below its target but isn't heating now says when it will, on its card, on its own page (with the reason: it stops early to let the radiators' leftover heat finish, and starts again a little below that so the boiler doesn't flick on and off), and on the dashboard card ("Heats again below 17.9° · 15° from 22:00"). Before, it just said "On schedule", which looked like a fault.
 

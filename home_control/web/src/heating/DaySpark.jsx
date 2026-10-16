@@ -40,11 +40,17 @@ export default function DaySpark({ room, today, tz, current, show = { spark: tru
   const heated = room.heatedToday || 0;
   const fired = room.firedToday || 0;
   const since = today?.firesSince ? ` since ${clock(today.firesSince, tz)}` : '';
+  // an always-open radiator (no TRV of its own) also gets heat when the boiler runs for other rooms
+  const others = room.open && room.withOthers?.minutes ? room.withOthers : null;
+  const withOthers = others && (others.times
+    ? <><b>{times(others.times)}</b> with other rooms ({hm(others.minutes)})</>
+    : <><b>{hm(others.minutes)}</b> with other rooms</>);
   const summary = showFires
-    ? (fired ? <>Fired <b>{times(fired)}</b>{since} · <b>{hm(heated)}</b> today</>
+    ? (fired ? <>Fired <b>{times(fired)}</b>{since} · <b>{hm(heated)}</b>{withOthers ? <>, and {withOthers}</> : ' today'}</>
+      : withOthers ? <>Not fired itself{since} · heated {withOthers}</>
       : heated ? <>Heated <b>{hm(heated)}</b> today</>
       : <>Not fired today{since}</>)
-    : (heated ? <>Heated <b>{hm(heated)}</b> today</> : 'Not heated today');
+    : (heated || others ? <>Heated <b>{hm(heated + (others?.minutes || 0))}</b> today{others ? ', with other rooms too' : ''}</> : 'Not heated today');
   if (!showSpark || !d) {
     return <div className="spark spark-text"><span className="spark-label"><i className="sw-heat" aria-hidden="true" /><span>{summary}</span></span></div>;
   }

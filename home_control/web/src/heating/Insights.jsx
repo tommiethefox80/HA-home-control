@@ -125,6 +125,8 @@ export default function Insights({ state }) {
   const slowest = pick((r) => r.warmRate, (a, b) => a - b);
   const overshooter = pick((r) => r.overshoot, (a, b) => b - a);
   const busiest = pick((r) => (r.heatingHours > 0 ? r.heatingHours : null), (a, b) => b - a);
+  // always-open radiators (no TRV of their own) heated by other rooms' calls more than their own
+  const openRooms = rooms.filter((r) => r.open && r.othersHours > 0);
 
   return (
     <>
@@ -193,11 +195,14 @@ export default function Insights({ state }) {
 
       <section className="chart-card">
         <div className="chart-head"><h2>Rooms compared</h2></div>
-        {(slowest || overshooter || busiest) && (
+        {(slowest || overshooter || busiest || openRooms.length > 0) && (
           <ul className="callouts">
             {slowest && <li><b>Slowest to warm:</b> {slowest.name}, about {slowest.warmRate.toFixed(1)}° an hour. If that seems slow, bleed its radiator and check nothing blocks the valve.</li>}
             {overshooter && overshooter.overshoot > 0.2 && <li><b>Overshoots most:</b> {overshooter.name}, by {overshooter.overshoot.toFixed(1)}° on average. It's learning to stop earlier.</li>}
             {busiest && <li><b>Most heating:</b> {busiest.name}, {hours(busiest.heatingHours)} in the last 7 days.</li>}
+            {openRooms.map((r) => (
+              <li key={`open-${r.id}`}><b>Always-open radiator:</b> {r.name} has no TRV of its own, so it also got {hours(r.othersHours)} of heat when other rooms called{r.avgTemp != null ? `, which helps explain its ${deg(r.avgTemp)} average` : ''}. Its learning ignores those times.</li>
+            ))}
           </ul>
         )}
         <div className="table-wrap">
@@ -210,7 +215,7 @@ export default function Insights({ state }) {
                   <td data-label="Warms up">{r.warmRate != null ? `${r.warmRate.toFixed(1)}°/h` : <span className="muted">learning</span>}</td>
                   <td data-label="Overshoots">{r.overshoot != null ? `${r.overshoot > 0.05 ? '+' : ''}${(Math.round(r.overshoot * 10) / 10).toFixed(1)}°` : <span className="muted">learning</span>}</td>
                   <td data-label="Stops early">{r.stopsEarly != null ? `${r.stopsEarly}°` : '–'}</td>
-                  <td data-label="Heating, 7 days">{hours(r.heatingHours)}</td>
+                  <td data-label="Heating, 7 days">{hours(r.heatingHours)}{r.open && r.othersHours > 0 && <small className="cell-note">+ {hours(r.othersHours)} with other rooms</small>}</td>
                   <td data-label="Average">{r.avgTemp != null ? deg(r.avgTemp) : '–'}</td>
                 </tr>
               ))}

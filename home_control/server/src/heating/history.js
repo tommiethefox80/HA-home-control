@@ -160,6 +160,28 @@ const tempOf = (id) => (r) => {
   return num(r.s);
 };
 
+/** Boiler runs today that heated an always-open radiator for other rooms: the parts of each run
+ *  this room wasn't calling in. A run it didn't call in at all counts as a time; the minutes add up
+ *  every part it didn't call in. */
+export function heatedWithOthers(runs, calls, dayStart, now = Date.now()) {
+  let times = 0; let ms = 0;
+  for (const [a0, b0] of runs) {
+    const a = Math.max(a0, dayStart); const b = Math.min(b0, now);
+    if (b - a < 60000) continue;
+    let left = b - a;
+    let own = false;
+    for (const [x, y] of calls) {
+      const overlap = Math.max(0, Math.min(b, y) - Math.max(a, x));
+      if (overlap > 0) own = true;
+      left -= overlap;
+    }
+    if (left < 60000) continue;
+    ms += left;
+    if (!own) times++;
+  }
+  return { times, minutes: Math.round(ms / 60000) };
+}
+
 export async function buildToday(engine, { hours = 24 } = {}) {
   const ha = engine.ha;
   const s = engine.s;
@@ -199,6 +221,23 @@ export async function buildToday(engine, { hours = 24 } = {}) {
   const dayStart = localMidnight(tz);
   const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   const nowMs = Date.now();
+  // boiler runs from the device's own history (Hive's hvac_action, or switch state)
+  const runs = [];
+  let onMs = 0;
+  if (boilerId) {
+    const rows = rowsFor(result, boilerId);
+    const firing = (r) => (boilerId.startsWith('climate.') ? r.a?.hvac_action === 'heating' : r.s === 'on');
+    let start = null;
+    for (const r of rows) {
+      const t = Math.max(r.t, from);
+      if (firing(r) && start == null) start = t;
+      if (!firing(r) && start != null) { runs.push([start, t]); start = null; }
+    }
+    if (start != null) runs.push([start, Date.now()]);
+    const midnight = dayStart;
+    for (const [a, b] of runs) onMs += Math.max(0, b - Math.max(a, midnight));
+  }
+
   const rooms = zones.map((z) => {
     const sources = z.sensor ? [z.sensor] : (z.trvs || []);
     const series = sources.map((id) => sample(rowsFor(result, id), from, to, tempOf(id)));
@@ -223,25 +262,11 @@ export async function buildToday(engine, { hours = 24 } = {}) {
     const heatedToday = Math.round(dailyMin != null ? Math.max(dailyMin, fromCalls) : fromCalls);
     // times it started heating today (a heat-up still going from before midnight counts for yesterday)
     const firedToday = calls.filter(([x, y]) => x >= dayStart && y - x >= 60000).length;
-    return { id: z.id, name: z.name, temps, targets, calls, heatedToday, firedToday };
+    // an always-open radiator (no TRV of its own) also gets heat when the boiler runs for other rooms
+    const open = engine.openRadiator(z);
+    const withOthers = open ? heatedWithOthers(runs, calls, dayStart, nowMs) : null;
+    return { id: z.id, name: z.name, temps, targets, calls, heatedToday, firedToday, open, withOthers };
   });
-
-  // boiler runs from the device's own history (Hive's hvac_action, or switch state)
-  const runs = [];
-  let onMs = 0;
-  if (boilerId) {
-    const rows = rowsFor(result, boilerId);
-    const firing = (r) => (boilerId.startsWith('climate.') ? r.a?.hvac_action === 'heating' : r.s === 'on');
-    let start = null;
-    for (const r of rows) {
-      const t = Math.max(r.t, from);
-      if (firing(r) && start == null) start = t;
-      if (!firing(r) && start != null) { runs.push([start, t]); start = null; }
-    }
-    if (start != null) runs.push([start, Date.now()]);
-    const midnight = localMidnight(tz);
-    for (const [a, b] of runs) onMs += Math.max(0, b - Math.max(a, midnight));
-  }
 
   const outside = outsideId ? sample(rowsFor(result, outsideId), from, to, tempOf(outsideId)) : null;
   const cost = costId ? await costSummary(ha, costId, !s.costEntity) : null;

@@ -150,6 +150,8 @@ Every 30 seconds, and whenever a valve or thermometer changes:
    - the room's **schedule**
 2. Every TRV in the room is set to that target (only when it differs, and spaced out so Hive's cloud API isn't hammered).
 3. A room **calls for heat** when it falls 0.3° (configurable) below target, and stops when it reaches target, or a set amount below it if you use **Stop heating this far below target** to let the radiators' leftover heat finish the job. A room that stops early (learned or set) only starts again 0.2° below its stop point, so the boiler doesn't flick on and off. A room below its target that isn't heating says when it will, on its card ("Heats again below 17.9°"), on its own page (with why), and on the dashboard card.
+
+   A room whose radiator is **always open** (no TRV, usually the one with the boiler thermostat) gets heat whenever the boiler runs for any room. Home Control works this out for a room with no TRV of its own (or set it under the room's **Radiator valves**), counts that heat separately on its card ("heated twice with other rooms") and in Insights, and keeps it out of what the room learns.
 4. If any room is calling, the **boiler fires**. With a Hive thermostat this means setting it to 30° in manual mode; when every room is satisfied it goes back to 7°. Minimum run and rest times stop short cycling.
 
 The room temperature comes from the TRVs' own readings, or from a separate thermometer if you pick one (more accurate: a TRV sits next to a hot radiator).

@@ -55,6 +55,12 @@ export class Engine extends EventEmitter {
     if (mode === 'auto') return this.rt.learn?.[zone.id]?.margin ?? house;
     return house;
   }
+  /** A room whose radiator is always open (no TRV of its own, e.g. the room with the boiler
+   *  thermostat): it gets heat whenever the boiler runs, for any room. Set per room, or worked out. */
+  openRadiator(zone) {
+    if (zone.openRadiator === true || zone.openRadiator === false) return zone.openRadiator;
+    return !(zone.trvs || []).some((e) => e !== this.s.boiler.entity);
+  }
   // The start gap widens if needed so there's always 0.2° between start and stop (no flicking on/off).
   startGapFor(stop) { return Math.max(Number(this.s.hysteresis) || 0, stop + 0.2); }
 
@@ -422,6 +428,8 @@ export class Engine extends EventEmitter {
       coast: this.rt.coast?.[zone.id] || null,
       learn: this.rt.learn?.[zone.id] || null,
       coasting: !calling && stop > 0 && current != null && current < t.temp && current >= t.temp - stop - 0.05,
+      openRadiator: this.openRadiator(zone),
+      openRadiatorSet: zone.openRadiator === true || zone.openRadiator === false,
       // below its target but not heating: it starts again under startAt (so the boiler doesn't flick on and off)
       waiting: !!zone.enabled && !calling && current != null && current < t.temp && !['off', 'window'].includes(t.source),
       startAt: Math.round((t.temp - start) * 10) / 10,
@@ -447,6 +455,11 @@ export class Engine extends EventEmitter {
     if (!wasCalling && calling) (this.heatStart ||= {})[zone.id] = now;
     if (!c || c.done) return;
     if (target !== c.target) { c.done = true; c.discard = 'target changed'; this.store.save(); return; }
+    // a radiator that's always open keeps getting heat while the boiler runs for other rooms:
+    // that rise isn't this room's own leftover heat, so it mustn't teach it to stop earlier
+    if (!calling && this.openRadiator(zone) && (this.views || []).some((v) => v.id !== zone.id && v.enabled && v.calling)) {
+      c.done = true; c.discard = 'heated with other rooms'; this.store.save(); return;
+    }
     if (!calling && current != null && current > c.peak) { c.peak = current; c.peakAt = now; this.store.save(); }
     const pastPeak = current != null && current <= c.peak - 0.2 && now - c.peakAt > 10 * 60000 * TS;
     const timedOut = now - c.at > 90 * 60000 * TS;
@@ -851,6 +864,8 @@ export class Engine extends EventEmitter {
       stopEarlyPct: input.stopEarlyPct === '' || input.stopEarlyPct == null || !Number.isFinite(Number(input.stopEarlyPct))
         ? null : Math.min(10, Math.max(0, Math.round(Number(input.stopEarlyPct) * 2) / 2)),
       stopEarlyMode: ['auto', 'fixed', 'house'].includes(input.stopEarlyMode) ? input.stopEarlyMode : 'auto',
+      // null: worked out (no TRV of its own); true/false: set by hand
+      openRadiator: input.openRadiator === true || input.openRadiator === false ? input.openRadiator : null,
     };
     let zone = this.zones.find((z) => z.id === input.id);
     if (zone) Object.assign(zone, clean);

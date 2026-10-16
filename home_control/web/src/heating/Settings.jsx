@@ -73,6 +73,7 @@ function RoomEditor({ room, entities, state, onClose, notify }) {
     name: room.name || '', trvs: room.trvs || [], sensor: room.sensor || '', enabled: room.enabled !== false,
     stopEarlyPct: room.stopEarlyPct ?? '',
     stopEarlyMode: room.stopEarlyMode || (room.stopEarlyPct != null ? 'fixed' : 'auto'),
+    openRadiator: room.openRadiator ?? null,
   });
   const live = state.zones.find((z) => z.id === room.id);
   const [busy, setBusy] = useState(false);
@@ -117,6 +118,17 @@ function RoomEditor({ room, entities, state, onClose, notify }) {
           {climates.length === 0 && <p className="lede">No radiator valves found in Home Assistant.</p>}
         </div>
       </div>
+
+      <label className="field">
+        <span>Radiator valves</span>
+        <small>A radiator with no TRV (often the one in the room with the boiler thermostat) is always open, so it gets heat whenever the boiler runs for any room. Home Control counts that separately and keeps it out of what the room learns.</small>
+        <select value={form.openRadiator == null ? 'auto' : form.openRadiator ? 'open' : 'trv'}
+          onChange={(e) => setForm({ ...form, openRadiator: e.target.value === 'auto' ? null : e.target.value === 'open' })}>
+          <option value="auto">Work it out ({!form.trvs.some((e) => e !== boiler) ? 'no TRV picked, so always open' : 'has TRVs'})</option>
+          <option value="trv">Its radiators have TRVs</option>
+          <option value="open">A radiator here is always open (no TRV)</option>
+        </select>
+      </label>
 
       <label className="field">
         <span>Room thermometer</span>

@@ -204,12 +204,16 @@ export async function buildInsights(engine, { days = 30 } = {}) {
     const callMin = last7.reduce((a, k) => a + (log[k]?.rooms?.[z.id]?.callMin || 0), 0);
     const tempN = last7.reduce((a, k) => a + (log[k]?.rooms?.[z.id]?.tempN || 0), 0);
     const tempSum = last7.reduce((a, k) => a + (log[k]?.rooms?.[z.id]?.tempSum || 0), 0);
+    // an always-open radiator also gets heat whenever the boiler runs for other rooms
+    const open = engine.openRadiator(z);
+    const othersMin = open ? last7.reduce((a, k) => a + Math.max(0, (log[k]?.boilerMin || 0) - (log[k]?.rooms?.[z.id]?.callMin || 0)), 0) : null;
     return {
       id: z.id, name: z.name,
       warmRate: w?.rate ?? null, warmSamples: w?.samples || 0,
       overshoot: overs.length ? Math.round((overs.reduce((a, b2) => a + b2, 0) / overs.length) * 100) / 100 : null,
       stopsEarly: L?.margin ?? null,
       heatingHours: Math.round((callMin / 60) * 10) / 10,
+      open, othersHours: othersMin != null ? Math.round((othersMin / 60) * 10) / 10 : null,
       avgTemp: tempN > 60 ? Math.round((tempSum / tempN) * 10) / 10 : null,
     };
   });
