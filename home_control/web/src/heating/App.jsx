@@ -21,7 +21,7 @@ function useHashRoute() {
 
 function BoilerChip({ state }) {
   const b = state.boiler;
-  if (!b.entity) return <a className="boiler" href="#/settings">Choose your boiler in Settings</a>;
+  if (!b.entity) return <a className="boiler" href="#/settings/boiler">Choose your boiler in Settings</a>;
   const calling = state.zones.filter((z) => z.calling).map((z) => z.name);
   if (!b.available) return <span className="boiler"><Icon.flame />Boiler control offline</span>;
   return (
@@ -135,7 +135,7 @@ function Activity({ state }) {
       </ul>
       <div className="log-foot">
         {!done && all.length < total && <button className="btn" disabled={busy} onClick={more}>{busy ? 'Loading…' : 'Show older'}</button>}
-        <small>Showing {all.length} of {total}. The app keeps {days} day{days === 1 ? '' : 's'} of activity; change that in <a href="#/settings">Settings → History</a>.</small>
+        <small>Showing {all.length} of {total}. The app keeps {days} day{days === 1 ? '' : 's'} of activity; change that in <a href="#/settings/history">Settings → History</a>.</small>
       </div>
     </>
   );

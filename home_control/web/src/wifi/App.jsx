@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icon, Sheet, Toggle, Field, Notice, Chips } from '../lighting/ui.jsx';
 import { goDashboard, plural, joinNames } from '../lighting/lib.js';
-import { HomeSettings } from '../HomeSettings.jsx';
+import { SettingsFrame, settingsPage } from '../SettingsFrame.jsx';
 import { api, useLiveState, when, upFor, scheduleText, statusOf } from './lib.js';
 
 const TABS = [
@@ -84,7 +84,7 @@ export function App({ active = true, switcher }) {
         {route.tab === 'networks' && <Networks state={state} run={run} />}
         {route.tab === 'devices' && <Devices state={state} run={run} filter={route.arg} go={go} />}
         {route.tab === 'activity' && <Activity state={state} />}
-        {route.tab === 'settings' && <Settings state={state} run={run} />}
+        {route.tab === 'settings' && <Settings state={state} run={run} arg={route.arg} />}
       </main>
 
       <nav className="tabs" aria-label="Sections">
@@ -143,7 +143,7 @@ function AccessPoints({ state, run, go }) {
       <p className="fine wifi-lead">
         {state.disabled ? 'Wi-Fi is turned off in Settings → Home Control: shown, but nothing is switched on a schedule.'
           : `${plural(aps.filter((a) => a.online).length, 'access point')} online, ${plural(connected, 'device')} connected.`}
-        {L.mode === 'off_between' ? ` Status lights off ${L.from}–${L.to}.` : <> <a href="#/wifi/settings">Turn the status lights off at night</a>.</>}
+        {L.mode === 'off_between' ? ` Status lights off ${L.from}–${L.to}.` : <> <a href="#/wifi/settings/leds">Turn the status lights off at night</a>.</>}
       </p>
       {leds.length > 0 && (
         <div className="wifi-quick">
@@ -488,7 +488,9 @@ function Times({ id, value, onChange, fromLabel = 'From', toLabel = 'To' }) {
   );
 }
 
-function Settings({ state, run }) {
+function Settings({ state, run, arg }) {
+  const { item, shown } = settingsPage('wifi', arg);
+  const show = (id) => shown === id;
   const [view, setView] = useState(null);
   const [saved, setSaved] = useState(null);
   const [err, setErr] = useState(null);
@@ -496,7 +498,7 @@ function Settings({ state, run }) {
   // the settings view has the PoE ports; keep it fresh as things change
   const sig = state ? `${state.aps.length}|${state.others.length}|${state.hidden?.length}|${state.networks.length}|${state.events?.[0]?.id}` : '';
   useEffect(() => { load(); }, [load, sig]);
-  if (!state || !view) return <p className="fine pad">Loading…</p>;
+  if (!state || !view) return <SettingsFrame part="wifi" item={item} shown={shown}><p className="fine pad">{err || 'Loading…'}</p></SettingsFrame>;
   const put = async (path, body, what) => {
     setErr(null);
     try { const v = await run(() => api('PUT', path, body)); setView(v); setSaved(what); setTimeout(() => setSaved(null), 2500); } catch (e) { setErr(e.message); }
@@ -510,12 +512,10 @@ function Settings({ state, run }) {
     put('settings', { leds: { devices: next.size === withLed.length ? null : [...next] } }, 'leds');
   };
   return (
-    <>
-      <div className="page-head settings-head"><h2>Settings</h2></div>
-      <HomeSettings />
+    <SettingsFrame part="wifi" item={item} shown={shown}>
       {err && <Notice tone="error">{err}</Notice>}
 
-      <section className="card settings-section" aria-labelledby="wifi-led-h">
+      {show('leds') && <section className="card settings-section" aria-labelledby="wifi-led-h">
         <h3 id="wifi-led-h">Status lights at night {saved === 'leds' && <span className="saved-note" role="status">Saved</span>}</h3>
         <Toggle label="Turn the status lights off at night" checked={L.mode === 'off_between'} onChange={(v) => put('settings', { leds: { mode: v ? 'off_between' : 'none' } }, 'leds')}
           description="The little lights on the access points and switches. They go off at the first time and back on at the second; switching one by hand in between is left alone until the next change." />
@@ -536,9 +536,9 @@ function Settings({ state, run }) {
           </>
         )}
         {!withLed.length && <p className="fine">None of your UniFi devices has a light Home Assistant can switch.</p>}
-      </section>
+      </section>}
 
-      <section className="card settings-section" aria-labelledby="wifi-cl-h">
+      {show('clients') && <section className="card settings-section" aria-labelledby="wifi-cl-h">
         <h3 id="wifi-cl-h">Connected devices {saved === 'clients' && <span className="saved-note" role="status">Saved</span>}</h3>
         <Toggle label="List them on each access point" checked={!!view.settings.clients?.aps} onChange={(v) => put('settings', { clients: { aps: v } }, 'clients')}
           description="The devices on each access point, under its count on the Access points page." />
@@ -546,23 +546,23 @@ function Settings({ state, run }) {
           description="The devices on each Wi-Fi network, on the Networks page." />
         <Toggle label="List them on the dashboard card too" checked={!!view.settings.clients?.card} onChange={(v) => put('settings', { clients: { card: v } }, 'clients')}
           description="Their names under each access point and network on the Wi-Fi dashboard card (show: wifi)." />
-      </section>
+      </section>}
 
-      <section className="card settings-section" aria-labelledby="wifi-net-h">
+      {show('networks') && <section className="card settings-section" aria-labelledby="wifi-net-h">
         <h3 id="wifi-net-h">Network schedules {saved === 'net' && <span className="saved-note" role="status">Saved</span>}</h3>
         <p className="fine">Switch a network off at night, or have a guest network on only in the day. Changes happen at the times set; switching a network by hand in between is left alone until the next one.</p>
         {!view.networks.length && <p className="fine">No networks found.</p>}
         {view.networks.map((n) => <NetSchedule key={n.id} n={n} onSave={(schedule) => put(`networks/${n.id}`, { schedule }, 'net')} />)}
-      </section>
+      </section>}
 
-      <section className="card settings-section" aria-labelledby="wifi-ap-h">
+      {show('aps') && <section className="card settings-section" aria-labelledby="wifi-ap-h">
         <h3 id="wifi-ap-h">Access points {saved === 'ap' && <span className="saved-note" role="status">Saved</span>}</h3>
         <p className="fine">An access point can be switched off by turning off the PoE port on the switch it's plugged into (the UniFi Network integration can't switch the access point itself off). Choose the port to switch it off from here, and on a schedule if you like.</p>
         {view.devices.filter((d) => d.wifi).map((d) => <ApSettings key={d.id} d={d} onSave={(body) => put(`devices/${d.id}`, body, 'ap')} />)}
-      </section>
+      </section>}
 
-      <section className="card settings-section" aria-labelledby="wifi-kind-h">
-        <h3 id="wifi-kind-h">What each device is</h3>
+      {show('kinds') && <section className="card settings-section" aria-labelledby="wifi-kind-h">
+        <h3 id="wifi-kind-h">What each device is {saved === 'kind' && <span className="saved-note" role="status">Saved</span>}</h3>
         <p className="fine">Worked out from each device's model. Change it if one's in the wrong place, or hide one.</p>
         <ul className="group-list">
           {view.devices.map((d) => (
@@ -579,8 +579,8 @@ function Settings({ state, run }) {
             </li>
           ))}
         </ul>
-      </section>
-    </>
+      </section>}
+    </SettingsFrame>
   );
 }
 

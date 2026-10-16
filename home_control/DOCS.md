@@ -42,11 +42,15 @@ If the old Lighting Control app is installed, the Lighting page offers **Bring t
 
 This needs you to be signed in to Home Assistant as an administrator (it asks Home Assistant to read and stop the old app). If it can't, it says so: stop Lighting Control yourself in Home Assistant's settings and press **Start lighting here**, or add your groups again from Settings (starting from your Home Assistant areas is quick).
 
-Lighting Control's own "Away automatically" setting isn't brought across, because Away is now shared (below). **Settings → Lighting Control app** lets you bring everything across again later, replacing what's here.
+Lighting Control's own "Away automatically" setting isn't brought across, because Away is now shared (below). **Settings → Lighting → Getting started** lets you bring everything across again later, replacing what's here.
 
-## Settings → Home Control
+## Settings
 
-The top of the Settings page, on either side, has the settings for the whole app:
+**Settings** (the last tab in every part) is one menu for the whole app. **General**, at the top, has the settings for all of it; under that, each part that's on has its own group: **Heating**, **Lighting**, **Cameras** and **Wi-Fi**. On a computer or tablet the menu sits on the left with the page you picked beside it (the other parts' groups fold away until you open them); on a phone the menu is a list and each page opens on its own, with **All settings** to go back. Picking a page in another part opens that part.
+
+Heating's settings are saved with **Save settings**; if you leave Heating's settings without pressing it, the changes are saved for you. Everywhere else, changes save as you make them.
+
+### General
 
 - **What it looks after.** A switch for **Heating**, **Lighting**, **Cameras** and **Wi-Fi** (the last two start off). Turn one off if something else looks after it (another heating app, Hue's own schedules, automations). Turning it off asks first, then:
   - Heating: radiators and the boiler are handed back to their own schedules, as when the app stops. Nothing is sent to them after that, and knobs turned by hand are left alone.
@@ -55,8 +59,8 @@ The top of the Settings page, on either side, has the settings for the whole app
   - Everything you set up is kept. Turning it back on carries on where it left off; lights are left as they are until each group's next scheduled change.
 
   At least one part has to stay on. With only one on, the Heating / Lighting switch at the top shows just that part's name.
-- **Dashboard button.** Where the Dashboard button at the top of every page goes.
 - **Away automatically.** The people, wait and distance for switching the house to Away from phone locations (below).
+- **Dashboard button.** Where the Dashboard button at the top of every page goes.
 
 ## Away for the whole house
 
@@ -66,7 +70,7 @@ Away is one switch for the heating and the lights:
 - **Away on the Lighting page** puts the heating on Away too, and Schedules brings it back. Home Assistant scripts using `lighting_control_mode` do the same.
 - **Heating switched Off** (say for the summer) is left alone: Away on the Lighting page then only changes the lights. While the heating is off, the same people, wait and distance settings still switch the lights to Away when everyone's out and back when someone's on the way home.
 
-The people, wait and distance are set once, in **Settings → Home Control → Away automatically**. If the heating is turned off there, they still switch the lights.
+The people, wait and distance are set once, in **Settings → General → Away automatically**. If the heating is turned off there, they still switch the lights.
 
 In Away, every room drops to the away temperature, and lights stay off except groups set to look lived in.
 
@@ -111,7 +115,7 @@ The card opens the app wherever it is: the app writes its own address into the s
 
 ## Opening from a dashboard
 
-The Dashboard button at the top of either page goes back to the dashboard set in **Settings → Home Control → Dashboard button**.
+The Dashboard button at the top of either page goes back to the dashboard set in **Settings → General → Dashboard button**.
 
 To open Home from a dashboard, use the app's address. It's `/` followed by the app's name in Home Assistant, which is in the address bar when Home is open (for example `/bea84e52_home_control`), and it's shown in **Lighting → Settings → Getting started**:
 
@@ -168,15 +172,15 @@ When a room stops calling early, its valves are turned down to the stop point to
 
 ### Warm by the scheduled time
 
-Each room learns how quickly it warms (degrees per hour) from every heat-up of 20 minutes or more, and how cold it was outside at the time. Before a scheduled rise, the app works out how long the room needs, allowing for tonight's outside temperature, and starts that much early, so the room is at the new temperature by the scheduled time instead of only starting to warm then. The room shows "Warming early to reach 20.5° by 16:30" while it does. Turn it off or limit how early it can start (2 hours by default) in **Settings → Warm by the scheduled time**. A room's learned speed is shown in its settings.
+Each room learns how quickly it warms (degrees per hour) from every heat-up of 20 minutes or more, and how cold it was outside at the time. Before a scheduled rise, the app works out how long the room needs, allowing for tonight's outside temperature, and starts that much early, so the room is at the new temperature by the scheduled time instead of only starting to warm then. The room shows "Warming early to reach 20.5° by 16:30" while it does. Turn it off or limit how early it can start (2 hours by default) in **Settings → Heating → Warm by the scheduled time**. A room's learned speed is shown in its settings.
 
 ### Open windows
 
-If a room drops sharply (1° within 10 minutes by default), it's probably a window or door. The room's valves go to frost protection for 20 minutes, the room shows "Window open? Heating paused", and an optional phone alert can tell you. Press **Window's closed, resume heating** in the room to carry on straight away. Adjust or turn off in **Settings → Open windows**. Hive valves report every few minutes, so very short draughts may be missed; Zigbee valves and room thermometers catch them sooner.
+If a room drops sharply (1° within 10 minutes by default), it's probably a window or door. The room's valves go to frost protection for 20 minutes, the room shows "Window open? Heating paused", and an optional phone alert can tell you. Press **Window's closed, resume heating** in the room to carry on straight away. Adjust or turn off in **Settings → Heating → Open windows**. Hive valves report every few minutes, so very short draughts may be missed; Zigbee valves and room thermometers catch them sooner.
 
 ### Away automatically
 
-With **Settings → Away automatically** on, the app watches the people you tick (Home Assistant "person" entities, which use the location from the Home Assistant app on each phone). When everyone has been out for 15 minutes, the house switches to Away: the heating and the lights. When anyone is home or within 2 miles, it switches back to Schedules so the house is warming as they arrive. A mode you pick by hand always wins: if you choose Schedules while everyone is out, it stays on Schedules until someone has been home. See [Away for the whole house](#away-for-the-whole-house).
+With **Settings → General → Away automatically** on, the app watches the people you tick (Home Assistant "person" entities, which use the location from the Home Assistant app on each phone). When everyone has been out for 15 minutes, the house switches to Away: the heating and the lights. When anyone is home or within 2 miles, it switches back to Schedules so the house is warming as they arrive. A mode you pick by hand always wins: if you choose Schedules while everyone is out, it stays on Schedules until someone has been home. See [Away for the whole house](#away-for-the-whole-house).
 
 ### Needs attention
 
@@ -188,7 +192,7 @@ A card above the rooms appears only when something needs looking at:
 
 ### Changes made on a radiator
 
-If someone turns a TRV or changes it in the Hive app, the room holds that temperature until its next scheduled change, then goes back to the schedule. Turn this off in Settings if you'd rather the schedule always wins.
+If someone turns a TRV or changes it in the Hive app, the room holds that temperature until its next scheduled change, then goes back to the schedule. Turn this off in **Settings → Heating → How it behaves** if you'd rather the schedule always wins.
 
 ### Back to schedule
 
@@ -206,7 +210,7 @@ The card shows "Snoozed at 7° until Wed 19:00" and a **Back to schedule** butto
 
 ## Boost the house
 
-The **Boost** button next to Schedules, Away and Off warms several rooms at once for a while. It opens with the temperature and length from **Settings → Temperatures** (22° and 30 minutes to start with) and every room ticked. Untick any rooms you want left alone, adjust the temperature or length, and press **Boost**.
+The **Boost** button next to Schedules, Away and Off warms several rooms at once for a while. It opens with the temperature and length from **Settings → Heating → Temperatures** (22° and 30 minutes to start with) and every room ticked. Untick any rooms you want left alone, adjust the temperature or length, and press **Boost**.
 
 While it runs, the button shows the time left. When it ends, or when you press **Stop boost**, each room goes back to exactly what it was doing before: its schedule, or a hold or boost it already had if that hasn't run out. Changing the whole-house mode cancels a boost, and you can't boost while the heating is Off. If someone turns a radiator by hand during a boost, that room keeps their setting instead.
 
@@ -214,7 +218,7 @@ While it runs, the button shows the time left. When it ends, or when you press *
 
 Each room's card has a small graph of today: the room's temperature since midnight, with orange shading where that room was calling for heat, plus how many times it fired and for how long ("Fired 3 times · 2h 10m today") and the day's low and high. It sits right above the schedule strip on the same 00:00–24:00 scale, so you can see the room warming during each scheduled period. Tap or hover for the exact time and temperature. The Boiler card shows how many times the boiler itself fired today.
 
-Turn the graph and the fired count on or off in **Settings → Room cards** (for everyone in the house). With only the count on, cards show just the "Fired…" line.
+Turn the graph and the fired count on or off in **Settings → Heating → Room cards** (for everyone in the house). With only the count on, cards show just the "Fired…" line.
 
 The heating shading and the fired count are recorded by the add-on, so on the day you first install it they only cover the time since then, and the card says so ("Fired twice since 18:10"). The total time and the temperatures are there straight away.
 
@@ -232,7 +236,7 @@ Tap a room's name under the chart to pick it out (tap again to show all). Tap or
 
 Room temperatures and boiler runs come from Home Assistant's history, so the chart fills in straight away. Targets are recorded by the add-on from when it's installed; before that the chart shows the schedule.
 
-Pick the gas cost sensor and the outside temperature in **Settings → Gas cost and outside temperature**, or leave them on **Find automatically**. Any sensor that counts today's cost and resets at midnight works, such as Octopus Energy's "Current Accumulative Cost Gas". For outside, use a weather entity or an outdoor thermometer.
+Pick the gas cost sensor and the outside temperature in **Settings → Heating → Gas cost and outside**, or leave them on **Find automatically**. Any sensor that counts today's cost and resets at midnight works, such as Octopus Energy's "Current Accumulative Cost Gas". For outside, use a weather entity or an outdoor thermometer.
 
 ## Insights
 
@@ -257,17 +261,17 @@ Comparisons only appear when both weeks have enough recorded days; otherwise the
 
 ## Phone alerts
 
-In **Settings → Phone alerts** you can have Home Assistant notify a device when the heating comes on, when it goes off, and when a window looks open. Each alert has its own switch and its own device, chosen from your `notify` services: a phone running the Home Assistant app (`notify.mobile_app_…`), or a notify group to reach several devices at once. **Send test** sends a sample straight away.
+In **Settings → Heating → Phone alerts** you can have Home Assistant notify a device when the heating comes on, when it goes off, and when a window looks open. Each alert has its own switch and its own device, chosen from your `notify` services: a phone running the Home Assistant app (`notify.mobile_app_…`), or a notify group to reach several devices at once. **Send test** sends a sample straight away.
 
 The "on" alert names the rooms that fired the boiler and their temperatures. The "off" alert says how long the boiler ran. Alerts replace each other on the phone rather than stacking up. They follow the boiler's minimum run and rest times, so a boiler that cycles a lot will send a lot of alerts.
 
 ## Child locks
 
-If a TRV has a child lock entity in Home Assistant (ZHA and Zigbee2MQTT usually create one), a **Child lock** switch appears next to it in the room's details, and **Settings → Child locks** can lock or unlock them all at once. Locked valves ignore their own buttons and dial, but the add-on can still set them.
+If a TRV has a child lock entity in Home Assistant (ZHA and Zigbee2MQTT usually create one), a **Child lock** switch appears next to it in the room's details, and **Settings → Heating → Rooms** can lock or unlock them all at once. Locked valves ignore their own buttons and dial, but the add-on can still set them.
 
 ## Setup
 
-1. Open **Home** in the sidebar (it opens on Heating), go to **Settings**.
+1. Open **Home** in the sidebar (it opens on Heating), go to **Settings** (the Heating group).
 2. Under **Boiler**, pick your Hive thermostat (usually `climate.heating`, or `climate.<zone>_heating`).
 3. Under **Rooms**, add each room, tick its TRVs, and optionally pick a room thermometer.
 4. Go to **Schedules** and set each room's week. New rooms start with a typical weekday and weekend pattern.
@@ -296,7 +300,7 @@ Two places (for heating; lighting keeps everything in `lighting.json`):
 | `calls.json` | When each room called for heat, for the room cards | Room detail, as above |
 | `lighting.json` | Lighting: groups, schedules, scenes, settings and the lighting Activity log (last 300 entries) | Always |
 
-**Settings → History** shows how much each uses. Lowering a number deletes the older records when you save. The Activity tab shows the latest 60 entries; **Show older** pages back through the rest. Home Assistant's own history isn't changed by these settings: set `purge_keep_days` under `recorder:` in Home Assistant's configuration for that.
+**Settings → Heating → History** shows how much each uses. Lowering a number deletes the older records when you save. The Activity tab shows the latest 60 entries; **Show older** pages back through the rest. Home Assistant's own history isn't changed by these settings: set `purge_keep_days` under `recorder:` in Home Assistant's configuration for that.
 
 Uninstalling the add-on can remove this folder, so take a backup first if you might want it back.
 
@@ -358,7 +362,7 @@ In a group's settings:
 
 # Cameras
 
-Cameras start off. Turn them on in **Settings → Home Control → Cameras**, then add your cameras in **Cameras → Settings → Add a camera**.
+Cameras start off. Turn them on in **Settings → General → What it looks after**, then add your cameras in **Cameras → Settings → Add a camera**.
 
 Any camera Home Assistant knows about can be added: UniFi Protect, Reolink, Ring, Frigate, Tapo, Hikvision, Amcrest, Nest, Blink, ONVIF and generic RTSP cameras among them. Home Control uses what Home Assistant already has for each camera, so there's nothing to set up per make:
 
@@ -373,7 +377,7 @@ Movement alerts go to the phones chosen in **Cameras → Settings → Phones to 
 Each camera alerts on its own schedule:
 
 - **Always**
-- **When everyone's out**: whenever the house is on Away, set by hand or by Away automatically (Settings → Home Control).
+- **When everyone's out**: whenever the house is on Away, set by hand or by Away automatically (Settings → General).
 - **Between set times**, such as 23:00 to 06:30.
 - **When everyone's out, or between set times**
 - **Never**
@@ -413,7 +417,7 @@ Each camera's picture (tap it for the live view), whether it's offline or seeing
 
 # Wi-Fi
 
-Wi-Fi starts off. Turn it on in **Settings → Home Control → Wi-Fi**. It uses Home Assistant's **UniFi Network** integration (Settings → Devices & services → Add integration → UniFi Network, signed in with a local admin account on your UniFi console), so there's nothing else to set up: your access points, networks and the devices on them appear straight away.
+Wi-Fi starts off. Turn it on in **Settings → General → What it looks after**. It uses Home Assistant's **UniFi Network** integration (Settings → Devices & services → Add integration → UniFi Network, signed in with a local admin account on your UniFi console), so there's nothing else to set up: your access points, networks and the devices on them appear straight away.
 
 ## Access points
 
@@ -425,11 +429,11 @@ Each access point with its model, whether it's online, how many devices are on i
 
 Under the count, each access point lists the devices on it, with the network and band each is using (the first six, and **Show all** for the rest). Its count comes from UniFi, so it can include devices Home Assistant isn't tracking; the list says how many (see **Track them all** under Devices).
 
-Switches, the gateway and other UniFi devices are listed under **Other network devices**, with their lights and a restart button. Which is which is worked out from each device's model; change it in **Settings → What each device is**, or hide a device.
+Switches, the gateway and other UniFi devices are listed under **Other network devices**, with their lights and a restart button. Which is which is worked out from each device's model; change it in **Wi-Fi → Settings → What each device is**, or hide a device.
 
 ### Switching an access point off
 
-Home Assistant's UniFi Network integration can't switch an access point itself off, but it can turn off the PoE port on the UniFi switch (or gateway) that powers it, which does the same. In **Settings → Access points**, choose the port each access point is plugged into: the ports on the switch it's connected to are listed first. Home Assistant keeps PoE ports turned off to start with; choosing one here turns it on in Home Assistant, which takes about a minute.
+Home Assistant's UniFi Network integration can't switch an access point itself off, but it can turn off the PoE port on the UniFi switch (or gateway) that powers it, which does the same. In **Wi-Fi → Settings → Access points**, choose the port each access point is plugged into: the ports on the switch it's connected to are listed first. Home Assistant keeps PoE ports turned off to start with; choosing one here turns it on in Home Assistant, which takes about a minute.
 
 An access point can then be switched off from its card, and **off between two times** each day (a garden access point overnight, say). An access point powered by a PoE injector, or a switch that isn't UniFi, can't be switched off from here.
 

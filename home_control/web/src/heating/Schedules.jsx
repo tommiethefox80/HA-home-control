@@ -152,7 +152,7 @@ export default function Schedules({ state, zoneId, notify }) {
   const today = nowLocal(tz).day;
 
   if (!zone) {
-    return <div className="empty"><h2>No rooms yet</h2><p>Add a room in Settings, then set its week here.</p><a className="btn primary" href="#/settings">Add a room</a></div>;
+    return <div className="empty"><h2>No rooms yet</h2><p>Add a room in Settings, then set its week here.</p><a className="btn primary" href="#/settings/rooms">Add a room</a></div>;
   }
   const schedule = state.schedules[zone.id] || {};
   return (

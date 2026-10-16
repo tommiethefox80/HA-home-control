@@ -136,7 +136,7 @@ console.log('group status after switching over:', st2.groups.map((g) => `${g.nam
 await page.screenshot({ path: `${OUT}import-3-running.png` });
 
 // 3. Settings mentions the stopped old app
-await f.evaluate(() => { window.location.hash = '#/lighting/settings'; });
+await f.evaluate(() => { window.location.hash = '#/lighting/settings/start'; });
 await f.waitForSelector('#set-old');
 const oldNote = await f.$eval('#set-old', (e) => e.closest('section').textContent);
 check(/installed but stopped/.test(oldNote), `settings note: ${oldNote}`);
@@ -146,8 +146,8 @@ await page.screenshot({ path: `${OUT}import-4-settings.png` });
 // 4. Outside Home Assistant (no Supervisor to ask), nothing is offered and nothing breaks
 const plain = await browser.newPage();
 plain.on('pageerror', (e) => errors.push(`pageerror (plain) ${e.message}`));
-await plain.goto(`${APP}/#/lighting/settings`, { waitUntil: 'load' });
-await plain.waitForSelector('#set-groups');
+await plain.goto(`${APP}/#/lighting/settings/start`, { waitUntil: 'load' });
+await plain.waitForSelector('#set-tips');
 check(!(await plain.$('#set-old')), 'old app section shown without Home Assistant');
 
 await browser.close();

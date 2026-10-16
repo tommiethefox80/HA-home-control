@@ -4,9 +4,9 @@ import { Icon, Sheet, Toggle, Field, Notice, kindIcon } from './ui.jsx';
 import { ScenesSettings } from './Scenes.jsx';
 import { OldAppSettings } from './Import.jsx';
 import { describeMonthDay } from '../../../server/src/lighting/schedule.js';
-import { HomeSettings } from '../HomeSettings.jsx';
+import { SettingsFrame, settingsPage } from '../SettingsFrame.jsx';
 
-export function Settings({ state, run, go, old }) {
+export function Settings({ state, run, go, old, arg }) {
   const [cfg, setCfg] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // { id?, preset? }
@@ -18,12 +18,21 @@ export function Settings({ state, run, go, old }) {
 
   const load = () => api('GET', 'config').then((c) => { setCfg(c); setForm((f) => f || { ...c.settings }); setError(null); }).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
-  // Open "new group" straight from links like #/settings/new
+  // Open "new group" straight from links like #/lighting/settings/new
   useEffect(() => {
-    if (window.location.hash.endsWith('/new') && cfg) { setEditing({}); go('settings'); }
-  }, [cfg, go]);
+    if (arg === 'new' && cfg) { setEditing({}); go('settings', 'groups'); }
+  }, [cfg, go, arg]);
+  const { item, shown } = settingsPage('lighting', arg === 'new' ? 'groups' : arg);
+  const show = (id) => shown === id;
+  const status = savedMsg ? <><Icon name="check" size={16} />{savedMsg}</> : 'Changes save as you make them';
 
-  if (!cfg || !form) return error ? <Notice tone="error">{error}</Notice> : <div className="loading" role="status">Loading settings</div>;
+  if (!cfg || !form) {
+    return (
+      <SettingsFrame part="lighting" item={item} shown={shown}>
+        {error ? <Notice tone="error">{error}</Notice> : <div className="loading" role="status">Loading settings</div>}
+      </SettingsFrame>
+    );
+  }
 
   const usedAreas = new Set(cfg.groups.map((g) => g.name.toLowerCase()));
   const isFree = (id) => !cfg.candidates.devices.find((d) => d.id === id)?.group;
@@ -57,16 +66,11 @@ export function Settings({ state, run, go, old }) {
   const sunName = cfg.candidates.suns.find((s) => s.id === cfg.sunFound)?.name;
 
   return (
-    <>
-      <div className="page-head settings-head">
-        <h2>Settings</h2>
-        <span className="saved" role="status">{savedMsg ? <><Icon name="check" size={16} />{savedMsg}</> : 'Changes save as you make them'}</span>
-      </div>
-      <HomeSettings />
+    <SettingsFrame part="lighting" item={item} shown={shown} status={status}>
       {!cfg.connected && <Notice tone="warn">Not connected to Home Assistant, so the lists below may be empty. They fill in once it reconnects.</Notice>}
       {error && <Notice tone="error">{error}</Notice>}
 
-      <section className="card settings-section" aria-labelledby="set-groups">
+      {show('groups') && <section className="card settings-section" aria-labelledby="set-groups">
         <div className="row-between">
           <h3 id="set-groups">Groups</h3>
           <button type="button" className="btn btn-primary" onClick={() => setEditing({})}><Icon name="plus" size={18} />Add a group</button>
@@ -111,11 +115,11 @@ export function Settings({ state, run, go, old }) {
             </div>
           </div>
         )}
-      </section>
+      </section>}
 
-      <ScenesSettings cfg={cfg} state={state} run={run} reload={load} form={form} set={set} />
+      {show('scenes') && <ScenesSettings cfg={cfg} state={state} run={run} reload={load} form={form} set={set} />}
 
-      <section className="card settings-section" aria-labelledby="set-behave">
+      {show('behaviour') && <section className="card settings-section" aria-labelledby="set-behave">
         <h3 id="set-behave">How it behaves</h3>
         <Toggle label="Notice changes made elsewhere" checked={form.detectManual} onChange={(v) => set('detectManual', v)}
           description="When someone uses a wall switch, the Home Assistant app or a voice assistant, leave that group alone until its next scheduled change. Turn off to put things straight back to the schedule." />
@@ -130,9 +134,9 @@ export function Settings({ state, run, go, old }) {
         <Field label="Wait after a command (seconds)" htmlFor="grace" help="Cloud lights and sockets can take a while to report back. During this wait the app won't resend or mistake late reports for someone using a switch.">
           <input id="grace" type="number" min="5" max="300" inputMode="numeric" value={form.graceSeconds} onChange={(e) => set('graceSeconds', e.target.value)} />
         </Field>
-      </section>
+      </section>}
 
-      <section className="card settings-section" aria-labelledby="set-away">
+      {show('away') && <section className="card settings-section" aria-labelledby="set-away">
         <h3 id="set-away">Away</h3>
         <p className="fine">Groups set to look lived in come on a little after sunset and go off around this time, varying by up to 20 minutes each day.</p>
         <div className="field-pair">
@@ -143,22 +147,21 @@ export function Settings({ state, run, go, old }) {
             <input id="awaybri" type="number" min="1" max="100" inputMode="numeric" value={form.awayBrightness} onChange={(e) => set('awayBrightness', e.target.value)} />
           </Field>
         </div>
-      </section>
+      </section>}
 
-      <section className="card settings-section" aria-labelledby="set-ha">
-        <h3 id="set-ha">Home Assistant</h3>
+      {show('sun') && <section className="card settings-section" aria-labelledby="set-ha">
+        <h3 id="set-ha">Sunrise and sunset</h3>
         <Field label="Sunrise and sunset from" htmlFor="sun" help="Used for changes set around sunset or sunrise. Without it, times are worked out from your home location.">
           <select id="sun" value={form.sunEntity} onChange={(e) => set('sunEntity', e.target.value)}>
             <option value="auto">{cfg.sunFound ? `Find automatically (using ${sunName || cfg.sunFound})` : 'Find automatically (none found, using your home location)'}</option>
             {cfg.candidates.suns.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.id})</option>)}
           </select>
         </Field>
-      </section>
+      </section>}
 
+      {show('start') && <OldAppSettings old={old} run={run} paused={!!state?.paused} />}
 
-      <OldAppSettings old={old} run={run} paused={!!state?.paused} />
-
-      <section className="card settings-section" aria-labelledby="set-tips">
+      {show('start') && <section className="card settings-section" aria-labelledby="set-tips">
         <h3 id="set-tips">Getting started</h3>
         <ol className="tips">
           <li>Turn off any Home Assistant automations that already switch these lights on a timer. Toggle them off rather than deleting them, so you can go back. Two schedules for the same light will fight.</li>
@@ -172,14 +175,14 @@ tap_action:
   navigation_path: ${state?.house?.panel || '/local_heating_control'}?section=lighting`}</pre>
           </li>
         </ol>
-      </section>
+      </section>}
 
       {editing && (
         <GroupEditor cfg={cfg} editing={editing} run={run}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />
       )}
-    </>
+    </SettingsFrame>
   );
 }
 

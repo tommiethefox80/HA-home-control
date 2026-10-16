@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, thermal, deg } from './lib.js';
 import { Sheet } from './ui.jsx';
-import { HomeSettings } from '../HomeSettings.jsx';
+import { SettingsFrame, settingsPage } from '../SettingsFrame.jsx';
 
 // Per-room "stop early": learned automatically, a fixed % of the target, or the house setting.
 function StopEarlyField({ room, form, setForm, live, houseStop, notify }) {
@@ -230,13 +230,13 @@ function HistorySettings({ s, set }) {
   );
 }
 
-function SmartSettings({ s, set, state }) {
+function SmartSettings({ s, set, state, show }) {
   const pre = s.preheat || { enabled: true, maxMinutes: 120 };
   const win = s.window || { enabled: true, drop: 1, minutes: 10, pauseMinutes: 20 };
   const learned = state.zones.filter((z) => z.warm?.samples).length;
   return (
     <>
-      <section className="section">
+      {show('early') && <section className="section">
         <h2>Warm by the scheduled time</h2>
         <label className="toggle">
           <input type="checkbox" checked={!!pre.enabled} onChange={(e) => set({ preheat: { ...pre, enabled: e.target.checked } })} />
@@ -248,9 +248,9 @@ function SmartSettings({ s, set, state }) {
             <input type="number" step="15" value={pre.maxMinutes} onChange={(e) => set({ preheat: { ...pre, maxMinutes: numIn(e.target.value) } })} />
           </label>
         )}
-      </section>
+      </section>}
 
-      <section className="section">
+      {show('windows') && <section className="section">
         <h2>Open windows</h2>
         <label className="toggle">
           <input type="checkbox" checked={!!win.enabled} onChange={(e) => set({ window: { ...win, enabled: e.target.checked } })} />
@@ -264,7 +264,7 @@ function SmartSettings({ s, set, state }) {
           </div>
         )}
         <small style={{ display: 'block', color: 'var(--ink-2)', fontSize: '.84rem' }}>Works best with valves or thermometers that report often. Hive valves can take a few minutes to report, so a quick blast of cold air may be missed.</small>
-      </section>
+      </section>}
 
     </>
   );
@@ -323,12 +323,9 @@ function PhoneAlerts({ s, setNotify, targets, saveFirst, dirty, notify }) {
 
 export default function Settings({ state, notify, focus }) {
   const [entities, setEntities] = useState([]);
-  // links like #/settings/away (from the Lighting settings) open on that section
-  useEffect(() => {
-    if (!focus) return;
-    const t = setTimeout(() => document.getElementById(focus === 'away' ? 'home-away' : `set-${focus}`)?.scrollIntoView({ block: 'start' }), 50);
-    return () => clearTimeout(t);
-  }, [focus]);
+  // #/settings/boiler opens on that page (#/settings/away, from before the menu, on Away automatically)
+  const { item, shown } = settingsPage('heating', focus === 'away' ? 'presence' : focus);
+  const show = (id) => shown === id;
   const [editing, setEditing] = useState(null);
   const [s, setS] = useState(state.settings);
   const [dirty, setDirty] = useState(false);
@@ -353,14 +350,20 @@ export default function Settings({ state, notify, focus }) {
     setDirty(true);
   };
   const saveFirst = async () => { const { presence, dashboardPath, ...mine } = s; await api('settings', 'PUT', mine); setDirty(false); };
+  // changes not saved yet are saved on the way out of Heating's settings, rather than lost
+  const pending = useRef(null);
+  pending.current = dirty ? s : null;
+  useEffect(() => () => {
+    if (!pending.current) return;
+    const { presence, dashboardPath, ...mine } = pending.current;
+    api('settings', 'PUT', mine).then(() => notify('Heating settings saved')).catch((e) => notify(e.message, true));
+  }, [notify]);
   const boilerOptions = entities.filter((e) => ['climate', 'switch', 'input_boolean'].includes(e.domain));
   const boilerIsClimate = s.boiler.entity?.startsWith('climate.');
 
   return (
-    <>
-      <HomeSettings />
-
-      <section className="section">
+    <SettingsFrame part="heating" item={item} shown={shown}>
+      {show('rooms') && <section className="section">
         <h2>Rooms</h2>
         <p>Each room groups its radiator valves and follows one schedule.</p>
         <ul className="room-list">
@@ -376,9 +379,10 @@ export default function Settings({ state, notify, focus }) {
           })}
         </ul>
         <button className="btn primary" onClick={() => setEditing({})}>Add a room</button>
-      </section>
+      </section>}
+      {show('rooms') && <ChildLocks state={state} notify={notify} />}
 
-      <section className="section">
+      {show('boiler') && <section className="section">
         <h2>Boiler</h2>
         <p>When any room is below its target, the app fires the boiler. With a Hive thermostat it does this by turning the thermostat up, then back down when every room is warm.</p>
         <label className="field">
@@ -398,9 +402,9 @@ export default function Settings({ state, notify, focus }) {
           <label className="field"><span>Run for at least (min)</span><input type="number" value={s.boiler.minOnMinutes} onChange={(e) => setB({ minOnMinutes: numIn(e.target.value) })} /></label>
           <label className="field"><span>Rest for at least (min)</span><input type="number" value={s.boiler.minOffMinutes} onChange={(e) => setB({ minOffMinutes: numIn(e.target.value) })} /></label>
         </div>
-      </section>
+      </section>}
 
-      <section className="section">
+      {show('temperatures') && <section className="section">
         <h2>Temperatures</h2>
         <div className="grid2">
           <label className="field"><span>Away</span><input type="number" step="0.5" value={s.awayTemp} onChange={(e) => set({ awayTemp: numIn(e.target.value) })} /></label>
@@ -419,15 +423,13 @@ export default function Settings({ state, notify, focus }) {
           <small>Used by rooms without their own setting (set one per room under Rooms → Edit). 0 stops exactly at target. If this is bigger than the start gap above, the start gap widens to keep 0.2° between them.</small>
           <input type="number" step="0.1" min="0" value={s.stopEarly ?? 0} onChange={(e) => set({ stopEarly: numIn(e.target.value) })} />
         </label>
-      </section>
+      </section>}
 
-      <SmartSettings s={s} set={set} state={state} />
+      <SmartSettings s={s} set={set} state={state} show={show} />
 
-      <PhoneAlerts s={s} setNotify={setNotify} targets={targets} saveFirst={saveFirst} dirty={dirty} notify={notify} />
+      {show('alerts') && <PhoneAlerts s={s} setNotify={setNotify} targets={targets} saveFirst={saveFirst} dirty={dirty} notify={notify} />}
 
-      <ChildLocks state={state} notify={notify} />
-
-      <section className="section">
+      {show('sources') && <section className="section">
         <h2>Gas cost and outside temperature</h2>
         <p>Shown beside your rooms. Leave on "Find automatically" or pick the exact entities.</p>
         <label className="field">
@@ -447,9 +449,9 @@ export default function Settings({ state, notify, focus }) {
             {entities.filter((e) => e.kind === 'temperature').map((e) => <option key={e.entity_id} value={e.entity_id}>{e.name}</option>)}
           </select>
         </label>
-      </section>
+      </section>}
 
-      <section className="section">
+      {show('cards') && <section className="section">
         <h2>Room cards</h2>
         <label className="toggle">
           <input type="checkbox" checked={s.cards?.spark !== false} onChange={(e) => set({ cards: { ...s.cards, spark: e.target.checked } })} />
@@ -459,12 +461,12 @@ export default function Settings({ state, notify, focus }) {
           <input type="checkbox" checked={s.cards?.fires !== false} onChange={(e) => set({ cards: { ...s.cards, fires: e.target.checked } })} />
           <span>Times fired today<small>How many times each room called for heat today, and for how long in total.</small></span>
         </label>
-      </section>
+      </section>}
 
-      <HistorySettings s={s} set={set} />
+      {show('history') && <HistorySettings s={s} set={set} />}
 
-      <section className="section">
-        <h2>Behaviour</h2>
+      {show('behaviour') && <section className="section">
+        <h2>How it behaves</h2>
         <label className="toggle">
           <input type="checkbox" checked={s.respectManualChanges} onChange={(e) => set({ respectManualChanges: e.target.checked })} />
           <span>Keep changes made on a radiator<small>If someone turns a TRV or changes it in the Hive app, that room holds the new temperature until its next scheduled change.</small></span>
@@ -478,7 +480,7 @@ export default function Settings({ state, notify, focus }) {
           <small>Hive updates through the cloud, so changes take a minute or two to show. Zigbee valves answer almost instantly.</small>
           <input type="number" value={s.commandGraceSeconds} onChange={(e) => set({ commandGraceSeconds: numIn(e.target.value) })} />
         </label>
-      </section>
+      </section>}
 
       {dirty && (
         <div className="actions" style={{ position: 'sticky', bottom: 'calc(84px + env(safe-area-inset-bottom))', background: 'var(--bg)', padding: '10px 0' }}>
@@ -489,6 +491,6 @@ export default function Settings({ state, notify, focus }) {
       )}
 
       {editing && <RoomEditor room={editing} entities={entities} state={state} onClose={() => setEditing(null)} notify={notify} />}
-    </>
+    </SettingsFrame>
   );
 }

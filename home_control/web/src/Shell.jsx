@@ -9,7 +9,8 @@ import { App as LightingApp } from './lighting/App.jsx';
 import { ErrorBoundary as HeatingBoundary } from './heating/ui.jsx';
 import { ErrorBoundary as LightingBoundary } from './lighting/ui.jsx';
 import { MoveScreen, MovedBanner, useMove, useOldHome } from './Move.jsx';
-import { useHome } from './HomeSettings.jsx';
+import { GENERAL, useHome } from './HomeSettings.jsx';
+import { SETTINGS_MENU } from './SettingsFrame.jsx';
 
 export const sectionOf = (hash) => {
   const m = /^#\/?(lighting|cameras|wifi)(\/|$)/.exec(hash || '');
@@ -95,10 +96,14 @@ export function Shell() {
 
   const asked = sectionOf(hash);
   const section = moving ? 'heating' : parts.includes(asked) ? asked : parts[0] || 'heating';
-  // a page of a part that's turned off: go to the part that's on
+  // a page of a part that's turned off: go to the part that's on (staying in Settings, e.g. after
+  // turning that part off from Settings → General)
   useEffect(() => {
-    if (home && !moving && section !== asked) window.location.replace(HOME[section]);
-  }, [home, moving, section, asked]);
+    if (!home || moving || section === asked) return;
+    const m = /\/settings(?:\/([^/]+))?/.exec(hash || '');
+    const general = m?.[1] && GENERAL.some((g) => g.id === m[1]) ? `/${m[1]}` : '';
+    window.location.replace(m ? `${SETTINGS_MENU[section].base}${general}` : HOME[section]);
+  }, [home, moving, section, asked, hash]);
   // Coming back to a section returns to the page you were last on there.
   const last = useRef({ ...HOME });
   last.current[section] = hash && hash !== '#' ? hash : HOME[section];

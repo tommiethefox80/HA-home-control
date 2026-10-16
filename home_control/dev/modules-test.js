@@ -124,21 +124,36 @@ async function open(hash, width = 1100, height = 900, scale = 1) {
   return p;
 }
 
-await step('the settings block is on both Settings pages, and the Away and Dashboard settings are in it', async () => {
+await step('the Settings menu: General first (parts, Away, Dashboard), then a group for each part', async () => {
   const p = await open('#/settings');
-  await p.waitForSelector('.home-set');
-  const t = await p.$eval('.home-set', (e) => e.textContent);
-  assert.match(t, /What it looks after.*Heating.*Lighting.*Dashboard button.*Away automatically/s);
+  await p.waitForSelector('.setf-nav');
+  const nav = await p.$eval('.setf-nav', (e) => e.textContent);
+  assert.match(nav, /General.*What it looks after.*Away automatically.*Dashboard button.*Heating.*Rooms.*Boiler.*History.*Lighting/s);
+  // heating's own page shows beside it, with no general settings mixed in
+  assert.match(await p.$eval('.setf-page', (e) => e.textContent), /^Rooms/);
   assert.equal(await p.$$eval('.section h2', (hs) => hs.filter((h) => /Away automatically|Dashboard button/.test(h.textContent)).length), 0, 'still in heating settings');
-  await p.evaluate(() => document.querySelector('.home-set').scrollIntoView());
   await p.screenshot({ path: `${OUT}modules-heating-settings.png` });
-  await p.goto(`${APP}/#/lighting/settings`, { waitUntil: 'load' });
+  // a general page is the same from any part
+  await p.goto(`${APP}/#/lighting/settings/parts`, { waitUntil: 'load' });
   await p.waitForSelector('.home-set');
+  assert.match(await p.$eval('.home-set', (e) => e.textContent), /What it looks after.*Heating.*Lighting.*Cameras.*Wi-Fi/s);
+  await p.goto(`${APP}/#/settings/presence`, { waitUntil: 'load' });
+  await p.waitForSelector('#home-away');
+  // links from before the menu still land
+  await p.goto(`${APP}/#/settings/away`, { waitUntil: 'load' });
+  await p.waitForSelector('#home-away');
+  // a page in another part is a link into that part
+  await p.goto(`${APP}/#/settings/boiler`, { waitUntil: 'load' });
+  await p.waitForSelector('.setf-nav');
+  await p.evaluate(() => [...document.querySelectorAll('.setf-group h3 button')].find((b) => /Lighting/.test(b.textContent)).click());
+  await p.evaluate(() => [...document.querySelectorAll('.setf-nav a')].find((a) => a.textContent.trim() === 'Scenes').click());
+  await p.waitForFunction(() => /sec-lighting/.test(document.body.className) && location.hash === '#/lighting/settings/scenes', { timeout: 5000 });
+  await p.waitForSelector('#set-scenes, .setf-page .settings-section');
   await p.close();
 });
 
 await step('turning lighting off from the page asks first, then hides lighting', async () => {
-  const p = await open('#/lighting/settings', 390, 844, 2);
+  const p = await open('#/lighting/settings/parts', 390, 844, 2);
   await p.waitForSelector('#mod-lighting');
   await p.click('#mod-lighting');
   await p.waitForSelector('.home-confirm');
@@ -154,7 +169,7 @@ await step('turning lighting off from the page asks first, then hides lighting',
   assert.equal((await house('GET')).modules.lighting, false);
   await p.screenshot({ path: `${OUT}modules-heating-only-phone.png` });
   // the last part on can't be turned off
-  await p.goto(`${APP}/#/settings`, { waitUntil: 'load' });
+  await p.goto(`${APP}/#/settings/parts`, { waitUntil: 'load' });
   await p.waitForSelector('#mod-heating');
   assert.equal(await p.$eval('#mod-heating', (e) => e.disabled), true);
   // and on again, straight away (no question)

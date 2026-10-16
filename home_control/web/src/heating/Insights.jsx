@@ -130,7 +130,7 @@ export default function Insights({ state }) {
 
   return (
     <>
-      {!data.sources.cost && <div className="banner info">No gas cost sensor found, so costs are missing. Choose one in <a href="#/settings">Settings</a>.</div>}
+      {!data.sources.cost && <div className="banner info">No gas cost sensor found, so costs are missing. Choose one in <a href="#/settings/sources">Settings</a>.</div>}
 
       <div className="side-cards insights-cards">
         <section className="stat">
@@ -264,12 +264,12 @@ function RoomHeat() {
         From the last {data.days >= 7 ? 'week' : `${data.days} days`} of temperatures{data.outside ? ` (${deg(data.outside.min)} to ${deg(data.outside.max)} outside)` : ''}: how fast each room warms, how much colder days slow that down, and how quickly it cools once the heating's off. Cooling is only measured when a room has had no heat at all for 45 minutes, so leftover radiator heat doesn't count.
       </p>
       {data.callsFrom > data.from + 86400000 && <p className="chart-explain">Warm-ups count from {dayLabel(new Date(data.callsFrom).toISOString().slice(0, 10), { weekday: 'short', day: 'numeric', month: 'short' })}, when Home Control started recording each room's heat-ups; heat loss uses the whole week.</p>}
-      {!data.outsideEntity && <p className="chart-explain">No outside temperature found, so heat loss can't be worked out. Choose one in <a href="#/settings">Settings</a>.</p>}
+      {!data.outsideEntity && <p className="chart-explain">No outside temperature found, so heat loss can't be worked out. Choose one in <a href="#/settings/sources">Settings</a>.</p>}
       {(best || worst || weather) && (
         <ul className="callouts">
           {best && <li><b>Holds its heat best:</b> {best.name}. From 20° on a 5° night it takes about {hours(best.loss.holdHours)} to fall to 17°.</li>}
           {worst && worst !== best && <li><b>Loses heat fastest:</b> {worst.name}, about {perHour(worst.loss.at10)} when it's 10° colder outside{best && worst.loss.k / best.loss.k >= 1.3 ? `, ${(worst.loss.k / best.loss.k).toFixed(1)} times as fast as ${best.name}` : ''}. Worth checking for draughts, a window or trickle vent left open, and whether its radiator is big enough for the room.</li>}
-          {weather && weather.warm.mild.rate - weather.warm.cold.rate >= 0.2 && <li><b>Cold days slow it most:</b> {weather.name} warms {perHour(weather.warm.mild.rate)} at {deg(weather.warm.mild.outside)} outside but {perHour(weather.warm.cold.rate)} at {deg(weather.warm.cold.outside)}. Starting heating early (Settings) allows for this.</li>}
+          {weather && weather.warm.mild.rate - weather.warm.cold.rate >= 0.2 && <li><b>Cold days slow it most:</b> {weather.name} warms {perHour(weather.warm.mild.rate)} at {deg(weather.warm.mild.outside)} outside but {perHour(weather.warm.cold.rate)} at {deg(weather.warm.cold.outside)}. <a href="#/settings/early">Starting heating early</a> allows for this.</li>}
         </ul>
       )}
       <div className="table-wrap">

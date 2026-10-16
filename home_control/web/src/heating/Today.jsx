@@ -45,7 +45,7 @@ export function SideCards({ state, today }) {
             <p className="stat-num num">{money(ex.cost.today, ex.cost.unit)}</p>
             <p className="stat-sub">{today?.cost?.yesterday != null ? `${money(today.cost.yesterday, ex.cost.unit)} yesterday` : 'So far today'}</p>
           </>
-        ) : <p className="stat-sub">No gas cost sensor found. <a href="#/settings">Choose one in Settings</a></p>}
+        ) : <p className="stat-sub">No gas cost sensor found. <a href="#/settings/sources">Choose one in Settings</a></p>}
       </section>
       <section className="stat" aria-label="Boiler today">
         <h2>Boiler today</h2>
@@ -54,7 +54,7 @@ export function SideCards({ state, today }) {
             <p className="stat-num num">{today ? hm(today.boilerTodayMinutes) : '–'}</p>
             <p className="stat-sub">{state.boiler.on ? 'Firing now' : 'Resting now'}{today?.boilerFiresToday ? ` · fired ${today.boilerFiresToday === 1 ? 'once' : today.boilerFiresToday === 2 ? 'twice' : `${today.boilerFiresToday} times`}` : ''}</p>
           </>
-        ) : <p className="stat-sub"><a href="#/settings">Choose your boiler in Settings</a></p>}
+        ) : <p className="stat-sub"><a href="#/settings/boiler">Choose your boiler in Settings</a></p>}
       </section>
       <section className="stat" aria-label="Outside">
         <h2>Outside</h2>
@@ -63,7 +63,7 @@ export function SideCards({ state, today }) {
             <p className="stat-num num">{deg(ex.outside.now)}</p>
             <p className="stat-sub">{lo != null ? `Between ${deg(lo, 0)} and ${deg(hi, 0)} in the last day` : 'Now'}</p>
           </>
-        ) : <p className="stat-sub">No outside temperature found. <a href="#/settings">Choose one in Settings</a></p>}
+        ) : <p className="stat-sub">No outside temperature found. <a href="#/settings/sources">Choose one in Settings</a></p>}
       </section>
     </div>
   );

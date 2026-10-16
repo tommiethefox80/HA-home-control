@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.1
+- **Settings is one menu for the whole app.** **General** is at the top (what it looks after, Away automatically, the Dashboard button), then a group for each part that's on: Heating, Lighting, Cameras and Wi-Fi, each split into short pages (Heating: Rooms, Boiler, Temperatures, Warm by the scheduled time, Open windows, How it behaves, Phone alerts, Room cards, Gas cost and outside, History).
+  - On a computer or tablet the menu is on the left with the page beside it; the other parts' groups fold away until opened. On a phone the menu is a list and each page opens on its own, with **All settings** to go back.
+  - It's the same from every part's Settings tab, and a page in another part opens that part.
+  - Links around the app now go straight to the right page ("Choose your boiler in Settings" opens Boiler, and so on).
+  - Heating's settings are saved for you if you leave them without pressing **Save settings**.
+  - Turning a part off from Settings keeps you in Settings.
+
 ## 1.8.0
 - **How each room holds its heat**, a new part of Heating → Insights. From the last week of history in Home Assistant, for each room:
   - how fast it warms up on a milder day and on a colder one, so you can see how much the weather slows it;

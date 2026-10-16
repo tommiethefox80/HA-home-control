@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icon, Sheet, Toggle, Field, Notice, Chips } from '../lighting/ui.jsx';
 import { goDashboard, plural, joinNames } from '../lighting/lib.js';
-import { HomeSettings } from '../HomeSettings.jsx';
+import { SettingsFrame, settingsPage } from '../SettingsFrame.jsx';
 import { api, useLiveState, clock, when, openLive, WHEN_OPTIONS, whenText } from './lib.js';
 
 const TABS = [
@@ -120,7 +120,7 @@ function Cameras({ state, run, go }) {
         <Icon name="camera" size={32} />
         <h2>No cameras yet</h2>
         <p className="fine">Add the cameras Home Assistant already knows about: any make, from UniFi Protect, Reolink and Ring to Frigate, Tapo and plain RTSP cameras.</p>
-        <button type="button" className="btn btn-primary" onClick={() => go('settings', 'add')}><Icon name="plus" />Add cameras</button>
+        <button type="button" className="btn btn-primary" onClick={() => go('settings', 'cameras/add')}><Icon name="plus" />Add cameras</button>
       </div>
     );
   }
@@ -132,7 +132,7 @@ function Cameras({ state, run, go }) {
         {state.disabled ? 'Cameras are turned off in Settings → Home Control.'
           : alerting.length ? `Movement alerts are on now for ${joinNames(alerting)}${state.away ? ' (everyone\'s out)' : ''}.`
             : `Movement alerts are off now${state.away ? '' : ' (no camera alerts while someone\'s home)'}.`}
-        {!state.settings.notify.length && <> <a href="#/cameras/settings">Choose phones to alert</a>.</>}
+        {!state.settings.notify.length && <> <a href="#/cameras/settings/phones">Choose phones to alert</a>.</>}
       </p>
       <div className="cam-grid">
         {state.cameras.map((c) => (
@@ -199,7 +199,7 @@ function ControlsSheet({ cam, run, onClose, go, groups }) {
   const byGroup = groups.map((g) => ({ ...g, items: cam.controls.filter((c) => c.group === g.id) })).filter((g) => g.items.length);
   return (
     <Sheet title={cam.name} subtitle={[cam.make, cam.model].filter(Boolean).join(' ') || null} onClose={onClose}
-      footer={<button type="button" className="btn btn-quiet" onClick={() => { onClose(); go('settings', cam.id); }}>Alerts and recording for {cam.name}</button>}>
+      footer={<button type="button" className="btn btn-quiet" onClick={() => { onClose(); go('settings', `cameras/${cam.id}`); }}>Alerts and recording for {cam.name}</button>}>
       {!cam.online && <p className="cam-why-note"><Icon name="warn" size={16} /> <span>Offline: {cam.offlineWhy || 'Home Assistant has no picture from it'}.</span></p>}
       {cam.online && cam.haSays && (
         <p className="cam-why-note"><Icon name="warn" size={16} />
@@ -324,10 +324,18 @@ function Settings({ state, run, edit, go }) {
   const [testing, setTesting] = useState(false);
   const [tested, setTested] = useState(null);
   useEffect(() => { api('GET', 'notify-targets').then(setTargets).catch(() => setTargets([])); }, [state?.connected]);
-  if (!state) return <p className="fine pad">Loading…</p>;
+  // #/cameras/settings/phones opens that page; #/cameras/settings/cameras/<camera> a camera's own settings
+  // (and #/cameras/settings/<camera>, from before the menu)
+  const [first, sub] = (edit || '').split('/');
+  const asked = settingsPage('cameras', first || null);
+  const legacy = first && !asked.item;
+  const { item, shown } = legacy ? settingsPage('cameras', 'cameras') : asked;
+  const editId = legacy ? first : item === 'cameras' ? sub : null;
+  const show = (id) => shown === id;
+  if (!state) return <SettingsFrame part="cameras" item={item} shown={shown}><p className="fine pad">Loading…</p></SettingsFrame>;
   const s = state.settings;
   const save = (patch) => run(() => api('PUT', 'settings', patch));
-  const editing = edit && edit !== 'add' ? state.cameras.find((c) => c.id === edit) : null;
+  const editing = editId && editId !== 'add' ? state.cameras.find((c) => c.id === editId) : null;
   const move = (i, dir) => {
     const ids = state.cameras.map((c) => c.id);
     const j = i + dir;
@@ -344,14 +352,11 @@ function Settings({ state, run, edit, go }) {
   };
 
   return (
-    <>
-      <div className="page-head settings-head"><h2>Settings</h2></div>
-      <HomeSettings />
-
-      <section className="card settings-section" aria-labelledby="cam-list-h">
+    <SettingsFrame part="cameras" item={item} shown={shown}>
+      {show('cameras') && <section className="card settings-section" aria-labelledby="cam-list-h">
         <div className="row-between">
           <h3 id="cam-list-h">Cameras</h3>
-          <button type="button" className="btn btn-primary" onClick={() => go('settings', 'add')} disabled={!state.candidates.length}><Icon name="plus" size={18} />Add a camera</button>
+          <button type="button" className="btn btn-primary" onClick={() => go('settings', 'cameras/add')} disabled={!state.candidates.length}><Icon name="plus" size={18} />Add a camera</button>
         </div>
         <p className="fine">Any camera in Home Assistant can be added: its movement sensors and its own settings come with it.</p>
         {!state.cameras.length && <p className="fine">No cameras yet.</p>}
@@ -370,14 +375,14 @@ function Settings({ state, run, edit, go }) {
               <div className="group-li-actions">
                 <button type="button" className="icon-btn" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${c.name} up`}><Icon name="up" /></button>
                 <button type="button" className="icon-btn" onClick={() => move(i, 1)} disabled={i === state.cameras.length - 1} aria-label={`Move ${c.name} down`}><Icon name="down" /></button>
-                <button type="button" className="btn btn-quiet" onClick={() => go('settings', c.id)}>Edit</button>
+                <button type="button" className="btn btn-quiet" onClick={() => go('settings', `cameras/${c.id}`)}>Edit</button>
               </div>
             </li>
           ))}
         </ul>
-      </section>
+      </section>}
 
-      <section className="card settings-section" aria-labelledby="cam-phones-h">
+      {show('phones') && <section className="card settings-section" aria-labelledby="cam-phones-h">
         <h3 id="cam-phones-h">Phones to alert</h3>
         <p className="fine">Movement alerts, and cameras going offline, go to these. Phones with the Home Assistant app are listed first.</p>
         {targets === null && <p className="fine">Looking…</p>}
@@ -399,26 +404,26 @@ function Settings({ state, run, edit, go }) {
           <button type="button" className="btn btn-quiet" onClick={test} disabled={testing || !s.notify.length}>{testing ? 'Sending…' : 'Send a test alert'}</button>
           {tested && <span className="fine" role="status">{tested}</span>}
         </div>
-      </section>
+      </section>}
 
-      <section className="card settings-section" aria-labelledby="cam-offline-h">
+      {show('offline') && <section className="card settings-section" aria-labelledby="cam-offline-h">
         <h3 id="cam-offline-h">Offline cameras</h3>
         <Field label="Tell the phones when a camera has been offline for (minutes)" htmlFor="cam-offmin" help="And again when it's back. 0 never tells them. A camera can be left out of these in its own settings.">
           <NumberInput id="cam-offmin" value={s.offlineMinutes} min={0} max={240} onSave={(v) => save({ offlineMinutes: v })} />
         </Field>
-      </section>
+      </section>}
 
-      <section className="card settings-section" aria-labelledby="cam-rec-h">
+      {show('recordings') && <section className="card settings-section" aria-labelledby="cam-rec-h">
         <h3 id="cam-rec-h">Recordings</h3>
         <p className="fine">On movement, a picture and a short clip are saved in Home Assistant's media folder (Media → home_control), and play from Activity. Cameras that don't give Home Assistant a video stream save pictures only.</p>
         <Field label="Keep clips and pictures for (days)" htmlFor="cam-keep">
           <NumberInput id="cam-keep" value={s.keepDays} min={1} max={365} onSave={(v) => save({ keepDays: v })} />
         </Field>
-      </section>
+      </section>}
 
-      {edit === 'add' && <AddCameras state={state} run={run} onClose={() => go('settings')} />}
-      {editing && <CameraEditor cam={editing} run={run} onClose={() => go('settings')} />}
-    </>
+      {editId === 'add' && <AddCameras state={state} run={run} onClose={() => go('settings', 'cameras')} />}
+      {editing && <CameraEditor cam={editing} run={run} onClose={() => go('settings', 'cameras')} />}
+    </SettingsFrame>
   );
 }
 

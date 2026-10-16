@@ -141,7 +141,7 @@ export function App({ active = true, switcher }) {
         )}
         {route.tab === 'schedules' && <Schedules state={state} run={run} go={go} groupId={route.arg} />}
         {route.tab === 'activity' && <Activity state={state} />}
-        {route.tab === 'settings' && <Settings state={state} run={run} go={go} old={old} />}
+        {route.tab === 'settings' && <Settings state={state} run={run} go={go} old={old} arg={route.arg} />}
       </main>
 
       <nav className="tabs" aria-label="Sections">

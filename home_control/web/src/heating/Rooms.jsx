@@ -260,7 +260,7 @@ export default function Rooms({ state, notify, today }) {
       <div className="empty">
         <h2>No rooms yet</h2>
         <p>Add a room, link its radiators, and it will follow a schedule you set here.</p>
-        <a className="btn primary" href="#/settings">Add a room</a>
+        <a className="btn primary" href="#/settings/rooms">Add a room</a>
       </div>
     );
   }

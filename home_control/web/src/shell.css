@@ -170,3 +170,76 @@ body .home-solo {
   font-weight: 650; font-size: 1.05rem; color: var(--ink);
 }
 body .home-solo svg { width: 19px; height: 19px; }
+
+/* ---------- the Settings menu (every part): General first, then each part ---------- */
+body .setf { display: grid; gap: 14px; }
+body .setf-head { display: flex; align-items: center; gap: 10px; min-height: 40px; flex-wrap: wrap; }
+body .setf-title { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.015em; color: var(--ink); }
+body .setf-where { color: var(--ink-2); font-size: .92rem; font-weight: 600; }
+body .setf-status { margin-left: auto; color: var(--ink-2); font-size: .85rem; display: inline-flex; align-items: center; gap: 6px; }
+body .setf-back {
+  display: none; align-items: center; gap: 4px; min-height: 40px; padding: 6px 12px 6px 6px; margin-left: -6px; border-radius: 10px;
+  color: var(--ink); font-weight: 640; text-decoration: none;
+}
+body .setf-back svg { width: 20px; height: 20px; }
+body .setf-back:focus-visible, body .setf-nav a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+body .setf-body { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 20px; align-items: start; }
+body .setf-nav {
+  position: sticky; top: 12px; display: grid; gap: 4px; padding: 10px 8px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
+  max-height: calc(100vh - 124px); overflow: auto;
+}
+body .setf-group + .setf-group { border-top: 1px solid var(--line); padding-top: 6px; margin-top: 4px; }
+body .setf-group h3 { margin: 0; }
+body .setf-group h3 button {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 8px;
+  background: none; font: inherit; font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink-2); cursor: pointer; text-align: left;
+}
+body .setf-group h3 button:hover { color: var(--ink); }
+body .setf-group h3 button:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+body .setf-gname { flex: 1; }
+body .setf-group h3 .setf-chev { display: block; width: 16px; height: 16px; transform: rotate(90deg); transition: transform .15s; }
+body .setf-shut h3 .setf-chev { transform: none; }
+body .setf-group.setf-shut ul { display: none; }
+body .setf-icon { display: inline-grid; place-items: center; width: 18px; height: 18px; }
+body .setf-icon svg { width: 18px; height: 18px; }
+body .setf-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+body .setf-nav a {
+  display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 5px 10px 5px 34px; border-radius: 10px;
+  color: var(--ink); text-decoration: none; font-size: .94rem; font-weight: 520;
+}
+body .setf-nav a:hover { background: var(--panel-2); }
+body .setf-nav a[aria-current='page'] { background: var(--ink); color: var(--bg); font-weight: 640; }
+body .setf-nav a span { flex: 1; min-width: 0; }
+body .setf-chev { display: none; width: 18px; height: 18px; flex: none; color: var(--ink-2); }
+body .setf-page { min-width: 0; display: flex; flex-direction: column; }
+/* each part's own pages are spaced in their own way: keep the gap between cards the same here */
+body .setf-page > * { margin-top: 0; }
+body .setf-page > * + * { margin-top: 16px; }
+body .setf-page > .section, body .setf-page > .home-set { margin-bottom: 0; }
+
+/* a phone: the menu is a list, and each page opens on its own */
+@media (max-width: 860px) {
+  body .setf-body { grid-template-columns: minmax(0, 1fr); }
+  body .setf-on-menu .setf-page { display: none; }
+  body .setf-on-page .setf-nav { display: none; }
+  body .setf-on-page .setf-back { display: inline-flex; }
+  body .setf-on-page .setf-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  body .setf-on-page .setf-where::before { content: '·'; margin-right: 10px; color: var(--line); }
+  body .setf-on-menu .setf-where { display: none; }
+  body .setf-nav { position: static; max-height: none; overflow: visible; padding: 0; background: none; border: 0; box-shadow: none; gap: 18px; }
+  body .setf-group + .setf-group { border-top: 0; padding-top: 0; margin-top: 0; }
+  body .setf-group h3 { margin: 0 0 4px; }
+  body .setf-group h3 button { cursor: default; pointer-events: none; padding: 4px; }
+  body .setf-group h3 .setf-chev { display: none; }
+  body .setf-group.setf-shut ul { display: grid; }
+  body .setf-group ul {
+    gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow);
+  }
+  body .setf-group li + li { border-top: 1px solid var(--line); }
+  body .setf-nav a { min-height: 50px; padding: 10px 12px 10px 16px; border-radius: 0; font-size: 1rem; }
+  body .setf-nav a[aria-current='page'] { background: none; color: var(--ink); font-weight: 520; }
+  body .setf-chev { display: block; }
+}
