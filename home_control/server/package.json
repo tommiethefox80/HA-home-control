@@ -1,6 +1,6 @@
 {
   "name": "home-control-server",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "description": "Heating and lighting engine and API for the Home Control Home Assistant app",

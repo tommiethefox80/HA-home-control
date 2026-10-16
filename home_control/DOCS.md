@@ -342,3 +342,52 @@ Use `scene: All off` to switch everything off. The mode can be changed the same 
 In a group's settings:
 - **Season**: run the schedule only between two dates each year. Outside them the schedule sleeps and the group is left alone.
 - **Use a lower level at night**: movement turns the group on at a lower brightness between two times.
+
+# Cameras
+
+Cameras start off. Turn them on in **Settings → Home Control → Cameras**, then add your cameras in **Cameras → Settings → Add a camera**.
+
+Any camera Home Assistant knows about can be added: UniFi Protect, Reolink, Ring, Frigate, Tapo, Hikvision, Amcrest, Nest, Blink, ONVIF and generic RTSP cameras among them. Home Control uses what Home Assistant already has for each camera, so there's nothing to set up per make:
+
+- **Pictures** come through Home Assistant, every 10 seconds while the Cameras page is open. Tap a picture for Home Assistant's own live view.
+- **Movement** comes from the camera's own sensors in Home Assistant (motion, person, vehicle, animal, package, the doorbell). In a camera's settings, choose which of them count: untick plain motion to be told only about people, vehicles or the doorbell.
+- **Camera settings** (the button on each camera) are the camera's own switches and choices in Home Assistant, grouped in plain words: privacy, recording, detection, night vision and picture, lights and sound, moving the camera, and the device itself. What's there depends on the make: UniFi Protect and Reolink offer a lot, Ring rather less, a plain RTSP camera nothing.
+
+## Alerts
+
+Movement alerts go to the phones chosen in **Cameras → Settings → Phones to alert**: phones with the Home Assistant app are listed first. With **Send a picture with each alert** on, the alert carries a picture from the camera at that moment (on iPhones, a long press shows the live view). Tapping it opens the Cameras page.
+
+Each camera alerts on its own schedule:
+
+- **Always**
+- **When everyone's out**: whenever the house is on Away, set by hand or by Away automatically (Settings → Home Control).
+- **Between set times**, such as 23:00 to 06:30.
+- **When everyone's out, or between set times**
+- **Never**
+
+New cameras start on "when everyone's out". The bell on each camera on the Cameras page turns its alerts off and on again without losing its schedule. **At most one alert every (minutes)** stops a busy scene (a cat in the garden) sending one alert after another; movement is still saved in between.
+
+Alerts say what was seen, most specific first: "Someone at the door", "Person seen", "Vehicle seen", "Animal seen", "Package seen", or "Movement".
+
+**Offline cameras**: a camera that's been offline for a while (5 minutes to start with) is reported to the same phones, and again when it's back. A camera can be left out of these in its own settings.
+
+## Recordings
+
+On movement, a picture and a short clip (30 seconds to start with, starting 5 seconds before the movement) are saved in Home Assistant's media folder, under **Media → home_control**, and play from the **Activity** page. Each camera has its own schedule for this, with the same choices as alerts; new cameras save always.
+
+- Clips need the camera to give Home Assistant a video stream. Cameras that don't (some cloud and battery cameras) save pictures only, and Activity says so once.
+- Clips and pictures are deleted after 14 days (**Cameras → Settings → Recordings**).
+- This is in addition to anything the camera or its own app records (a UniFi or Reolink recorder, an SD card, a cloud plan), which carry on as they are. The camera's own recording mode is usually under its **Camera settings → Recording**.
+
+## Cameras on a dashboard
+
+The Home Control card can show the cameras:
+
+```yaml
+type: custom:home-control-card
+show: cameras
+```
+
+Each camera's picture (tap it for the live view), whether it's offline or seeing movement, and its last movement. Up to four of a camera's own settings can be put on the card to switch from there, such as a floodlight, a siren or privacy mode: choose them in the camera's settings under **On the dashboard card**.
+
+`sensor.home_cameras` has how many cameras are online, a `summary` ("All 4 cameras online. Last movement: Driveway, 21:42"), `away`, and `cameras`: each camera's `name`, `entity`, `online`, `moving`, `last_movement`, `alerts_now`, `recording_now` and the `controls` chosen for the card.

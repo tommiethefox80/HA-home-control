@@ -24,12 +24,31 @@ async function shot(name, hash, { width = 1200, height = 860, scale = 1, dark = 
   console.log(`${name}.png`);
 }
 
+// cameras: turned on, the four stand-in cameras added, some movement and a camera offline
+const put = (p, b, m = 'PUT') => fetch(`http://localhost:8099/api/${p}`, { method: m, headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
+const mockSensor = (entity, state) => fetch('http://localhost:8124/sensor', { method: 'POST', body: JSON.stringify({ entity, state }) });
+await put('house', { modules: { cameras: true } });
+await sleep(800);
+const camState = await (await fetch('http://localhost:8099/api/cameras/state')).json();
+for (const c of camState.candidates) await put('cameras/cameras', { entity: c.entity }, 'POST');
+for (const id of ['garden', 'front_door', 'driveway', 'shed']) await put(`cameras/cameras/${id}`, { record: { seconds: 3 } });
+await put('cameras/settings', { notify: ['notify.mobile_app_toms_iphone'] });
+await put('cameras/cameras/driveway', { alerts: { when: 'always' }, card: ['light.driveway_floodlight', 'siren.driveway_siren'] });
+await mockSensor('binary_sensor.driveway_person', 'on');
+await mockSensor('event.front_door_ding', new Date().toISOString());
+await sleep(2500);
+await mockSensor('binary_sensor.garden_motion', 'on');
+await mockSensor('camera.shed', 'unavailable');
+await sleep(6000); // the clips are finished
+
 await shot('heating', '#/');
 await shot('lighting', '#/lighting/lights');
 await shot('heating-schedules', '#/schedules', { height: 640, wait: 2000 });
 await shot('lighting-schedules', '#/lighting/schedules', { wait: 2500 });
 await shot('phone-heating', '#/', { width: 390, height: 844, scale: 2, dark: true });
 await shot('phone-lighting', '#/lighting/lights', { width: 390, height: 844, scale: 2, dark: true });
+await shot('cameras', '#/cameras/', { wait: 4000 });
+await shot('camera-activity', '#/cameras/activity', { height: 640, wait: 3000 });
 // the dashboard cards from dev/card-preview.js: just the heating and lighting cards
 for (const [from, to] of [['card-light-880.png', 'dashboard-cards.png'], ['card-dark-880.png', 'dashboard-cards-dark.png']]) {
   if (!fs.existsSync(SCREENS + from)) continue;

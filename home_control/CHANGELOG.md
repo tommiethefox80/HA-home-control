@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.6.0
+- **Cameras.** A new part of Home Control, off until you turn it on in Settings → Home Control. Works with any camera Home Assistant knows about (UniFi Protect, Reolink, Ring, Frigate, Tapo, Hikvision, ONVIF, generic RTSP and more), using its own sensors and settings, so there's nothing to set up per make.
+  - A Cameras page with every camera's picture, what it last saw, and Home Assistant's live view a tap away.
+  - Movement alerts to the phones you choose, with a picture, saying what was seen ("Person seen", "Someone at the door"). Each camera alerts on its own schedule: always, when everyone's out, between set times, either, or never. A bell on each camera turns its alerts off and on.
+  - On movement, a picture and a short clip are saved in Home Assistant's media folder and play from Activity, again on each camera's own schedule.
+  - Choose which movement counts per camera (just people, say).
+  - Offline cameras are reported, and again when they're back.
+  - Each camera's own settings (privacy, recording mode, detection, night vision, floodlight, siren…) in one place, grouped in plain words.
+  - `sensor.home_cameras`, and `show: cameras` on the dashboard card, with chosen camera settings switchable from there.
+- The app can now save to Home Assistant's media folder (for camera clips and pictures), which Home Assistant lists on the app's page.
+
 ## 1.5.0
 - **Turn heating or lighting off.** A new **Home Control** section at the top of Settings has a switch for each part, for houses where something else looks after the heating or the lights. Turning a part off asks first, then hands its devices back (radiators and the boiler go back to their own schedules; lights and sockets stay as they are), stops it reacting to Home Assistant, removes its dashboard sensors, and hides its pages and settings. Everything set up is kept: turning it back on carries on where it left off, and lights are left as they are until each group's next scheduled change. At least one part stays on.
 - With only one part on, the Heating / Lighting switch at the top gives way to the part's name.

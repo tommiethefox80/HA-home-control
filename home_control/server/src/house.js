@@ -15,21 +15,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 
-export const MODULES = ['heating', 'lighting'];
+export const MODULES = ['heating', 'lighting', 'cameras'];
+// new parts start off, so an update never starts doing something new by itself
+const DEFAULT_ON = { heating: true, lighting: true, cameras: false };
 
 class HouseError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
 
 export function createHouse({ log, dataDir = null }) {
-  let heating = null; let lighting = null;
+  let heating = null; let lighting = null; let cameras = null;
   let lastHeatMode = null;
   const st = { emptySince: null, suppress: false, lightAway: false };
   const events = new EventEmitter();
 
   // ---------- what's switched on (house.json) ----------
   const file = dataDir ? path.join(dataDir, 'house.json') : null;
-  let data = { modules: Object.fromEntries(MODULES.map((m) => [m, true])) };
+  let data = { modules: { ...DEFAULT_ON } };
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     data = { ...data, ...raw, modules: { ...data.modules, ...(raw.modules || {}) } };
@@ -38,7 +40,8 @@ export function createHouse({ log, dataDir = null }) {
     if (!file) return;
     try { fs.writeFileSync(`${file}.tmp`, JSON.stringify(data, null, 1)); fs.renameSync(`${file}.tmp`, file); } catch (err) { log.warn?.(`Couldn't save house settings: ${err.message}`); }
   };
-  const on = (m) => data.modules[m] !== false;
+  const on = (m) => (data.modules[m] ?? DEFAULT_ON[m]) !== false;
+  const modules = () => Object.fromEntries(MODULES.map((m) => [m, on(m)]));
 
   const hrt = () => heating.store.data.runtime;
   const presenceSettings = () => heating.store.data.settings.presence || {};
@@ -88,6 +91,15 @@ export function createHouse({ log, dataDir = null }) {
   function people(all = false) {
     try { return heating.engine.presenceView(all); } catch { return []; }
   }
+  /** Is the house on Away (by hand or because everyone's out)? Used by the cameras' schedules. */
+  function isAway() {
+    try {
+      if (on('heating') && hrt().mode === 'away') return true;
+      if (on('lighting') && lighting.engine.data.mode === 'away') return true;
+    } catch { /* starting up */ }
+    return everyoneOut();
+  }
+
   function everyoneOut() {
     const p = presenceSettings();
     const list = people();
@@ -152,19 +164,25 @@ export function createHouse({ log, dataDir = null }) {
         lighting.store.save();
       }
       e.tick();
+    } else if (m === 'cameras' && cameras) {
+      const e = cameras.engine;
+      if (e.disabled === !value) return;
+      e.disabled = !value;
+      if (!quiet) e.addEvent(null, 'note', value ? 'Cameras turned on in Home Control\'s settings.' : 'Cameras turned off in Home Control\'s settings. No more alerts or recordings; the cameras themselves carry on as they are.');
+      e.changed();
     }
   }
 
   function setModules(input) {
-    const next = { ...data.modules };
+    const next = modules();
     for (const m of MODULES) if (typeof input?.[m] === 'boolean') next[m] = input[m];
-    if (!MODULES.some((m) => next[m] !== false)) throw new HouseError('Home Control has to look after something: keep at least one of these on.');
-    const changed = MODULES.filter((m) => (next[m] !== false) !== on(m));
+    if (!MODULES.some((m) => next[m])) throw new HouseError('Home Control has to look after something: keep at least one of these on.');
+    const changed = MODULES.filter((m) => next[m] !== on(m));
     data = { ...data, modules: next };
     save();
     for (const m of changed) {
-      apply(m, next[m] !== false);
-      log.info?.(`${m[0].toUpperCase()}${m.slice(1)} turned ${next[m] !== false ? 'on' : 'off'}`);
+      apply(m, next[m]);
+      log.info?.(`${m[0].toUpperCase()}${m.slice(1)} turned ${next[m] ? 'on' : 'off'}`);
     }
     if (changed.length) events.emit('modules', changed);
   }
@@ -173,7 +191,7 @@ export function createHouse({ log, dataDir = null }) {
   function settingsView() {
     const s = heating.store.data.settings;
     return {
-      modules: { ...data.modules },
+      modules: modules(),
       dashboardPath: s.dashboardPath || '/',
       presence: s.presence || { enabled: false, people: [], delayMinutes: 15, nearMiles: 2 },
       people: people(true),
@@ -216,7 +234,8 @@ export function createHouse({ log, dataDir = null }) {
     let heatingOn = false;
     try { heatingOn = on('heating') && !!heating.engine.boilerView().on; } catch { /* no boiler chosen yet */ }
     return {
-      modules: { ...data.modules },
+      modules: modules(),
+      away: isAway(),
       heatingMode: hrt().mode,
       heatingOn,
       dashboardPath: heating.store.data.settings.dashboardPath || '/',
@@ -225,8 +244,8 @@ export function createHouse({ log, dataDir = null }) {
     };
   }
 
-  function attach(h, l) {
-    heating = h; lighting = l;
+  function attach(h, l, c = null) {
+    heating = h; lighting = l; cameras = c;
     l.engine.modeRequest = (mode, reason) => setFromLighting(mode, reason); // lighting_control_mode events from Home Assistant
     lastHeatMode = hrt().mode;
     heating.engine.on('change', () => { onHeatingChange(); lighting.engine.changed(); });
@@ -234,6 +253,6 @@ export function createHouse({ log, dataDir = null }) {
     setInterval(check, 30000);
   }
 
-  const api = { attach, setFromLighting, view, check, handle, on, events, state: st, panel: null };
+  const api = { attach, setFromLighting, view, check, handle, on, isAway, events, state: st, panel: null };
   return api;
 }

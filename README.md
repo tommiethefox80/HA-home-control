@@ -4,8 +4,9 @@ A Home Assistant app for the heating and lighting of the whole house, in one pan
 
 - **Heating**: room-by-room schedules for Hive and Zigbee radiator valves, with the boiler fired whenever a room needs heat. Boost, snooze, open-window detection, warming early to be ready on time, phone alerts, Insights and gas cost.
 - **Lighting**: lights and smart sockets in groups, with on/off, dimming and warmth schedules (including sunrise and sunset times and slow fades), scenes, movement and light-level sensors, seasons, and a lived-in Away pattern.
-- **One Away** for both, switched by hand or by people's phones.
-- **Use the parts you want**: heating or lighting can be turned off in Settings if something else looks after it.
+- **Cameras**: any camera Home Assistant knows about, with movement alerts (with a picture) and recording on schedules, offline alerts, and each camera's own settings in one place.
+- **One Away** for everything, switched by hand or by people's phones.
+- **Use the parts you want**: heating, lighting and cameras can each be turned on or off in Settings.
 - **Dashboard card and sensors**: the Home Control card shows every room and light group at a glance, and switches and dims lights. The app installs and updates the card itself.
 
 ## Screenshots
@@ -31,6 +32,12 @@ A Home Assistant app for the heating and lighting of the whole house, in one pan
   &nbsp;
   <img src="docs/screenshots/phone-lighting.png" width="300" alt="Lighting on a phone">
 </p>
+
+**Cameras**: every camera at a glance, what it last saw, alerts and recording on each camera's own schedule, and its own settings a tap away.
+
+![Cameras](docs/screenshots/cameras.png)
+
+![Camera activity](docs/screenshots/camera-activity.png)
 
 **The dashboard card**: the heating at a glance, and every light group with power and dimming. Groups can be hidden from the card, or shown only in their season.
 

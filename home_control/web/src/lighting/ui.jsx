@@ -29,6 +29,16 @@ const PATHS = {
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',
   warn: 'M12 3 2 20h20L12 3zM12 10v4M12 17h.01',
   check: 'M5 12l5 5L20 7',
+  // cameras
+  camera: 'M3 7h12a2 2 0 0 1 2 2v1.5L21 8v8l-4-2.5V15a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z',
+  bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
+  bellOff: 'M6 16V11a6 6 0 0 1 9.5-4.9M18 11v5l2 2H8M10 21h4M3 3l18 18',
+  rec: 'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',
+  play: 'M8 5v14l11-7z',
+  live: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  offline: 'M3 3l18 18M8.5 8.6A6 6 0 0 0 6 13M2 9a15 15 0 0 1 4-2.7M12 18h.01M9.5 15a3.5 3.5 0 0 1 5 0M17.7 11.8a6 6 0 0 0-3-2.5M22 9a15 15 0 0 0-9.5-3.9',
+  sliders: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M16 4v4M10 10v4M18 16v4',
+  image: 'M4 5h16v14H4zM4 15l5-5 4 4 3-3 4 4M15 9h.01',
 };
 
 export function Icon({ name, size = 20, label, className }) {

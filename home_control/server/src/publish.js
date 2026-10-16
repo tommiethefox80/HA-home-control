@@ -162,15 +162,50 @@ export function lightingState(snap, panel = null) {
   };
 }
 
-const ENTITIES = { heating: ['sensor.home_heating', 'binary_sensor.home_boiler', 'sensor.home_boiler_today'], lighting: ['sensor.home_lighting'] };
+const ENTITIES = { heating: ['sensor.home_heating', 'binary_sensor.home_boiler', 'sensor.home_boiler_today'], lighting: ['sensor.home_lighting'], cameras: ['sensor.home_cameras'] };
 
-export function createPublisher({ restBase, token, log, heating, lighting, client, panel = () => null, isEmpty = () => false, house = null }) {
+/** sensor.home_cameras: how many cameras are online; every camera's state, for dashboards. */
+export function camerasState(snap, panel = null) {
+  const cams = snap.cameras || [];
+  const online = cams.filter((c) => c.online).length;
+  const offline = cams.filter((c) => !c.online).map((c) => c.name);
+  const moving = cams.filter((c) => c.movingNow).map((c) => c.name);
+  const last = cams.filter((c) => c.lastMovement).sort((a, b) => b.lastMovement.at - a.lastMovement.at)[0];
+  const summary = !cams.length ? 'No cameras yet'
+    : offline.length ? `${list(offline)} offline`
+      : moving.length ? `Movement at ${list(moving)}`
+        : last ? `All ${plural(cams.length, 'camera')} online. Last movement: ${last.name}, ${clock(last.lastMovement.at, snap.timeZone)}`
+          : `All ${plural(cams.length, 'camera')} online`;
+  return {
+    state: online,
+    attributes: {
+      friendly_name: 'Cameras',
+      icon: offline.length ? 'mdi:cctv-off' : 'mdi:cctv',
+      unit_of_measurement: 'online',
+      total: cams.length,
+      away: !!snap.away,
+      summary,
+      cameras: cams.map((c) => ({
+        id: c.id, name: c.name, entity: c.entity, online: c.online, moving: c.movingNow,
+        last_movement: c.lastMovement ? new Date(c.lastMovement.at).toISOString() : null,
+        last_movement_text: c.lastMovement ? `${c.lastMovement.text}, ${clock(c.lastMovement.at, snap.timeZone)}` : null,
+        alerts_now: c.alertsNow, recording_now: c.recordNow,
+        // the camera's own controls chosen for the dashboard card
+        controls: c.controls.filter((x) => c.card.includes(x.id)).map((x) => ({ id: x.id, domain: x.domain, name: x.name, ...(x.options ? { options: x.options } : {}) })),
+      })),
+      connected: !!snap.connected,
+      panel,
+    },
+  };
+}
+
+export function createPublisher({ restBase, token, log, heating, lighting, cameras = null, client, panel = () => null, isEmpty = () => false, house = null }) {
   const last = new Map();      // entity -> JSON last written
   const lastAt = new Map();    // kind -> time of last write
   const timers = new Map();
   let failing = false;
   // heating changes (temperatures) are frequent and slow-moving; lights should show promptly
-  const GAP = { heating: 20000, lighting: 3000 };
+  const GAP = { heating: 20000, lighting: 3000, cameras: 2000 };
 
   async function write(entity, { state, attributes }) {
     const body = JSON.stringify({ state, attributes });
@@ -217,6 +252,8 @@ export function createPublisher({ restBase, token, log, heating, lighting, clien
         await write('sensor.home_heating', heatingState(snap, today, panel()));
         await write('binary_sensor.home_boiler', boilerState(snap));
         if (today) await write('sensor.home_boiler_today', boilerTodayState(today));
+      } else if (kind === 'cameras') {
+        if (cameras) await write('sensor.home_cameras', camerasState(cameras.snapshot(), panel()));
       } else {
         await write('sensor.home_lighting', lightingState(lighting.snapshot(), panel()));
       }
@@ -242,11 +279,12 @@ export function createPublisher({ restBase, token, log, heating, lighting, clien
     schedule('heating', soon);
   });
   lighting.engine.on('change', () => schedule('lighting'));
+  cameras?.engine.on('change', () => schedule('cameras'));
   // Home Assistant forgets these when it restarts: write them all again on every (re)connect
-  client.on('ready', () => { last.clear(); removed.clear(); setTimeout(() => { schedule('heating', true); schedule('lighting', true); }, 3000); });
+  client.on('ready', () => { last.clear(); removed.clear(); setTimeout(() => { schedule('heating', true); schedule('lighting', true); if (cameras) schedule('cameras', true); }, 3000); });
   house?.events.on('modules', (changed) => { for (const m of changed) schedule(m, true); });
   // a slow refresh, so "minutes left" and clock times stay right on a quiet day
-  setInterval(() => { schedule('heating'); schedule('lighting'); }, 5 * 60000);
+  setInterval(() => { schedule('heating'); schedule('lighting'); if (cameras) schedule('cameras'); }, 5 * 60000);
 
-  return { flushNow: async () => { await flush('heating'); await flush('lighting'); }, last };
+  return { flushNow: async () => { await flush('heating'); await flush('lighting'); if (cameras) await flush('cameras'); }, last };
 }

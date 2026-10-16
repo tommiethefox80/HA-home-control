@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { HAClient } from './ha.js';
 import { createHeating } from './heating/http.js';
 import { createLighting } from './lighting/http.js';
+import { createCameras } from './cameras/http.js';
 import { createHouse } from './house.js';
 import { createPublisher } from './publish.js';
 import { createCardInstaller, panelPath, selfSlug } from './card.js';
@@ -22,6 +23,9 @@ const CARD_FILE = process.env.CARD_FILE || path.resolve(here, '../../dashboard/h
 // Home Assistant's config folder (mapped by the app's config) and the backup folder
 const HA_CONFIG_DIR = process.env.HA_CONFIG_DIR || '/homeassistant';
 const BACKUP_DIR = process.env.BACKUP_DIR || '/backup';
+// Home Assistant's media folder, where camera clips and pictures are saved (as this app sees it, and as Home Assistant does)
+const MEDIA_DIR = process.env.MEDIA_DIR || '/media';
+const HA_MEDIA_DIR = process.env.HA_MEDIA_DIR || '/media';
 const VERSION = JSON.parse(fs.readFileSync(path.resolve(here, '../package.json'), 'utf8')).version;
 const SUPERVISOR = !!process.env.SUPERVISOR_TOKEN && !process.env.HA_URL;
 const HA_URL = process.env.HA_URL
@@ -58,12 +62,13 @@ const lightingSummary = () => {
 };
 const heating = createHeating({ client, dataDir: DATA_DIR, log: plain, lightingSummary });
 lighting = createLighting({ client, dataDir: DATA_DIR, log: logObj, house });
-house.attach(heating, lighting);
+const cameras = createCameras({ client, dataDir: DATA_DIR, log: logObj, house, restBase: REST_BASE, token: HA_TOKEN, mediaDir: MEDIA_DIR, haMediaDir: HA_MEDIA_DIR, panel: panelPath });
+house.attach(heating, lighting, cameras);
 house.panel = panelPath;
 lighting.engine.on('change', () => heating.push());
 /** Nothing set up yet (a fresh install): no rooms, no boiler and no lighting groups. */
-const isEmpty = () => !heating.store.data.zones.length && !heating.store.data.settings.boiler?.entity && !lighting.store.data.groups.length;
-createPublisher({ restBase: REST_BASE, token: HA_TOKEN, log: logObj, heating, lighting, client, panel: panelPath, isEmpty, house });
+const isEmpty = () => !heating.store.data.zones.length && !heating.store.data.settings.boiler?.entity && !lighting.store.data.groups.length && !cameras.store.data.cameras.length;
+createPublisher({ restBase: REST_BASE, token: HA_TOKEN, log: logObj, heating, lighting, cameras, client, panel: panelPath, isEmpty, house });
 const card = createCardInstaller({ client, log: logObj, version: VERSION, source: CARD_FILE, configDir: HA_CONFIG_DIR });
 const move = createMove({ dataDir: DATA_DIR, backupDir: BACKUP_DIR, log: logObj, isEmpty, panel: panelPath, slug: selfSlug, card });
 
@@ -90,6 +95,7 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/house') { if (await house.handle(req, res, p)) return; }
   else if (p.startsWith('/api/move') || p === '/api/card') { if (await move.handle(req, res, p)) return; }
   else if (p.startsWith('/api/lighting/')) { if (await lighting.handle(req, res, url, p)) return; }
+  else if (p.startsWith('/api/cameras/')) { if (await cameras.handle(req, res, url, p)) return; }
   else if (await heating.handle(req, res, url, p)) return;
   res.writeHead(404, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ error: 'Not found' }));
@@ -98,6 +104,7 @@ const server = http.createServer(async (req, res) => {
 client.start();
 heating.start();
 lighting.start();
+cameras.start();
 card.start();
 server.listen(PORT, () => plain(`Home Control ${VERSION} listening on :${PORT}, Home Assistant at ${HA_URL}`));
 
@@ -107,6 +114,7 @@ const shutdown = async () => {
   stopping = true;
   plain('Stopping');
   lighting.shutdown();
+  cameras.shutdown();
   await heating.shutdown();
   client.stop();
   process.exit(0);

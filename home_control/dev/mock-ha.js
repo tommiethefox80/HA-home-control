@@ -9,6 +9,8 @@ import { WebSocketServer } from 'ws';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { sunTimes, localDate } from '../server/src/lighting/schedule.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const PORT = Number(process.env.MOCK_PORT || 8123);
 const CTRL = Number(process.env.MOCK_CTRL || 8124);
@@ -68,6 +70,76 @@ add('climate.heating', { friendly_name: 'Heating', hvac_modes: ['heat', 'off', '
 add('sensor.lounge_temperature', { friendly_name: 'Lounge temperature', device_class: 'temperature', unit_of_measurement: '°C' }, { area: 'lounge', state: '18.4' });
 add('weather.home', { friendly_name: 'Home', temperature: 12, temperature_unit: '°C' }, { state: 'cloudy' });
 add('zone.home', { friendly_name: 'Home', latitude: 53.26, longitude: -2.52, radius: 100 }, { state: '0' });
+
+// ---------- cameras: four makes, as their integrations set them up ----------
+const PICTURES = new URL('./cameras/', import.meta.url).pathname;
+const MEDIA = process.env.MOCK_MEDIA_DIR || new URL('./data/media/', import.meta.url).pathname;
+const cameraPicture = {};
+function addCameraDevice(slug, name, { manufacturer, model, platform, area, stream = true, picture, camera, extras = [] }) {
+  const device_id = `dev_cam_${slug}`;
+  devices.push({ id: device_id, area_id: area, name, manufacturer, model, name_by_user: null });
+  const reg = (entity_id, attrs, { state = 'off', category = null, deviceClass = null } = {}) => {
+    entities.push({ entity_id, device_id, area_id: null, entity_category: category, disabled_by: null, hidden_by: null, original_device_class: deviceClass, name: null, platform });
+    states.set(entity_id, { entity_id, state, attributes: { friendly_name: attrs.name, ...attrs.extra }, last_changed: nowIso(), last_updated: nowIso(), context: { id: randomUUID(), parent_id: null, user_id: null } });
+  };
+  const camId = `camera.${camera}`;
+  reg(camId, { name: `${name} ${camera.slice(slug.length + 1).replace(/_/g, ' ')}`.trim(), extra: { entity_picture: `/api/camera_proxy/${camId}?token=t0k3n`, access_token: 't0k3n', supported_features: stream ? 2 : 0, brand: manufacturer, model_name: model } }, { state: 'idle' });
+  cameraPicture[camId] = picture;
+  for (const [id, label, opts = {}] of extras) {
+    const domain = id.split('.')[0];
+    const extra = {};
+    if (opts.deviceClass) extra.device_class = opts.deviceClass;
+    if (domain === 'select') extra.options = opts.options;
+    if (domain === 'number') Object.assign(extra, { min: opts.min ?? 0, max: opts.max ?? 100, step: opts.step ?? 1, unit_of_measurement: opts.unit ?? '' });
+    if (domain === 'event') extra.event_types = opts.types || ['ring'];
+    reg(id, { name: `${name} ${label}`, extra }, { state: opts.state ?? (domain === 'select' ? opts.options[0] : domain === 'number' ? String(opts.value ?? 50) : domain === 'event' || domain === 'button' ? 'unknown' : 'off'), category: opts.category || null, deviceClass: opts.deviceClass || null });
+  }
+}
+areas.push({ area_id: 'driveway', name: 'Driveway' });
+addCameraDevice('garden', 'Garden', {
+  manufacturer: 'Ubiquiti', model: 'G5 Turret Ultra', platform: 'unifiprotect', area: 'garden', picture: 'garden.jpg', camera: 'garden_high_resolution_channel',
+  extras: [
+    ['binary_sensor.garden_motion', 'Motion', { deviceClass: 'motion' }],
+    ['binary_sensor.garden_person_detected', 'Person detected', { deviceClass: 'occupancy' }],
+    ['binary_sensor.garden_vehicle_detected', 'Vehicle detected', { deviceClass: 'occupancy' }],
+    ['binary_sensor.garden_is_dark', 'Is dark', { category: 'diagnostic' }],
+    ['switch.garden_privacy_mode', 'Privacy mode', { category: 'config' }],
+    ['select.garden_recording_mode', 'Recording mode', { category: 'config', options: ['Always', 'Never', 'Detections'], state: 'Detections' }],
+    ['select.garden_infrared_mode', 'Infrared mode', { category: 'config', options: ['Auto', 'Always enable', 'Always disable'] }],
+    ['switch.garden_status_light_on', 'Status light on', { category: 'config', state: 'on' }],
+    ['switch.garden_detections_person', 'Detections: person', { category: 'config', state: 'on' }],
+    ['number.garden_microphone_level', 'Microphone level', { category: 'config', min: 0, max: 100, value: 60, unit: '%' }],
+    ['button.garden_reboot_device', 'Reboot device', { category: 'diagnostic' }],
+  ],
+});
+addCameraDevice('front_door', 'Front door', {
+  manufacturer: 'Ring', model: 'Video Doorbell (2nd Gen)', platform: 'ring', area: 'hallway', picture: 'front_door.jpg', camera: 'front_door_live_view',
+  extras: [
+    ['event.front_door_ding', 'Ding', { types: ['ding'], deviceClass: 'doorbell' }],
+    ['event.front_door_motion', 'Motion', { types: ['motion'], deviceClass: 'motion' }],
+    ['switch.front_door_motion_detection', 'Motion detection', { state: 'on' }],
+    ['number.front_door_volume', 'Volume', { category: 'config', min: 0, max: 10, value: 6 }],
+  ],
+});
+addCameraDevice('driveway', 'Driveway', {
+  manufacturer: 'Reolink', model: 'RLC-811A', platform: 'reolink', area: 'driveway', picture: 'driveway.jpg', camera: 'driveway_fluent',
+  extras: [
+    ['binary_sensor.driveway_motion', 'Motion', { deviceClass: 'motion' }],
+    ['binary_sensor.driveway_person', 'Person', {}],
+    ['binary_sensor.driveway_vehicle', 'Vehicle', {}],
+    ['binary_sensor.driveway_animal', 'Animal', {}],
+    ['switch.driveway_record', 'Record', { category: 'config', state: 'on' }],
+    ['switch.driveway_email_on_event', 'Email on event', { category: 'config' }],
+    ['light.driveway_floodlight', 'Floodlight', {}],
+    ['siren.driveway_siren', 'Siren', {}],
+    ['select.driveway_day_night_mode', 'Day night mode', { category: 'config', options: ['Auto', 'Color', 'Black&White'] }],
+    ['number.driveway_motion_sensitivity', 'Motion sensitivity', { category: 'config', min: 1, max: 50, value: 41 }],
+    ['button.driveway_restart', 'Restart', { category: 'diagnostic' }],
+  ],
+});
+addCameraDevice('shed', 'Shed', { manufacturer: 'Generic', model: 'RTSP camera', platform: 'generic', area: 'garden', picture: 'shed.jpg', camera: 'shed', stream: false });
+// notify services: two phones with the Home Assistant app
+const NOTIFY = ['mobile_app_toms_iphone', 'mobile_app_sams_pixel_8', 'send_message', 'persistent_notification'];
 
 function refreshSun() {
   const ms = Date.now();
@@ -221,6 +293,16 @@ setState('light.lounge_lamp', { on: true, brightness: 45 });
 // REST: POST /api/states/<entity_id> (what apps use to put their own sensors into HA)
 const published = [];
 const server = createServer(async (req, res) => {
+  const cp = /^\/api\/camera_proxy\/(camera\.\w+)(\?.*)?$/.exec(req.url);
+  if (req.method === 'GET' && cp) {
+    if (!/^Bearer \S+/.test(req.headers.authorization || '') && !/token=/.test(cp[2] || '')) { res.writeHead(401); return res.end(); }
+    const st = states.get(cp[1]);
+    if (!st || !cameraPicture[cp[1]]) { res.writeHead(404); return res.end(); }
+    if (st.state === 'unavailable') { res.writeHead(500); return res.end(); }
+    const buf = fs.readFileSync(path.join(PICTURES, cameraPicture[cp[1]]));
+    res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': buf.length });
+    return res.end(buf);
+  }
   const m = /^\/api\/states\/([\w]+\.[\w]+)$/.exec(req.url);
   if (req.method === 'DELETE' && m) { // as Home Assistant: removes the state, 404 if there's none
     if (!/^Bearer \S+/.test(req.headers.authorization || '')) { res.writeHead(401); return res.end(); }
@@ -282,6 +364,12 @@ wss.on('connection', (ws) => {
         Object.assign(r, { type: m.res_type ?? r.type, url: m.url ?? r.url });
         return reply(r);
       }
+      case 'get_services':
+        return reply({
+          notify: Object.fromEntries(NOTIFY.map((n) => [n, { name: n }])),
+          camera: { snapshot: {}, record: {}, turn_on: {}, turn_off: {} },
+          light: { turn_on: {}, turn_off: {}, toggle: {} },
+        });
       case 'config/auth/list': return reply([{ id: 'u1', name: 'Tom' }, { id: 'u2', name: 'Home Assistant Cloud' }]);
       case 'call_service': {
         const { domain, service, service_data: d = {} } = m;
@@ -293,6 +381,37 @@ wss.on('connection', (ws) => {
           reply({ context });
           if (service === 'set_temperature') setTimeout(() => setState(id, { attrs: { temperature: d.temperature } }, context), 200);
           if (service === 'set_hvac_mode') setTimeout(() => setState(id, { state: d.hvac_mode }, context), 200);
+          return;
+        }
+        if (domain === 'notify') {
+          calls.push({ at: Date.now(), domain, service, data: d });
+          if (!NOTIFY.includes(service)) return reply(null, false, { code: 'not_found', message: `Service notify.${service} not found.` });
+          return reply({ context: { id: randomUUID() } });
+        }
+        if (domain === 'camera' && ['snapshot', 'record'].includes(service)) {
+          calls.push({ at: Date.now(), domain, service, data: d });
+          const st = states.get(d.entity_id);
+          if (!st) return reply(null, false, { code: 'not_found', message: `Entity ${d.entity_id} not found` });
+          if (!String(d.filename || '').startsWith(MEDIA)) return reply(null, false, { code: 'home_assistant_error', message: `Cannot write \`${d.filename}\`, no access to path; \`allowlist_external_dirs\` may need to be adjusted in \`configuration.yaml\`` });
+          if (service === 'record' && !(st.attributes.supported_features & 2)) return reply(null, false, { code: 'home_assistant_error', message: `${d.entity_id} does not support record service` });
+          const from = service === 'snapshot' ? path.join(PICTURES, cameraPicture[d.entity_id]) : path.join(PICTURES, 'clip.mp4');
+          // as Home Assistant: a picture straight away; a clip is written, and the call answered, once it's finished
+          setTimeout(() => {
+            try { fs.mkdirSync(path.dirname(d.filename), { recursive: true }); fs.copyFileSync(from, d.filename); } catch { /* ignore */ }
+            reply({ context: { id: randomUUID() } });
+          }, service === 'record' ? (Number(d.duration) || 30) * 1000 : 100);
+          return;
+        }
+        if (['select', 'number', 'siren', 'button'].includes(domain) || (domain === 'switch' && service === 'toggle')) {
+          const id = d.entity_id;
+          calls.push({ at: Date.now(), domain, service, data: d });
+          if (!states.has(id)) return reply(null, false, { code: 'not_found', message: `Entity ${id} not found` });
+          const context = { id: randomUUID(), parent_id: null, user_id: 'supervisor' };
+          reply({ context });
+          const cur = states.get(id).state;
+          const next = service === 'select_option' ? d.option : service === 'set_value' ? String(d.value)
+            : service === 'press' ? nowIso() : service === 'toggle' ? (cur === 'on' ? 'off' : 'on') : service === 'turn_on' ? 'on' : 'off';
+          setTimeout(() => setState(id, { state: next }, context), 150);
           return;
         }
         if (domain === 'homeassistant' && service === 'update_entity') {

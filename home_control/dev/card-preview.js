@@ -22,12 +22,17 @@ for (const [name, vars] of Object.entries(THEMES)) {
     const style = Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(';');
     await p.setRequestInterception(true);
     let html = '';
-    p.on('request', (req) => (req.url().startsWith('http://ha.test/') ? req.respond({ status: 200, contentType: 'text/html', body: html }) : req.continue()));
+    p.on('request', (req) => {
+      const u = req.url();
+      const cam = /\/api\/camera_proxy\/camera\.([a-z]+)/.exec(u);
+      if (cam) return req.respond({ status: 200, contentType: 'image/jpeg', body: readFileSync(new URL(`./cameras/${{ garden: 'garden', front: 'front_door', driveway: 'driveway', shed: 'shed' }[cam[1]] || 'garden'}.jpg`, import.meta.url)) });
+      return u.startsWith('http://ha.test/') ? req.respond({ status: 200, contentType: 'text/html', body: html }) : req.continue();
+    });
     html = (`<!doctype html><html><head><style>
       html{${style}} body{margin:0;padding:16px;background:var(--primary-background-color);font-family:Roboto,'Segoe UI',system-ui,sans-serif;font-size:14px}
       .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start}
       ha-card{display:block;background:var(--card-background-color);border-radius:var(--ha-card-border-radius);box-shadow:var(--ha-card-box-shadow);border:1px solid var(--divider-color)}
-    </style></head><body><div class="grid"><home-control-card id="h"></home-control-card><home-control-card id="l"></home-control-card><home-control-card id="m"></home-control-card></div></body></html>`);
+    </style></head><body><div class="grid"><home-control-card id="h"></home-control-card><home-control-card id="l"></home-control-card><home-control-card id="m"></home-control-card><home-control-card id="c"></home-control-card></div></body></html>`);
     await p.goto('http://ha.test/lovelace/home', { waitUntil: 'load' });
     // ha-card styles itself in its own shadow DOM in Home Assistant; do the same here
     await p.addScriptTag({ content: `customElements.define('ha-card', class extends HTMLElement { constructor() { super(); this.attachShadow({ mode: 'open' }).innerHTML = '<style>:host{display:block;background:var(--ha-card-background,var(--card-background-color));border-radius:var(--ha-card-border-radius,12px);box-shadow:var(--ha-card-box-shadow,none);border:var(--ha-card-border-width,1px) solid var(--ha-card-border-color,var(--divider-color));color:var(--primary-text-color)}</style><slot></slot>'; } });` });
@@ -38,6 +43,16 @@ for (const [name, vars] of Object.entries(THEMES)) {
       set('h', { show: 'heating' });
       set('l', { show: 'lighting' });
       set('m', { show: 'lighting', entity: 'sensor.not_there' });
+      // cameras: their entities, as Home Assistant has them, for the pictures and controls
+      const cams = states['sensor.home_cameras']?.attributes?.cameras || [];
+      const extra = {};
+      for (const c of cams) {
+        extra[c.entity] = { state: c.online ? 'idle' : 'unavailable', attributes: { entity_picture: `/api/camera_proxy/${c.entity}?token=t0k3n` } };
+        for (const x of c.controls) extra[x.id] = { state: x.domain === 'select' ? (x.options || [])[0] : 'off', attributes: { options: x.options } };
+      }
+      const el = document.getElementById('c');
+      el.setConfig({ show: 'cameras' });
+      el.hass = { states: { ...states, ...extra }, callService: async () => {} };
     }, published.states);
     await new Promise((r) => setTimeout(r, 400));
     await p.screenshot({ path: `${OUT}card-${name}-${width}.png`, fullPage: true });

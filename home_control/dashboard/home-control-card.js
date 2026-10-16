@@ -6,12 +6,12 @@
 // tap a group's name or the title to open the app.
 //
 //   type: custom:home-control-card
-//   show: heating            # or: lighting
+//   show: heating            # or: lighting, or cameras
 //   panel: /local_heating_control   # optional: where the Home app is (the app says, from 1.3)
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 
@@ -64,6 +64,9 @@ const ICON = {
   power: `<svg viewBox="0 0 24 24" ${P} stroke-width="2"><path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>`,
   minus: `<svg viewBox="0 0 24 24" ${P} stroke-width="2"><path d="M5 12h14"/></svg>`,
   plus: `<svg viewBox="0 0 24 24" ${P} stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`,
+  cam: `<svg viewBox="0 0 24 24" ${P}><path d="M3 7h12a2 2 0 0 1 2 2v1.5L21 8v8l-4-2.5V15a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/></svg>`,
+  bell: `<svg viewBox="0 0 24 24" ${P}><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/></svg>`,
+  offline: `<svg viewBox="0 0 24 24" ${P}><path d="M3 3l18 18M8.5 8.6A6 6 0 0 0 6 13M2 9a15 15 0 0 1 4-2.7M12 18h.01M9.5 15a3.5 3.5 0 0 1 5 0M17.7 11.8a6 6 0 0 0-3-2.5M22 9a15 15 0 0 0-9.5-3.9"/></svg>`,
 };
 
 const STYLE = `
@@ -132,6 +135,33 @@ const STYLE = `
   @keyframes hc-pulse { 50% { opacity: .6; } }
   @media (prefers-reduced-motion: reduce) { .grow.busy .power { animation: none; } .hcbtn { transition: none; } }
   .empty { font-size: .88rem; color: var(--secondary-text-color); }
+
+  /* cameras */
+  .cameras { cursor: default; }
+  .cams { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); }
+  .cam { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .cpic { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; padding: 0; margin: 0;
+    border-radius: 12px; overflow: hidden; background: #11171c; cursor: pointer; }
+  .cpic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .cpic:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+  .cpic .noimg { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 4px; color: #aab4bb; font-size: .8rem; }
+  .cpic .noimg svg { width: 24px; height: 24px; }
+  .cbadge { position: absolute; left: 8px; top: 8px; padding: 3px 8px; border-radius: 999px; font-size: .74rem; font-weight: 650;
+    color: #fff; background: rgb(17 23 28 / .75); }
+  .cbadge.moving { background: #d93a2b; }
+  .cbell { position: absolute; right: 8px; top: 8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    color: #fff; background: rgb(17 23 28 / .6); }
+  .cbell svg { width: 15px; height: 15px; }
+  .cname { font-weight: 600; font-size: .92rem; color: var(--primary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .csub { font-size: .78rem; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cctl { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cchip { border: 0; margin: 0; font: inherit; cursor: pointer; font-size: .78rem; font-weight: 600; padding: 6px 10px; border-radius: 999px;
+    color: var(--primary-text-color); background: var(--hc-tile-bg, rgb(127 127 127 / .1)); min-height: 30px; }
+  .cchip.on { background: var(--primary-text-color); color: var(--card-background-color, #fff); }
+  .cchip:disabled { opacity: .45; cursor: default; }
+  .cchip:focus-visible, .csel:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+  .csel { font: inherit; font-size: .78rem; font-weight: 600; padding: 5px 8px; border-radius: 999px; min-height: 30px;
+    border: 0; color: var(--primary-text-color); background: var(--hc-tile-bg, rgb(127 127 127 / .1)); max-width: 100%; }
 `;
 
 class HomeControlCard extends HTMLElement {
@@ -141,9 +171,9 @@ class HomeControlCard extends HTMLElement {
     this._pending ??= new Map();
     this._timers ??= {};
     const show = config?.show || 'heating';
-    if (!['heating', 'lighting'].includes(show)) throw new Error('show must be heating or lighting');
+    if (!['heating', 'lighting', 'cameras'].includes(show)) throw new Error('show must be heating, lighting or cameras');
     this._config = { ...config, show };
-    this._entity = config.entity || (show === 'heating' ? 'sensor.home_heating' : 'sensor.home_lighting');
+    this._entity = config.entity || { heating: 'sensor.home_heating', lighting: 'sensor.home_lighting', cameras: 'sensor.home_cameras' }[show];
     this._last = undefined;
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     if (this._hass) this._render();
@@ -152,14 +182,29 @@ class HomeControlCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     const st = hass.states[this._entity];
-    if (st === this._last && this.shadowRoot?.childElementCount) return;
+    // cameras: also redraw when a camera or one of its controls on the card changes
+    const key = this._config?.show === 'cameras' && st ? (st.attributes.cameras || []).map((c) => {
+      const cs = hass.states[c.entity];
+      return `${cs?.state}|${cs?.attributes?.entity_picture}|${(c.controls || []).map((x) => hass.states[x.id]?.state).join(',')}`;
+    }).join(';') : '';
+    if (st === this._last && key === this._key && this.shadowRoot?.childElementCount) return;
     this._last = st;
+    this._key = key;
     this._render();
   }
+
+  connectedCallback() {
+    // camera pictures: a new one every 10 seconds while the card is on screen
+    clearInterval(this._picTimer);
+    this._picTimer = setInterval(() => this._refreshPictures(), 10000);
+  }
+
+  disconnectedCallback() { clearInterval(this._picTimer); }
 
   getCardSize() {
     const a = this._last?.attributes;
     if (!a) return 2;
+    if (this._config.show === 'cameras') return 2 + Math.ceil((a.cameras?.length || 0) / 2) * 3;
     return this._config.show === 'heating' ? 2 + Math.ceil((a.rooms?.length || 0) * 0.8) : 2 + Math.ceil(shownGroups(a).length / 3);
   }
 
@@ -170,7 +215,7 @@ class HomeControlCard extends HTMLElement {
     e?.stopPropagation?.();
     // the app says where it is; older versions were always at /local_heating_control
     const panel = this._config.panel || this._last?.attributes?.panel || '/local_heating_control';
-    const path = this._config.show === 'lighting' ? `${panel}?section=lighting` : panel;
+    const path = this._config.show === 'heating' ? panel : `${panel}?section=${this._config.show}`;
     window.history.pushState(null, '', path);
     window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
   }
@@ -179,14 +224,15 @@ class HomeControlCard extends HTMLElement {
     if (!this.shadowRoot || !this._config) return;
     if (this._pressing) { this._dirty = true; return; } // don't swap the tile out from under a finger
     const st = this._last;
+    const part = { heating: 'Heating', lighting: 'Lighting', cameras: 'Cameras' }[this._config.show];
     const body = !st
-      ? `<div class="card"><div class="head">${this._badge('quiet')}<div class="titles"><div class="title">${this._config.show === 'heating' ? 'Heating' : 'Lighting'}</div>
-           <div class="sub">Nothing from Home Control yet (${esc(this._entity)} not found). Check it's running. If ${this._config.show === 'heating' ? 'Heating' : 'Lighting'} is turned off in its settings, remove this card.</div></div></div></div>`
-      : this._config.show === 'heating' ? this._heating(st) : this._lighting(st);
+      ? `<div class="card"><div class="head">${this._badge('quiet')}<div class="titles"><div class="title">${part}</div>
+           <div class="sub">Nothing from Home Control yet (${esc(this._entity)} not found). Check it's running. If ${part} is turned off in its settings, remove this card.</div></div></div></div>`
+      : this._config.show === 'heating' ? this._heating(st) : this._config.show === 'cameras' ? this._cameras(st) : this._lighting(st);
     this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card>${body}</ha-card>`;
     const root = this.shadowRoot;
     // the heating card opens the app; on the lighting card only the title does, and the groups switch
-    const opener = this._config.show === 'lighting' ? root.querySelector('.head.open') : root.querySelector('.card');
+    const opener = this._config.show === 'heating' ? root.querySelector('.card') : root.querySelector('.head.open');
     if (st && opener) {
       opener.addEventListener('click', (e) => this._open(e));
       opener.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this._open(e); } });
@@ -197,6 +243,31 @@ class HomeControlCard extends HTMLElement {
   // ---------- switching and dimming lighting groups from the dashboard ----------
 
   _wire(root) {
+    // cameras: the picture opens Home Assistant's live view; the chips switch the camera's own settings
+    for (const pic of root.querySelectorAll('.cpic[data-entity]')) {
+      pic.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId: pic.dataset.entity } }));
+      });
+    }
+    for (const chip of root.querySelectorAll('.cchip[data-ctl]')) {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = chip.dataset.ctl;
+        const domain = id.split('.')[0];
+        const call = domain === 'button' ? ['button', 'press'] : [domain, 'toggle'];
+        chip.disabled = true;
+        this._hass.callService(call[0], call[1], { entity_id: id })
+          .catch((err) => { this._error = `Couldn't change that: ${err.message || err}`; this._render(); });
+      });
+    }
+    for (const sel of root.querySelectorAll('.csel[data-ctl]')) {
+      sel.addEventListener('click', (e) => e.stopPropagation());
+      sel.addEventListener('change', () => {
+        this._hass.callService('select', 'select_option', { entity_id: sel.dataset.ctl, option: sel.value })
+          .catch((err) => { this._error = `Couldn't change that: ${err.message || err}`; this._render(); });
+      });
+    }
     const pressing = () => { this._pressing = true; };
     const released = () => {
       this._pressing = false;
@@ -302,7 +373,7 @@ class HomeControlCard extends HTMLElement {
     }
   }
 
-  _badge(kind, icon = this._config.show === 'heating' ? ICON.flame : ICON.bulb) {
+  _badge(kind, icon = { heating: ICON.flame, cameras: ICON.cam }[this._config.show] || ICON.bulb) {
     const styles = {
       fire: '--hc-badge-bg: rgb(238 132 52 / .16); --hc-badge-ink: rgb(238 132 52);',
       lit: '--hc-badge-bg: rgb(255 182 98 / .22); --hc-badge-ink: rgb(214 128 38);',
@@ -340,6 +411,68 @@ class HomeControlCard extends HTMLElement {
       </div>
       ${notes}
       ${rows ? `<div class="rooms">${rows}</div>` : '<div class="empty">No rooms yet. Add them in Home → Heating → Settings.</div>'}
+    </div>`;
+  }
+
+  /** The camera's picture: Home Assistant's own (signed) address, with a stamp to fetch a new one. */
+  _picture(c) {
+    const cs = this._hass?.states?.[c.entity];
+    const base = cs?.attributes?.entity_picture;
+    if (!base || cs.state === 'unavailable') return null;
+    this._pics ??= {};
+    const cached = this._pics[c.entity];
+    if (!cached || cached.base !== base) this._pics[c.entity] = { base, url: `${base}${base.includes('?') ? '&' : '?'}t=${Date.now()}` };
+    return this._pics[c.entity].url;
+  }
+
+  _refreshPictures() {
+    if (this._config?.show !== 'cameras' || !this.shadowRoot || document.hidden) return;
+    for (const img of this.shadowRoot.querySelectorAll('.cpic img[data-entity]')) {
+      const base = this._hass?.states?.[img.dataset.entity]?.attributes?.entity_picture;
+      if (!base) continue;
+      const url = `${base}${base.includes('?') ? '&' : '?'}t=${Date.now()}`;
+      const next = new Image();
+      next.onload = () => { img.src = url; this._pics[img.dataset.entity] = { base, url }; };
+      next.src = url;
+    }
+  }
+
+  _cameras(st) {
+    const a = st.attributes || {};
+    const cams = a.cameras || [];
+    const title = this._config.title || 'Cameras';
+    const offline = cams.filter((c) => !c.online).length;
+    const tiles = cams.map((c) => {
+      const pic = this._picture(c);
+      const badge = c.online && c.moving ? '<span class="cbadge moving">Movement</span>' : '';
+      const sub = !c.online ? 'Offline' : c.moving ? 'Movement now' : c.last_movement_text || 'No movement seen yet';
+      const ctl = (c.controls || []).map((x) => {
+        const xs = this._hass?.states?.[x.id];
+        const dead = !xs || xs.state === 'unavailable';
+        if (x.domain === 'select') {
+          const opts = x.options || xs?.attributes?.options || [];
+          return `<select class="csel" data-ctl="${esc(x.id)}" aria-label="${esc(x.name)}" ${dead ? 'disabled' : ''}>${opts.map((o) => `<option ${o === xs?.state ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+        }
+        const on = xs?.state === 'on';
+        return `<button type="button" class="cchip${on ? ' on' : ''}" data-ctl="${esc(x.id)}" ${dead ? 'disabled' : ''} aria-pressed="${on}">${esc(x.name)}${x.domain === 'button' ? '' : on ? ': on' : ': off'}</button>`;
+      }).join('');
+      return `<div class="cam" data-id="${esc(c.id)}">
+        <button type="button" class="cpic" data-entity="${esc(c.entity)}" aria-label="${esc(c.name)}: live view">
+          ${pic ? `<img data-entity="${esc(c.entity)}" src="${esc(pic)}" alt="">` : `<span class="noimg">${ICON.offline}<span>${c.online ? 'No picture' : 'Offline'}</span></span>`}
+          ${badge}${c.alerts_now ? `<span class="cbell" title="Alerts on">${ICON.bell}</span>` : ''}
+        </button>
+        <div><div class="cname">${esc(c.name)}</div><div class="csub">${esc(sub)}</div></div>
+        ${ctl ? `<div class="cctl">${ctl}</div>` : ''}
+      </div>`;
+    }).join('');
+    const err = this._error ? `<div class="note">${ICON.alert}<span>${esc(this._error)}</span></div>` : '';
+    return `<div class="card cameras">
+      <div class="head open" role="button" tabindex="0" aria-label="${esc(title)}: ${esc(a.summary)}. Open cameras in Home.">${this._badge('quiet')}
+        <div class="titles"><div class="title">${esc(title)}</div><div class="sub">${esc(a.summary || '')}</div></div>
+        ${a.away ? '<span class="pill strong">Away</span>' : ''}${ICON.chev.replace('<svg', '<svg class="chev"')}
+      </div>
+      ${err}
+      ${tiles ? `<div class="cams">${tiles}</div>` : '<div class="empty">No cameras yet. Add them in Home → Cameras → Settings.</div>'}
     </div>`;
   }
 

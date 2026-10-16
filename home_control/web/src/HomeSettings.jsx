@@ -27,15 +27,18 @@ export function useHome() {
 export const MODULES = [
   { id: 'heating', name: 'Heating', what: 'Rooms, radiators and the boiler' },
   { id: 'lighting', name: 'Lighting', what: 'Lights and sockets' },
+  { id: 'cameras', name: 'Cameras', what: 'Movement alerts, recording and camera settings', offWhat: 'Turn on to add your cameras: any make Home Assistant knows about' },
 ];
 const OFF = {
   heating: 'Radiators and the boiler go back to their own schedules, and Home Control stops changing them. The Heating pages and settings are hidden, and its dashboard sensors are removed.',
   lighting: 'Lights and sockets stay as they are, and Home Control stops switching them. The Lighting pages and settings are hidden, and its dashboard sensor is removed.',
+  cameras: 'No more movement alerts or recordings from Home Control. The cameras keep working as they do in their own apps. The Cameras pages and settings are hidden, and its dashboard sensor is removed.',
 };
 
 const P = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
 const ICON = {
   heating: <svg viewBox="0 0 24 24" {...P}><path d="M12 3c1 3.5 5 5.6 5 10a5 5 0 0 1-10 0c0-2.3 1-3.7 2.2-4.8.3 1.6 1.1 2.6 2.1 3C11 8.7 11.4 5.6 12 3Z" /></svg>,
+  cameras: <svg viewBox="0 0 24 24" {...P}><path d="M3 7h12a2 2 0 0 1 2 2v1.5L21 8v8l-4-2.5V15a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" /></svg>,
   lighting: <svg viewBox="0 0 24 24" {...P}><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3Z" /></svg>,
 };
 
@@ -59,7 +62,7 @@ export function HomeSettings() {
 
   if (!home || home.failed) return null;
   const mods = home.modules;
-  const onCount = MODULES.filter((m) => mods[m.id] !== false).length;
+  const onCount = MODULES.filter((m) => mods[m.id]).length;
   const pr = home.presence;
 
   const put = async (body) => {
@@ -99,14 +102,14 @@ export function HomeSettings() {
       <p className="home-set-fine">Turn a part off if something else looks after it. Its pages and settings are hidden and it stops controlling those devices. Everything you set up is kept, so you can turn it back on any time and carry on.</p>
       <ul className="home-mods">
         {MODULES.map((m) => {
-          const isOn = mods[m.id] !== false;
+          const isOn = !!mods[m.id];
           const last = isOn && onCount === 1;
           return (
             <li key={m.id} className={isOn ? 'on' : ''}>
               <span className="home-mod-icon">{ICON[m.id]}</span>
               <label htmlFor={`mod-${m.id}`} className="home-mod-text">
                 <strong>{m.name}</strong>
-                <small>{last ? `${m.what}. Home Control needs at least one part on.` : isOn ? m.what : `Off. ${m.what} are looked after elsewhere.`}</small>
+                <small>{last ? `${m.what}. Home Control needs at least one part on.` : isOn ? m.what : m.offWhat ? `Off. ${m.offWhat}.` : `Off. ${m.what} are looked after elsewhere.`}</small>
               </label>
               <span className="home-sw">
                 <input id={`mod-${m.id}`} type="checkbox" role="switch" checked={isOn} disabled={busy || last}
@@ -147,7 +150,7 @@ export function HomeSettings() {
         </span>
         <span>
           <strong>Use phone locations</strong>
-          <small>When everyone below has been out for a while, the house goes to Away{mods.heating !== false && mods.lighting !== false ? ': the heating and the lights' : ''}. When someone is home or on their way back, it goes back to Schedules. A mode you pick by hand always wins.</small>
+          <small>When everyone below has been out for a while, the house goes to Away{mods.heating && mods.lighting ? ': the heating and the lights' : ''}{mods.cameras ? '. Camera alerts set to "when everyone\'s out" follow it' : ''}. When someone is home or on their way back, it goes back to Schedules. A mode you pick by hand always wins.</small>
         </span>
       </label>
       {pr.enabled && (

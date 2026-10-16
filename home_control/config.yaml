@@ -1,7 +1,7 @@
 name: Home Control
-version: "1.5.0"
+version: "1.6.0"
 slug: home_control
-description: Heating and lighting for the whole house in one panel. Room heating schedules with boiler control, lights and sockets with dimming schedules and scenes, and one Away for both
+description: Heating, lighting and cameras for the whole house in one panel. Room heating schedules with boiler control, lights and sockets with dimming schedules and scenes, camera alerts and recording on schedules, and one Away for everything
 url: https://github.com/tommiethefox80/ha-home-control
 arch:
   - aarch64
@@ -18,8 +18,10 @@ panel_admin: false
 homeassistant_api: true
 # homeassistant_config: to keep the dashboard card in Home Assistant's www folder up to date
 # backup (read only): to move in from the Home Control that was installed by hand
+# media: where camera pictures and clips are saved (Home Assistant's Media → home_control)
 map:
   - homeassistant_config:rw
   - backup:ro
+  - media:rw
 options: {}
 schema: {}

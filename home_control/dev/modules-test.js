@@ -21,9 +21,9 @@ const calls = async () => (await mock('GET', '/calls'));
 let passed = 0;
 async function step(name, fn) { process.stdout.write(`- ${name} ... `); await fn(); passed++; console.log('ok'); }
 
-await step('everything is on to start with', async () => {
+await step('heating and lighting are on to start with, cameras off', async () => {
   const h = await house('GET');
-  assert.deepEqual(h.modules, { heating: true, lighting: true });
+  assert.deepEqual(h.modules, { heating: true, lighting: true, cameras: false });
   assert.equal(typeof h.dashboardPath, 'string');
   assert.ok(Array.isArray(h.people));
 });
@@ -53,7 +53,7 @@ await step('heating off: radiators handed back, sensors removed, nothing more se
 
 await step('both off is refused', async () => {
   await assert.rejects(house('PUT', { modules: { lighting: false } }), (e) => e.status === 400 && /at least one/.test(e.message));
-  assert.deepEqual((await house('GET')).modules, { heating: false, lighting: true });
+  assert.deepEqual((await house('GET')).modules, { heating: false, lighting: true, cameras: false });
 });
 
 await step('with heating off, Away on the Lighting page leaves the heating alone', async () => {
