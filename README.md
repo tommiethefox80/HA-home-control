@@ -1,12 +1,13 @@
 # Home Control
 
-A Home Assistant app for the heating and lighting of the whole house, in one panel.
+A Home Assistant app for the heating, lighting, cameras and Wi-Fi of the whole house, in one panel.
 
 - **Heating**: room-by-room schedules for Hive and Zigbee radiator valves, with the boiler fired whenever a room needs heat. Boost, snooze, open-window detection, warming early to be ready on time, phone alerts, Insights and gas cost.
 - **Lighting**: lights and smart sockets in groups, with on/off, dimming and warmth schedules (including sunrise and sunset times and slow fades), scenes, movement and light-level sensors, seasons, and a lived-in Away pattern.
 - **Cameras**: any camera Home Assistant knows about, with movement alerts (with a picture) and recording on schedules, offline alerts, and each camera's own settings in one place.
+- **Wi-Fi** (UniFi): access points, networks and who's connected; switch networks and access points off and on, the access points' lights off at night, a network on only at set times, and a QR code for guests to join.
 - **One Away** for everything, switched by hand or by people's phones.
-- **Use the parts you want**: heating, lighting and cameras can each be turned on or off in Settings.
+- **Use the parts you want**: heating, lighting, cameras and Wi-Fi can each be turned on or off in Settings.
 - **Dashboard card and sensors**: the Home Control card shows every room and light group at a glance, and switches and dims lights. The app installs and updates the card itself.
 
 ## Screenshots
@@ -39,6 +40,12 @@ A Home Assistant app for the heating and lighting of the whole house, in one pan
 
 ![Camera activity](docs/screenshots/camera-activity.png)
 
+**Wi-Fi**: each access point with who's on it and its status light, the networks with a switch each, and every device on the network.
+
+![Wi-Fi access points](docs/screenshots/wifi.png)
+
+![Wi-Fi devices](docs/screenshots/wifi-devices.png)
+
 **The dashboard card**: the heating at a glance, and every light group with power and dimming. Groups can be hidden from the card, or shown only in their season.
 
 ![Dashboard cards](docs/screenshots/dashboard-cards.png)
@@ -57,7 +64,7 @@ The documentation is on the app's Documentation tab in Home Assistant, and in [h
 
 ## For development
 
-- `home_control/server`: the Node.js server (no dependencies) that runs the heating and lighting, talks to Home Assistant and serves the web app.
+- `home_control/server`: the Node.js server (no dependencies) that runs the heating, lighting, cameras and Wi-Fi, talks to Home Assistant and serves the web app.
 - `home_control/web`: the web app (React, built with Vite). The built copy in `web/dist` is committed, so Home Assistant only has to build a small image: rebuild it with `cd home_control/web && npm ci && npm run build`.
 - `home_control/dashboard`: the dashboard card.
 - `home_control/dev`: a stand-in Home Assistant and end-to-end checks (`sh dev/run.sh`, then the `*-test.js` scripts).

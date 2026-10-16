@@ -144,6 +144,66 @@ addCameraDevice('driveway', 'Driveway', {
   ],
 });
 addCameraDevice('shed', 'Shed', { manufacturer: 'Generic', model: 'RTSP camera', platform: 'generic', area: 'garden', picture: 'shed.jpg', camera: 'shed', stream: false });
+// ---------- a UniFi network, as the UniFi Network integration sets it up ----------
+// Devices (gateway, switch, access points) by MAC; networks (WLANs) as service devices; clients as
+// router device trackers. Entities Home Assistant turns off to start with (PoE ports, QR codes,
+// client trackers for devices it doesn't otherwise know) are in the registry with disabled_by set.
+const QR_PICTURE = new URL('./wifi/qr.png', import.meta.url).pathname;
+const unifiDisabled = new Map(); // entity -> its state, for when it's turned on
+function unifi(entity_id, unique_id, attrs, { device_id = null, state = 'on', category = 'config', disabled = false, deviceClass = null } = {}) {
+  entities.push({ entity_id, unique_id, device_id, area_id: null, entity_category: category, disabled_by: disabled ? 'integration' : null, hidden_by: null, original_device_class: deviceClass, name: null, platform: 'unifi' });
+  const st = { entity_id, state, attributes: { ...attrs }, last_changed: nowIso(), last_updated: nowIso(), context: { id: randomUUID(), parent_id: null, user_id: null } };
+  if (disabled) unifiDisabled.set(entity_id, st); else states.set(entity_id, st);
+}
+function unifiDevice(slug, name, mac, model, { led = null, ports = 0, poeOn = [], enabledPorts = [], uplink = null, clients = 0, temp = null, state = 'connected' } = {}) {
+  const device_id = `dev_unifi_${slug}`;
+  devices.push({ id: device_id, area_id: null, name, name_by_user: null, manufacturer: 'Ubiquiti Networks', model, sw_version: '6.6.77', connections: [['mac', mac]] });
+  const o = { device_id };
+  if (led != null) unifi(`light.${slug}_led`, `led-${mac}`, { friendly_name: `${name} LED`, supported_color_modes: ['onoff'], color_mode: led ? 'onoff' : null }, { ...o, state: led ? 'on' : 'off' });
+  unifi(`button.${slug}_restart`, `device_restart-${mac}`, { friendly_name: `${name} Restart`, device_class: 'restart' }, { ...o, state: 'unknown' });
+  unifi(`sensor.${slug}_state`, `device_state-${mac}`, { friendly_name: `${name} State`, device_class: 'enum' }, { ...o, state, category: 'diagnostic' });
+  unifi(`sensor.${slug}_uptime`, `device_uptime-${mac}`, { friendly_name: `${name} Uptime`, device_class: 'timestamp' }, { ...o, state: new Date(Date.now() - 9 * 86400000).toISOString(), category: 'diagnostic' });
+  unifi(`sensor.${slug}_clients`, `device_clients-${mac}`, { friendly_name: `${name} Clients` }, { ...o, state: String(clients), category: 'diagnostic', disabled: true });
+  if (temp != null) unifi(`sensor.${slug}_temperature`, `device_temperature-${mac}`, { friendly_name: `${name} Temperature`, unit_of_measurement: '°C', device_class: 'temperature' }, { ...o, state: String(temp), category: 'diagnostic' });
+  if (uplink) unifi(`sensor.${slug}_uplink_mac`, `device_uplink_mac-${mac}`, { friendly_name: `${name} Uplink MAC` }, { ...o, state: uplink, category: 'diagnostic' });
+  unifi(`update.${slug}`, `device_update-${mac}`, { friendly_name: name, installed_version: '6.6.77', latest_version: slug === 'garden_ap' ? '6.7.10' : '6.6.77' }, { ...o, state: slug === 'garden_ap' ? 'on' : 'off' });
+  unifi(`device_tracker.${slug}`, mac, { friendly_name: name, source_type: 'router', ip: '192.168.1.2', mac }, { state: state === 'connected' ? 'home' : 'not_home', category: null });
+  for (let p = 1; p <= ports; p++) {
+    unifi(`switch.${slug}_port_${p}_poe`, `poe-${mac}_${p}`, { friendly_name: `${name} Port ${p} PoE`, device_class: 'outlet' }, { ...o, state: poeOn.includes(p) ? 'on' : 'off', disabled: !enabledPorts.includes(p) });
+  }
+}
+function unifiWlan(slug, name, id, { on = true, clients = 0 } = {}) {
+  const device_id = `dev_unifi_wlan_${slug}`;
+  devices.push({ id: device_id, area_id: null, name, name_by_user: null, manufacturer: 'Ubiquiti Networks', model: 'UniFi WLAN', entry_type: 'service', connections: [] });
+  const o = { device_id };
+  unifi(`switch.${slug}`, `wlan-${id}`, { friendly_name: name, device_class: 'switch' }, { ...o, state: on ? 'on' : 'off' });
+  unifi(`sensor.${slug}`, `wlan_clients-${id}`, { friendly_name: name, state_class: 'measurement' }, { ...o, state: String(clients), category: 'diagnostic' });
+  unifi(`image.${slug}_qr_code`, `qr_code-${id}`, { friendly_name: `${name} QR Code`, entity_picture: `/api/image_proxy/image.${slug}_qr_code?token=t0k3n`, access_token: 't0k3n' }, { ...o, state: nowIso(), category: 'diagnostic', disabled: true });
+}
+const MAC = { gw: '70:a7:41:00:00:01', sw: '70:a7:41:00:00:02', lounge: '70:a7:41:00:00:11', upstairs: '70:a7:41:00:00:12', garden: '70:a7:41:00:00:13' };
+unifiDevice('dream_machine_pro', 'Dream Machine Pro', MAC.gw, 'UDMPRO', { temp: 52 });
+unifiDevice('office_switch', 'Office switch', MAC.sw, 'USL8LP', { led: true, ports: 8, poeOn: [1, 2, 3, 4, 5, 6, 7, 8], enabledPorts: [3], uplink: MAC.gw, temp: 41 });
+unifiDevice('lounge_ap', 'Lounge AP', MAC.lounge, 'UAL6', { led: true, uplink: MAC.sw, clients: 4 });
+unifiDevice('upstairs_ap', 'Upstairs AP', MAC.upstairs, 'UAP6MP', { led: true, uplink: MAC.sw, clients: 2 });
+unifiDevice('garden_ap', 'Garden AP', MAC.garden, 'UALR6', { led: false, uplink: MAC.sw, clients: 1 });
+unifiWlan('fox_home', 'Fox Home', '64b0a1c2d3e4f5a6b7c8d901', { clients: 4 });
+unifiWlan('fox_guest', 'Fox Guest', '64b0a1c2d3e4f5a6b7c8d902', { clients: 1 });
+unifiWlan('fox_iot', 'Fox IoT', '64b0a1c2d3e4f5a6b7c8d903', { clients: 2 });
+function unifiClient(slug, name, mac, { home = true, essid = null, ap = null, radio = 'na', ip, guest = false, oui = 'Apple, Inc.', disabled = false, block = false } = {}) {
+  const attrs = { friendly_name: name, source_type: 'router', mac, name, oui, host_name: slug.replace(/_/g, '-'), ...(home ? { ip, ...(essid ? { essid, ap_mac: ap, radio, radio_proto: radio === 'ng' ? 'ng' : 'ax', is_guest: guest, vlan: guest ? 20 : 1 } : {}) } : {}) };
+  unifi(`device_tracker.${slug}`, `default-${mac}`, attrs, { state: home ? 'home' : 'not_home', category: null, disabled });
+  if (block) unifi(`switch.${slug}_block`, `block-${mac}`, { friendly_name: name }, { state: 'on' });
+}
+unifiClient('toms_iphone', "Tom's iPhone", 'a4:83:e7:10:00:01', { essid: 'Fox Home', ap: MAC.lounge, ip: '192.168.1.40' });
+unifiClient('sams_ipad', "Sam's iPad", 'a4:83:e7:10:00:02', { essid: 'Fox Home', ap: MAC.upstairs, ip: '192.168.1.41', block: true });
+unifiClient('macbook_pro', 'MacBook Pro', 'a4:83:e7:10:00:03', { essid: 'Fox Home', ap: MAC.upstairs, ip: '192.168.1.42' });
+unifiClient('living_room_tv', 'Living room TV', 'a4:83:e7:10:00:04', { essid: 'Fox Home', ap: MAC.lounge, radio: 'ng', ip: '192.168.1.43', oui: 'Samsung Electronics' });
+unifiClient('ring_doorbell', 'Front Door doorbell', 'a4:83:e7:10:00:05', { essid: 'Fox IoT', ap: MAC.garden, radio: 'ng', ip: '192.168.30.10', oui: 'Ring LLC' });
+unifiClient('hue_bridge', 'Hue Bridge', 'a4:83:e7:10:00:06', { ip: '192.168.30.11', oui: 'Philips Lighting' }); // wired
+unifiClient('visitor_phone', 'Galaxy S24', 'a4:83:e7:10:00:07', { essid: 'Fox Guest', ap: MAC.lounge, ip: '192.168.20.5', guest: true, oui: 'Samsung Electronics' });
+unifiClient('work_laptop', 'Work laptop', 'a4:83:e7:10:00:08', { home: false, oui: 'Dell Inc.' });
+for (let i = 1; i <= 5; i++) unifiClient(`unknown_${i}`, `Device ${i}`, `a4:83:e7:20:00:0${i}`, { essid: 'Fox IoT', ap: MAC.garden, radio: 'ng', ip: `192.168.30.${20 + i}`, oui: 'Espressif Inc.', disabled: true });
+
 // notify services: two phones with the Home Assistant app
 const NOTIFY = ['mobile_app_toms_iphone', 'mobile_app_sams_pixel_8', 'send_message', 'persistent_notification'];
 
@@ -317,6 +377,14 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': buf.length });
     return res.end(buf);
   }
+  const ip = /^\/api\/image_proxy\/(image\.\w+)(\?.*)?$/.exec(req.url);
+  if (req.method === 'GET' && ip) {
+    if (!/^Bearer \S+/.test(req.headers.authorization || '') && !/token=/.test(ip[2] || '')) { res.writeHead(401); return res.end(); }
+    if (!states.has(ip[1])) { res.writeHead(404); return res.end(); }
+    const buf = fs.readFileSync(QR_PICTURE);
+    res.writeHead(200, { 'content-type': 'image/png', 'content-length': buf.length });
+    return res.end(buf);
+  }
   const m = /^\/api\/states\/([\w]+\.[\w]+)$/.exec(req.url);
   if (req.method === 'DELETE' && m) { // as Home Assistant: removes the state, 404 if there's none
     if (!/^Bearer \S+/.test(req.headers.authorization || '')) { res.writeHead(401); return res.end(); }
@@ -368,6 +436,25 @@ wss.on('connection', (ws) => {
         (ws.subs ||= new Map()).set(m.id, m.event_type || '*');
         return reply(null);
       case 'config/entity_registry/list': return reply(entities);
+      case 'config/entity_registry/update': {
+        // as Home Assistant: turning an entity on takes effect when its integration reloads, 30 s later (here 1.5 s)
+        const e = entities.find((x) => x.entity_id === m.entity_id);
+        if (!e) return reply(null, false, { code: 'not_found', message: 'Entity not found' });
+        calls.push({ at: Date.now(), domain: 'entity_registry', service: 'update', data: { entity_id: m.entity_id, disabled_by: m.disabled_by } });
+        const was = e.disabled_by;
+        if ('disabled_by' in m) e.disabled_by = m.disabled_by;
+        reply({ entity_entry: e, ...(was && !e.disabled_by ? { reload_delay: 30 } : {}) });
+        fireEvent('entity_registry_updated', { action: 'update', entity_id: m.entity_id, changes: { disabled_by: was } });
+        if (was && !e.disabled_by && unifiDisabled.has(m.entity_id)) {
+          setTimeout(() => {
+            const st = unifiDisabled.get(m.entity_id); unifiDisabled.delete(m.entity_id);
+            st.last_changed = st.last_updated = nowIso();
+            states.set(m.entity_id, st);
+            fireEvent('state_changed', { entity_id: m.entity_id, old_state: null, new_state: publicState(st) });
+          }, 1500);
+        }
+        return;
+      }
       case 'config/device_registry/list': return reply(devices);
       case 'config/area_registry/list': return reply(areas);
       case 'lovelace/resources': return reply(resources);

@@ -25,7 +25,7 @@ function scopeTo(section, dir) {
 export default defineConfig({
   base: './',
   plugins: [react()],
-  css: { postcss: { plugins: [scopeTo('heating', 'heating'), scopeTo('lighting', 'lighting'), scopeTo('cameras', 'cameras')] } },
+  css: { postcss: { plugins: [scopeTo('heating', 'heating'), scopeTo('lighting', 'lighting'), scopeTo('cameras', 'cameras'), scopeTo('wifi', 'wifi')] } },
   server: { proxy: { '/api': 'http://localhost:8099' } },
   build: { outDir: 'dist', emptyOutDir: true },
 });

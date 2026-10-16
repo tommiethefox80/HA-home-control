@@ -15,16 +15,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 
-export const MODULES = ['heating', 'lighting', 'cameras'];
+export const MODULES = ['heating', 'lighting', 'cameras', 'wifi'];
 // new parts start off, so an update never starts doing something new by itself
-const DEFAULT_ON = { heating: true, lighting: true, cameras: false };
+const DEFAULT_ON = { heating: true, lighting: true, cameras: false, wifi: false };
 
 class HouseError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
 
 export function createHouse({ log, dataDir = null }) {
-  let heating = null; let lighting = null; let cameras = null;
+  let heating = null; let lighting = null; let cameras = null; let wifi = null;
   let lastHeatMode = null;
   const st = { emptySince: null, suppress: false, lightAway: false };
   const events = new EventEmitter();
@@ -170,6 +170,13 @@ export function createHouse({ log, dataDir = null }) {
       e.disabled = !value;
       if (!quiet) e.addEvent(null, 'note', value ? 'Cameras turned on in Home Control\'s settings.' : 'Cameras turned off in Home Control\'s settings. No more alerts or recordings; the cameras themselves carry on as they are.');
       e.changed();
+    } else if (m === 'wifi' && wifi) {
+      const e = wifi.engine;
+      if (e.disabled === !value) return;
+      e.disabled = !value;
+      if (!quiet) e.addEvent(value ? 'Wi-Fi turned on in Home Control\'s settings.' : 'Wi-Fi turned off in Home Control\'s settings. No more scheduled changes; the network carries on as it is.');
+      if (value) e.tick();
+      e.changed();
     }
   }
 
@@ -244,8 +251,8 @@ export function createHouse({ log, dataDir = null }) {
     };
   }
 
-  function attach(h, l, c = null) {
-    heating = h; lighting = l; cameras = c;
+  function attach(h, l, c = null, w = null) {
+    heating = h; lighting = l; cameras = c; wifi = w;
     l.engine.modeRequest = (mode, reason) => setFromLighting(mode, reason); // lighting_control_mode events from Home Assistant
     lastHeatMode = hrt().mode;
     heating.engine.on('change', () => { onHeatingChange(); lighting.engine.changed(); });

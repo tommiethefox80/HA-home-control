@@ -1,7 +1,7 @@
-// Home Control: heating and lighting in one app, served through Home Assistant ingress.
-// One connection to Home Assistant, shared by both. Heating keeps its original URLs (/api/…);
-// lighting lives under /api/lighting/…. The two run independently, so a problem in one can't
-// stop the other.
+// Home Control: heating, lighting, cameras and Wi-Fi in one app, served through Home Assistant ingress.
+// One connection to Home Assistant, shared by all. Heating keeps its original URLs (/api/…);
+// the others live under /api/lighting/…, /api/cameras/… and /api/wifi/…. Each runs independently,
+// so a problem in one can't stop the others.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,6 +10,7 @@ import { HAClient } from './ha.js';
 import { createHeating } from './heating/http.js';
 import { createLighting } from './lighting/http.js';
 import { createCameras } from './cameras/http.js';
+import { createWifi } from './wifi/http.js';
 import { createHouse } from './house.js';
 import { createPublisher } from './publish.js';
 import { createCardInstaller, panelPath, selfSlug } from './card.js';
@@ -63,12 +64,13 @@ const lightingSummary = () => {
 const heating = createHeating({ client, dataDir: DATA_DIR, log: plain, lightingSummary });
 lighting = createLighting({ client, dataDir: DATA_DIR, log: logObj, house });
 const cameras = createCameras({ client, dataDir: DATA_DIR, log: logObj, house, restBase: REST_BASE, token: HA_TOKEN, mediaDir: MEDIA_DIR, haMediaDir: HA_MEDIA_DIR, panel: panelPath });
-house.attach(heating, lighting, cameras);
+const wifi = createWifi({ client, dataDir: DATA_DIR, log: logObj, house, restBase: REST_BASE, token: HA_TOKEN });
+house.attach(heating, lighting, cameras, wifi);
 house.panel = panelPath;
 lighting.engine.on('change', () => heating.push());
 /** Nothing set up yet (a fresh install): no rooms, no boiler and no lighting groups. */
-const isEmpty = () => !heating.store.data.zones.length && !heating.store.data.settings.boiler?.entity && !lighting.store.data.groups.length && !cameras.store.data.cameras.length;
-createPublisher({ restBase: REST_BASE, token: HA_TOKEN, log: logObj, heating, lighting, cameras, client, panel: panelPath, isEmpty, house });
+const isEmpty = () => !heating.store.data.zones.length && !heating.store.data.settings.boiler?.entity && !lighting.store.data.groups.length && !cameras.store.data.cameras.length && !house.on('wifi');
+createPublisher({ restBase: REST_BASE, token: HA_TOKEN, log: logObj, heating, lighting, cameras, wifi, client, panel: panelPath, isEmpty, house });
 const card = createCardInstaller({ client, log: logObj, version: VERSION, source: CARD_FILE, configDir: HA_CONFIG_DIR });
 const move = createMove({ dataDir: DATA_DIR, backupDir: BACKUP_DIR, log: logObj, isEmpty, panel: panelPath, slug: selfSlug, card });
 
@@ -96,6 +98,7 @@ const server = http.createServer(async (req, res) => {
   else if (p.startsWith('/api/move') || p === '/api/card') { if (await move.handle(req, res, p)) return; }
   else if (p.startsWith('/api/lighting/')) { if (await lighting.handle(req, res, url, p)) return; }
   else if (p.startsWith('/api/cameras/')) { if (await cameras.handle(req, res, url, p)) return; }
+  else if (p.startsWith('/api/wifi/')) { if (await wifi.handle(req, res, url, p)) return; }
   else if (await heating.handle(req, res, url, p)) return;
   res.writeHead(404, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ error: 'Not found' }));
@@ -105,6 +108,7 @@ client.start();
 heating.start();
 lighting.start();
 cameras.start();
+wifi.start();
 card.start();
 server.listen(PORT, () => plain(`Home Control ${VERSION} listening on :${PORT}, Home Assistant at ${HA_URL}`));
 
@@ -115,6 +119,7 @@ const shutdown = async () => {
   plain('Stopping');
   lighting.shutdown();
   cameras.shutdown();
+  wifi.shutdown();
   await heating.shutdown();
   client.stop();
   process.exit(0);

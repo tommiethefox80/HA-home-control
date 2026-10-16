@@ -1,12 +1,14 @@
 # Home Control
 
-Heating and lighting for the whole house in one panel. **Home** in the sidebar opens on Heating; the **Heating / Lighting** switch at the top flips between them. A small dot on the other side of the switch means something's on over there (the boiler firing, or lights on).
+Heating, lighting, cameras and Wi-Fi for the whole house in one panel. **Home** in the sidebar opens on Heating; the switch at the top (**Heating / Lighting**, and **Cameras** and **Wi-Fi** once they're turned on) flips between them. A small dot on another part of the switch means something's on over there (the boiler firing, or lights on).
 
 - **Heating**: room-by-room schedules for Hive and Zigbee TRVs, with the boiler fired whenever a room needs heat. Works with Hive TRVs (through the Hive integration) and Zigbee TRVs (ZHA or Zigbee2MQTT), side by side. The boiler can be a Hive thermostat (`climate.*`) or a relay (`switch.*` / `input_boolean.*`).
 - **Lighting**: lights and smart sockets in groups, with on/off, dimming and warmth schedules, scenes, and a lived-in Away pattern.
-- **One Away** for both, switched by hand or by people's phones.
+- **Cameras**: any camera Home Assistant knows about, with movement alerts and recording on schedules (off to start with; see Cameras below).
+- **Wi-Fi**: UniFi access points, networks and who's connected, with the access points' lights off at night and networks on schedules (off to start with; see Wi-Fi below).
+- **One Away** for everything, switched by hand or by people's phones.
 
-Both halves share one connection to Home Assistant and run independently, so a problem in one can't stop the other.
+The parts share one connection to Home Assistant and run independently, so a problem in one can't stop the others.
 
 ## Installing and updating
 
@@ -46,7 +48,7 @@ Lighting Control's own "Away automatically" setting isn't brought across, becaus
 
 The top of the Settings page, on either side, has the settings for the whole app:
 
-- **What it looks after.** A switch for **Heating** and one for **Lighting**. Turn one off if something else looks after it (another heating app, Hue's own schedules, automations). Turning it off asks first, then:
+- **What it looks after.** A switch for **Heating**, **Lighting**, **Cameras** and **Wi-Fi** (the last two start off). Turn one off if something else looks after it (another heating app, Hue's own schedules, automations). Turning it off asks first, then:
   - Heating: radiators and the boiler are handed back to their own schedules, as when the app stops. Nothing is sent to them after that, and knobs turned by hand are left alone.
   - Lighting: lights and sockets stay as they are, and scenes or modes asked for by Home Assistant scripts are ignored.
   - Its pages and settings are hidden, and its dashboard sensors are removed from Home Assistant.
@@ -397,3 +399,59 @@ show: cameras
 Each camera's picture (tap it for the live view), whether it's offline or seeing movement, and its last movement. Up to four of a camera's own settings can be put on the card to switch from there, such as a floodlight, a siren or privacy mode: choose them in the camera's settings under **On the dashboard card**.
 
 `sensor.home_cameras` has how many cameras are online, a `summary` ("All 4 cameras online. Last movement: Driveway, 21:42"), `away`, and `cameras`: each camera's `name`, `entity`, `online`, `moving`, `last_movement`, `alerts_now`, `recording_now` and the `controls` chosen for the card.
+
+# Wi-Fi
+
+Wi-Fi starts off. Turn it on in **Settings → Home Control → Wi-Fi**. It uses Home Assistant's **UniFi Network** integration (Settings → Devices & services → Add integration → UniFi Network, signed in with a local admin account on your UniFi console), so there's nothing else to set up: your access points, networks and the devices on them appear straight away.
+
+## Access points
+
+Each access point with its model, whether it's online, how many devices are on it (tap the number to see them), how long it's been up, and whether a firmware update is waiting. On each:
+
+- **Light on / Light off** switches its status light. **All lights off** and **All lights on** do every access point and switch at once.
+- **Restart** restarts it. Devices on it drop off for a minute or two and move to another access point if they can.
+- **Switch off / Switch on**, once you've chosen the PoE port it's plugged into (below).
+
+Switches, the gateway and other UniFi devices are listed under **Other network devices**, with their lights and a restart button. Which is which is worked out from each device's model; change it in **Settings → What each device is**, or hide a device.
+
+### Switching an access point off
+
+Home Assistant's UniFi Network integration can't switch an access point itself off, but it can turn off the PoE port on the UniFi switch (or gateway) that powers it, which does the same. In **Settings → Access points**, choose the port each access point is plugged into: the ports on the switch it's connected to are listed first. Home Assistant keeps PoE ports turned off to start with; choosing one here turns it on in Home Assistant, which takes about a minute.
+
+An access point can then be switched off from its card, and **off between two times** each day (a garden access point overnight, say). An access point powered by a PoE injector, or a switch that isn't UniFi, can't be switched off from here.
+
+## Networks
+
+Each Wi-Fi network with a switch to turn it off and on everywhere, how many devices are on it, and its schedule. Turning a network off asks first: devices on it drop off until it's back, and if this page reaches you over that network, you'll lose it.
+
+**QR code to join** shows a code a phone's camera can read to join the network: handy for guests. The code holds the network's password, so share it with people you'd give the password to. Home Assistant keeps these codes turned off to start with; the first time, Home Control asks it to turn the code on, which takes about a minute.
+
+## Devices
+
+Everything on the network: its name, which network and access point it's on, 2.4, 5 or 6 GHz, its address and maker, or when it was last seen. Filter by network or access point, show everything seen recently as well as what's connected now, or search by name, address or maker.
+
+- **Track them all.** Home Assistant's UniFi Network integration only tracks devices it already knows about (from another integration), and keeps the rest turned off. Home Control says how many, and **Track them all** turns them on in Home Assistant, adding a device tracker for each. You can turn any of them off again in Home Assistant.
+- **Block.** A device in the UniFi Network integration's list of devices to block (in Home Assistant: Settings → Devices & services → UniFi Network → Configure) gets a **Block** button here, and **Allow** to let it back on.
+
+Devices seen by other router integrations in Home Assistant (a Fritz!Box, Netgear or nmap, say) are listed too.
+
+## Schedules
+
+In **Settings**:
+
+- **Status lights at night**: the lights on the access points and switches go off at the first time and back on at the second, every day. Choose which devices, or leave them all ticked.
+- **Network schedules**: each network can be **off between two times** (a children's network overnight) or **on only between two times** (a guest network in the day).
+- **Access points**: off between two times, once its PoE port is chosen.
+
+Each change is made once, at its time (or when the device is next online, if it isn't then). Switching something by hand in between is left alone until the next scheduled change. Saving a schedule puts things as it says right away. Everything the schedules do, and every change made here, is listed on **Activity**.
+
+## Wi-Fi on a dashboard
+
+```yaml
+type: custom:home-control-card
+show: wifi
+```
+
+Each access point with how many devices are on it and a button for its status light, and each network with a button to turn it off and on (turning one off takes a second tap, so it can't happen by accident). Tap the title to open the Wi-Fi pages.
+
+`sensor.home_wifi` has how many devices are connected, a `summary` ("3 access points online · 24 devices connected"), `leds_schedule`, `access_points` (each one's `name`, `model`, `online`, `switched_off`, `clients` and `led`) and `networks` (each one's `name`, `entity`, `on` and `clients`).

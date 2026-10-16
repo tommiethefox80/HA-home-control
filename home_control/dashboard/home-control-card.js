@@ -6,12 +6,12 @@
 // tap a group's name or the title to open the app.
 //
 //   type: custom:home-control-card
-//   show: heating            # or: lighting, or cameras
+//   show: heating            # or: lighting, cameras or wifi
 //   panel: /local_heating_control   # optional: where the Home app is (the app says, from 1.3)
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.6.2';
+const VERSION = '1.7.0';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 
@@ -66,6 +66,9 @@ const ICON = {
   plus: `<svg viewBox="0 0 24 24" ${P} stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`,
   cam: `<svg viewBox="0 0 24 24" ${P}><path d="M3 7h12a2 2 0 0 1 2 2v1.5L21 8v8l-4-2.5V15a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/></svg>`,
   bell: `<svg viewBox="0 0 24 24" ${P}><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/></svg>`,
+  wifi: `<svg viewBox="0 0 24 24" ${P}><path d="M2 8.8a15 15 0 0 1 20 0M5.5 12.4a10 10 0 0 1 13 0M9 15.9a5 5 0 0 1 6 0M12 19.5h.01"/></svg>`,
+  ap: `<svg viewBox="0 0 24 24" ${P}><path d="M4 9.5c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 9.5v2c0 1.7 3.6 3 8 3s8-1.3 8-3v-2M12 9.5h.01"/></svg>`,
+  led: `<svg viewBox="0 0 24 24" ${P}><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 3v2M12 19v2M5.6 5.6 7 7M17 17l1.4 1.4M3 12h2M19 12h2M5.6 18.4 7 17M17 7l1.4-1.4"/></svg>`,
   offline: `<svg viewBox="0 0 24 24" ${P}><path d="M3 3l18 18M8.5 8.6A6 6 0 0 0 6 13M2 9a15 15 0 0 1 4-2.7M12 18h.01M9.5 15a3.5 3.5 0 0 1 5 0M17.7 11.8a6 6 0 0 0-3-2.5M22 9a15 15 0 0 0-9.5-3.9"/></svg>`,
 };
 
@@ -162,6 +165,27 @@ const STYLE = `
   .cchip:focus-visible, .csel:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
   .csel { font: inherit; font-size: .78rem; font-weight: 600; padding: 5px 8px; border-radius: 999px; min-height: 30px;
     border: 0; color: var(--primary-text-color); background: var(--hc-tile-bg, rgb(127 127 127 / .1)); max-width: 100%; }
+
+  /* wifi */
+  .wifi { cursor: default; }
+  .wlist { display: flex; flex-direction: column; gap: 6px; }
+  .wlabel { font-size: .74rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--secondary-text-color); margin: 2px 0 -2px; }
+  .wrow { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+    padding: 6px 6px 6px 10px; border-radius: 14px; background: var(--hc-tile-bg, rgb(127 127 127 / .08)); }
+  .wrow > svg { width: 22px; height: 22px; color: var(--secondary-text-color); }
+  .wrow.down { opacity: .6; }
+  .wname { font-weight: 600; font-size: .92rem; color: var(--primary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wsub { font-size: .78rem; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wsub.warn { color: rgb(196 66 45); }
+  .wchip { border: 0; margin: 0; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-size: .78rem; font-weight: 650;
+    padding: 6px 11px; border-radius: 999px; min-height: 32px; color: var(--primary-text-color);
+    background: var(--card-background-color, #fff); box-shadow: inset 0 0 0 1px var(--divider-color); white-space: nowrap; }
+  .wchip svg { width: 15px; height: 15px; }
+  .wchip.on { background: var(--primary-text-color); color: var(--card-background-color, #fff); box-shadow: none; }
+  .wchip.lit svg { color: rgb(224 164 44); }
+  .wchip.sure { background: rgb(196 66 45); color: #fff; box-shadow: none; }
+  .wchip:disabled { opacity: .45; cursor: default; }
+  .wchip:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 `;
 
 class HomeControlCard extends HTMLElement {
@@ -171,9 +195,9 @@ class HomeControlCard extends HTMLElement {
     this._pending ??= new Map();
     this._timers ??= {};
     const show = config?.show || 'heating';
-    if (!['heating', 'lighting', 'cameras'].includes(show)) throw new Error('show must be heating, lighting or cameras');
+    if (!['heating', 'lighting', 'cameras', 'wifi'].includes(show)) throw new Error('show must be heating, lighting, cameras or wifi');
     this._config = { ...config, show };
-    this._entity = config.entity || { heating: 'sensor.home_heating', lighting: 'sensor.home_lighting', cameras: 'sensor.home_cameras' }[show];
+    this._entity = config.entity || { heating: 'sensor.home_heating', lighting: 'sensor.home_lighting', cameras: 'sensor.home_cameras', wifi: 'sensor.home_wifi' }[show];
     this._last = undefined;
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     if (this._hass) this._render();
@@ -186,7 +210,10 @@ class HomeControlCard extends HTMLElement {
     const key = this._config?.show === 'cameras' && st ? (st.attributes.cameras || []).map((c) => {
       const cs = hass.states[c.entity];
       return `${cs?.state}|${cs?.attributes?.entity_picture}|${(c.controls || []).map((x) => hass.states[x.id]?.state).join(',')}`;
-    }).join(';') : '';
+    }).join(';')
+      // Wi-Fi: the lights and networks themselves, so a switch shows straight away
+      : this._config?.show === 'wifi' && st ? [...(st.attributes.access_points || []).map((x) => x.led?.entity), ...(st.attributes.networks || []).map((n) => n.entity)]
+        .map((id) => (id ? hass.states[id]?.state : '')).join(',') : '';
     if (st === this._last && key === this._key && this.shadowRoot?.childElementCount) return;
     this._last = st;
     this._key = key;
@@ -205,6 +232,7 @@ class HomeControlCard extends HTMLElement {
     const a = this._last?.attributes;
     if (!a) return 2;
     if (this._config.show === 'cameras') return 2 + Math.ceil((a.cameras?.length || 0) / 2) * 3;
+    if (this._config.show === 'wifi') return 2 + Math.ceil(((a.access_points?.length || 0) + (a.networks?.length || 0)) * 0.8);
     return this._config.show === 'heating' ? 2 + Math.ceil((a.rooms?.length || 0) * 0.8) : 2 + Math.ceil(shownGroups(a).length / 3);
   }
 
@@ -224,11 +252,12 @@ class HomeControlCard extends HTMLElement {
     if (!this.shadowRoot || !this._config) return;
     if (this._pressing) { this._dirty = true; return; } // don't swap the tile out from under a finger
     const st = this._last;
-    const part = { heating: 'Heating', lighting: 'Lighting', cameras: 'Cameras' }[this._config.show];
+    const part = { heating: 'Heating', lighting: 'Lighting', cameras: 'Cameras', wifi: 'Wi-Fi' }[this._config.show];
     const body = !st
       ? `<div class="card"><div class="head">${this._badge('quiet')}<div class="titles"><div class="title">${part}</div>
            <div class="sub">Nothing from Home Control yet (${esc(this._entity)} not found). Check it's running. If ${part} is turned off in its settings, remove this card.</div></div></div></div>`
-      : this._config.show === 'heating' ? this._heating(st) : this._config.show === 'cameras' ? this._cameras(st) : this._lighting(st);
+      : this._config.show === 'heating' ? this._heating(st) : this._config.show === 'cameras' ? this._cameras(st)
+        : this._config.show === 'wifi' ? this._wifi(st) : this._lighting(st);
     this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card>${body}</ha-card>`;
     const root = this.shadowRoot;
     // the heating card opens the app; on the lighting card only the title does, and the groups switch
@@ -265,6 +294,25 @@ class HomeControlCard extends HTMLElement {
       sel.addEventListener('click', (e) => e.stopPropagation());
       sel.addEventListener('change', () => {
         this._hass.callService('select', 'select_option', { entity_id: sel.dataset.ctl, option: sel.value })
+          .catch((err) => { this._error = `Couldn't change that: ${err.message || err}`; this._render(); });
+      });
+    }
+    // Wi-Fi: a status light switches at once; a network asks for a second tap before going off
+    for (const chip of root.querySelectorAll('.wchip[data-ent]')) {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = chip.dataset.ent;
+        const on = this._hass?.states?.[id]?.state === 'on';
+        if (on && chip.dataset.sure && !chip.classList.contains('sure')) {
+          chip.classList.add('sure');
+          chip.textContent = chip.dataset.sure;
+          clearTimeout(this._sureTimer);
+          this._sureTimer = setTimeout(() => this._render(), 4000);
+          return;
+        }
+        clearTimeout(this._sureTimer);
+        chip.disabled = true;
+        this._hass.callService(id.split('.')[0], on ? 'turn_off' : 'turn_on', { entity_id: id })
           .catch((err) => { this._error = `Couldn't change that: ${err.message || err}`; this._render(); });
       });
     }
@@ -373,7 +421,7 @@ class HomeControlCard extends HTMLElement {
     }
   }
 
-  _badge(kind, icon = { heating: ICON.flame, cameras: ICON.cam }[this._config.show] || ICON.bulb) {
+  _badge(kind, icon = { heating: ICON.flame, cameras: ICON.cam, wifi: ICON.wifi }[this._config.show] || ICON.bulb) {
     const styles = {
       fire: '--hc-badge-bg: rgb(238 132 52 / .16); --hc-badge-ink: rgb(238 132 52);',
       lit: '--hc-badge-bg: rgb(255 182 98 / .22); --hc-badge-ink: rgb(214 128 38);',
@@ -473,6 +521,39 @@ class HomeControlCard extends HTMLElement {
       </div>
       ${err}
       ${tiles ? `<div class="cams">${tiles}</div>` : '<div class="empty">No cameras yet. Add them in Home → Cameras → Settings.</div>'}
+    </div>`;
+  }
+
+  _wifi(st) {
+    const a = st.attributes || {};
+    const title = this._config.title || 'Wi-Fi';
+    const S = (id) => (id ? this._hass?.states?.[id] : null);
+    const aps = (a.access_points || []).map((x) => {
+      const ls = S(x.led?.entity);
+      const ledOn = ls ? ls.state === 'on' : !!x.led?.on;
+      const sub = x.switched_off ? 'Switched off' : !x.online ? 'Offline' : `${x.clients} ${x.clients === 1 ? 'device' : 'devices'}${x.model ? ` · ${x.model}` : ''}`;
+      const led = x.led ? `<button type="button" class="wchip${ledOn ? ' lit' : ''}" data-ent="${esc(x.led.entity)}" aria-pressed="${ledOn}" ${!ls || ls.state === 'unavailable' ? 'disabled' : ''}
+          title="Status light ${ledOn ? 'on' : 'off'}">${ICON.led}${ledOn ? 'Light on' : 'Light off'}</button>` : '';
+      return `<div class="wrow${x.online ? '' : ' down'}">${ICON.ap}<div style="min-width:0"><div class="wname">${esc(x.name)}</div>
+        <div class="wsub${!x.online && !x.switched_off ? ' warn' : ''}">${esc(sub)}</div></div>${led}</div>`;
+    }).join('');
+    const nets = (a.networks || []).map((n) => {
+      const ns = S(n.entity);
+      const on = ns ? ns.state === 'on' : !!n.on;
+      return `<div class="wrow${on ? '' : ' down'}">${ICON.wifi}<div style="min-width:0"><div class="wname">${esc(n.name)}</div>
+        <div class="wsub">${on ? `${n.clients} ${n.clients === 1 ? 'device' : 'devices'}` : 'Off'}</div></div>
+        <button type="button" class="wchip${on ? ' on' : ''}" data-ent="${esc(n.entity)}" data-sure="Tap again to turn off" aria-pressed="${on}" ${!ns || ns.state === 'unavailable' ? 'disabled' : ''}>${on ? 'On' : 'Off'}</button></div>`;
+    }).join('');
+    const err = this._error ? `<div class="note">${ICON.alert}<span>${esc(this._error)}</span></div>` : '';
+    return `<div class="card wifi">
+      <div class="head open" role="button" tabindex="0" aria-label="${esc(title)}: ${esc(a.summary)}. Open Wi-Fi in Home.">${this._badge('quiet')}
+        <div class="titles"><div class="title">${esc(title)}</div><div class="sub">${esc(a.summary || '')}</div></div>
+        ${a.leds_schedule ? `<span class="pill" title="Status lights">${esc(a.leds_schedule.replace(/^Off/, 'Lights off'))}</span>` : ''}${ICON.chev.replace('<svg', '<svg class="chev"')}
+      </div>
+      ${err}
+      ${aps ? `<div class="wlist"><div class="wlabel">Access points</div>${aps}</div>` : ''}
+      ${nets ? `<div class="wlist"><div class="wlabel">Networks</div>${nets}</div>` : ''}
+      ${!aps && !nets ? '<div class="empty">No UniFi access points or networks found. Home Control uses Home Assistant\'s UniFi Network integration.</div>' : ''}
     </div>`;
   }
 

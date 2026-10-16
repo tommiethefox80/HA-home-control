@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.0
+- **Wi-Fi.** A new part of Home Control for UniFi networks, off until you turn it on in Settings → Home Control. It uses Home Assistant's UniFi Network integration, so there's nothing else to set up.
+  - **Access points**: each one with who's on it, whether it's online, how long it's been up and whether a firmware update is waiting; switch its status light, restart it, and switch it off and on through the PoE port it's plugged into.
+  - **Networks**: switch each Wi-Fi network off and on, see how many devices are on it, and show a QR code for guests to join.
+  - **Devices**: everything on the network, with the network, access point and band it's on; filter and search. Devices Home Assistant isn't tracking can be tracked in one press, and devices in the integration's block list can be blocked and allowed.
+  - **Schedules**: the status lights off at night, a network off between two times or on only between two times, and an access point off overnight. Each change is made once at its time; switching by hand in between is left alone.
+  - Activity lists every change made here or by a schedule.
+  - `sensor.home_wifi`, and `show: wifi` on the dashboard card, with status lights and networks switchable from there.
+
 ## 1.6.2
 - A camera Home Assistant shows as unavailable, but whose pictures keep coming through, now counts as working. UniFi Protect can mark a working camera unavailable; Home Control now looks at the pictures before calling a camera offline (a picture that never changes, as some cloud cameras give while offline, doesn't count). Its Camera settings explain what Home Assistant shows and what to do.
 - Home Assistant won't take pictures or clips from a camera it shows as unavailable, so in that case Home Control saves the picture itself, and Activity says why there's no clip.

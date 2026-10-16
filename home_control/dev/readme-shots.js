@@ -27,7 +27,7 @@ async function shot(name, hash, { width = 1200, height = 860, scale = 1, dark = 
 // cameras: turned on, the four stand-in cameras added, some movement and a camera offline
 const put = (p, b, m = 'PUT') => fetch(`http://localhost:8099/api/${p}`, { method: m, headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
 const mockSensor = (entity, state) => fetch('http://localhost:8124/sensor', { method: 'POST', body: JSON.stringify({ entity, state }) });
-await put('house', { modules: { cameras: true } });
+await put('house', { modules: { cameras: true, wifi: true } });
 await sleep(800);
 const camState = await (await fetch('http://localhost:8099/api/cameras/state')).json();
 for (const c of camState.candidates) await put('cameras/cameras', { entity: c.entity }, 'POST');
@@ -39,6 +39,7 @@ await mockSensor('event.front_door_ding', new Date().toISOString());
 await sleep(2500);
 await mockSensor('binary_sensor.garden_motion', 'on');
 await mockSensor('camera.shed', 'unavailable');
+await put('wifi/settings', { leds: { mode: 'off_between', from: '22:00', to: '07:00' } });
 await sleep(6000); // the clips are finished
 
 await shot('heating', '#/');
@@ -49,6 +50,8 @@ await shot('phone-heating', '#/', { width: 390, height: 844, scale: 2, dark: tru
 await shot('phone-lighting', '#/lighting/lights', { width: 390, height: 844, scale: 2, dark: true });
 await shot('cameras', '#/cameras/', { wait: 4000 });
 await shot('camera-activity', '#/cameras/activity', { height: 640, wait: 3000 });
+await shot('wifi', '#/wifi/', { height: 760, wait: 2500 });
+await shot('wifi-devices', '#/wifi/devices', { height: 760, wait: 2500 });
 // the dashboard cards from dev/card-preview.js: just the heating and lighting cards
 for (const [from, to] of [['card-light-880.png', 'dashboard-cards.png'], ['card-dark-880.png', 'dashboard-cards-dark.png']]) {
   if (!fs.existsSync(SCREENS + from)) continue;
