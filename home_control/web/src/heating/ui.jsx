@@ -14,6 +14,7 @@ export const Icon = {
   alert: (p) => <svg viewBox="0 0 24 24" {...P} {...p}><path d="M12 4 2.8 19.5h18.4L12 4Z" /><path d="M12 10v4.5M12 17.2v.3" /></svg>,
   x: (p) => <svg viewBox="0 0 24 24" {...P} {...p}><path d="M6 6l12 12M18 6 6 18" /></svg>,
   undo: (p) => <svg viewBox="0 0 24 24" {...P} {...p}><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>,
+  clock: (p) => <svg viewBox="0 0 24 24" {...P} {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>,
 };
 
 export function Ribbon({ schedule, day, tz, tall, showNow, showHours, labels }) {

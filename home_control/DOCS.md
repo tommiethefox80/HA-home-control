@@ -149,7 +149,7 @@ Every 30 seconds, and whenever a valve or thermometer changes:
    - **Away** mode: away temperature
    - the room's **schedule**
 2. Every TRV in the room is set to that target (only when it differs, and spaced out so Hive's cloud API isn't hammered).
-3. A room **calls for heat** when it falls 0.3° (configurable) below target, and stops when it reaches target, or a set amount below it if you use **Stop heating this far below target** to let the radiators' leftover heat finish the job.
+3. A room **calls for heat** when it falls 0.3° (configurable) below target, and stops when it reaches target, or a set amount below it if you use **Stop heating this far below target** to let the radiators' leftover heat finish the job. A room that stops early (learned or set) only starts again 0.2° below its stop point, so the boiler doesn't flick on and off. A room below its target that isn't heating says when it will, on its card ("Heats again below 17.9°"), on its own page (with why), and on the dashboard card.
 4. If any room is calling, the **boiler fires**. With a Hive thermostat this means setting it to 30° in manual mode; when every room is satisfied it goes back to 7°. Minimum run and rest times stop short cycling.
 
 The room temperature comes from the TRVs' own readings, or from a separate thermometer if you pick one (more accurate: a TRV sits next to a hot radiator).

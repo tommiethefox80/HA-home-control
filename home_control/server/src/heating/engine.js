@@ -422,6 +422,11 @@ export class Engine extends EventEmitter {
       coast: this.rt.coast?.[zone.id] || null,
       learn: this.rt.learn?.[zone.id] || null,
       coasting: !calling && stop > 0 && current != null && current < t.temp && current >= t.temp - stop - 0.05,
+      // below its target but not heating: it starts again under startAt (so the boiler doesn't flick on and off)
+      waiting: !!zone.enabled && !calling && current != null && current < t.temp && !['off', 'window'].includes(t.source),
+      startAt: Math.round((t.temp - start) * 10) / 10,
+      startGap: Math.round(start * 100) / 100,
+      gapFromStop: stop + 0.2 > (Number(this.s.hysteresis) || 0), // the start point is set by stopping early, not the house gap
       id: zone.id, name: zone.name, icon: zone.icon || 'room', enabled: zone.enabled,
       current, target: t.temp, source: t.source, until: t.until || null, by: t.by || null, forever: !!t.forever,
       snoozedUnder: this.#snoozeUnder(zone.id, now) ? true : false,

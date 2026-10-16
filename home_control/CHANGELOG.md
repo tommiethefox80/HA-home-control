@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.2
+- **"Heats again below…"** A room that's below its target but isn't heating now says when it will, on its card, on its own page (with the reason: it stops early to let the radiators' leftover heat finish, and starts again a little below that so the boiler doesn't flick on and off), and on the dashboard card ("Heats again below 17.9° · 15° from 22:00"). Before, it just said "On schedule", which looked like a fault.
+
 ## 1.7.1
 - **Who's on each access point and network.** Each access point on the Access points page, and each network on the Networks page, lists the devices connected to it, with the network or access point and the band each is using. The first six show, with **Show all** for the rest; devices UniFi counts but Home Assistant isn't tracking are noted.
 - **Wi-Fi → Settings → Connected devices** turns these lists on and off, for access points and networks separately, and can put the names on the dashboard card too (`show: wifi`). The `sensor.home_wifi` access points and networks then have `devices`.

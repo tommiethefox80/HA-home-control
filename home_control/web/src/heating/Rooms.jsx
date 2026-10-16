@@ -31,6 +31,25 @@ export function statusLine(z, tz) {
   }
 }
 
+/** A room below its target that isn't heating: when it will, short for the card. */
+export function waitLine(z) {
+  if (!z.waiting || z.startAt == null) return null;
+  return z.coasting
+    ? <>Leftover heat should carry it to {deg(z.target)}. Heats again below <b>{deg(z.startAt)}</b></>
+    : <>Not heating yet: heats again below <b>{deg(z.startAt)}</b></>;
+}
+
+/** The same, in full, for the room's own page. */
+function waitWhy(z) {
+  if (!z.waiting || z.startAt == null) return null;
+  const early = Math.round((z.target - z.stopAt) * 10) / 10; // as shown: target and stop point both rounded
+  const coast = z.coasting && early > 0 ? `Heat stopped at ${deg(z.stopAt)} and the radiators' leftover heat should carry it to ${deg(z.target)}. ` : '';
+  const why = z.gapFromStop
+    ? `it stops heating ${deg(early)} early${z.stopMode === 'auto' ? ' (learned, because it keeps warming after the heat goes off)' : ''} and starts again a little below that, so the boiler doesn't flick on and off.`
+    : `once it's ${deg(z.startGap)} under its target (Settings → Start heating when a room is this far below target), so the boiler doesn't flick on and off.`;
+  return `${coast}It heats again below ${deg(z.startAt)}${z.gapFromStop ? ': ' : ' '}${why}`;
+}
+
 // a boost, a hold, or a change made on the radiator: anything "Back to schedule" undoes
 export const isOverridden = (z) => ['boost', 'hold', 'manual', 'snooze'].includes(z.source);
 
@@ -98,6 +117,7 @@ function RoomCard({ z, state, onOpen, notify, today }) {
           </button>
         )}
       </div>
+      {pending == null && waitLine(z) && <div className="wait"><Icon.clock /><span>{waitLine(z)}</span></div>}
       {z.warnings.length > 0 && <div className="warn">{z.warnings.join('. ')}</div>}
       {z.enabled && <DaySpark room={today?.rooms?.find((r) => r.id === z.id)} today={today} tz={tz} current={z.current} show={state.settings.cards} />}
       <Ribbon schedule={state.schedules[z.id]} day={nowLocal(tz).day} tz={tz} showNow />
@@ -178,7 +198,7 @@ function RoomSheet({ z, state, onClose, notify }) {
   return (
     <Sheet onClose={onClose} label={z.name}>
       <h2>{z.name}</h2>
-      <p className="lede">{deg(z.current)} now. {statusLine(z, tz)}.{z.coasting ? ` Heat stopped at ${deg(z.stopAt)}; the radiators' leftover heat should carry it to ${deg(z.target)}.` : ''}</p>
+      <p className="lede">{deg(z.current)} now. {statusLine(z, tz)}.{waitWhy(z) ? ` ${waitWhy(z)}` : z.coasting ? ` Heat stopped at ${deg(z.stopAt)}; the radiators' leftover heat should carry it to ${deg(z.target)}.` : ''}</p>
       {overridden && !blocked && (
         <div className="actions back-row">
           <button className="btn primary" disabled={busy} onClick={cancel}>

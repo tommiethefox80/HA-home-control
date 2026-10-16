@@ -38,9 +38,16 @@ function today(tz) {
 
 /** The same words as the room cards in the app, as plain text. */
 export function roomStatus(z, tz) {
+  const base = baseStatus(z, tz);
+  // below its target but not heating: say when it will
+  if (!z.enabled || !z.waiting || z.startAt == null || ['off', 'window'].includes(z.source)) return base;
+  return z.source === 'schedule' || !z.source ? `Heats again below ${deg(z.startAt)} · ${base.replace(/^On schedule, /, '')}` : `${base} · heats again below ${deg(z.startAt)}`;
+}
+
+function baseStatus(z, tz) {
   if (!z.enabled) return 'Not managed by this app';
   if (z.snoozedUnder && z.source !== 'snooze' && ['boost', 'hold', 'manual'].includes(z.source)) {
-    return `${roomStatus({ ...z, snoozedUnder: false }, tz)}, then snoozed again`;
+    return `${baseStatus({ ...z, snoozedUnder: false }, tz)}, then snoozed again`;
   }
   const next = z.scheduled?.next;
   const at = (n) => (n ? `${n.day !== today(tz) ? `${n.day[0].toUpperCase()}${n.day.slice(1)} ` : ''}${n.time}` : '');

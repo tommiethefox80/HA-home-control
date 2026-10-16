@@ -128,6 +128,10 @@ button { cursor: pointer; }
 .back-row .btn { display: inline-flex; align-items: center; gap: 8px; }
 .back-row .btn svg { width: 18px; height: 18px; }
 .warn { grid-column: 1 / -1; font-size: .82rem; color: var(--danger); }
+/* below its target but not heating yet: when it will */
+.wait { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 6px; line-height: 1.35; font-size: .82rem; color: var(--ink-2); }
+.wait svg { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+.wait b { color: var(--ink); font-weight: 650; }
 
 .stepper { display: flex; align-items: center; gap: 6px; align-self: end; }
 .stepper button {
