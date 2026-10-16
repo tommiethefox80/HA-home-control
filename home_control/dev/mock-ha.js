@@ -312,6 +312,55 @@ function fireEvent(type, data, context = { id: randomUUID(), parent_id: null, us
   }
 }
 
+// ---------- a week of a physical house ----------
+// Outside temperature with day/night swings and colder and milder days; two rooms that each hour
+// lose a share (k) of the gap to outside (Newton's law), warm while heating (more slowly on cold
+// days), and keep warming a little after the heat goes off (leftover radiator heat). Lounge holds
+// its heat well; Bedroom loses it faster. What each room called for, and a daily log like the app's,
+// are at GET /sim-log, so a test can give the app the week it would have recorded.
+const SIM = { calls: { Lounge: [], Bedroom: [] }, days: {} };
+function simulateWeek(end) {
+  const start = end - 7 * 86400000; const step = 5 * 60000; const Hr = 3600000;
+  const DAY_SHIFT = [3, 0, -3, -1, 2, -2, 1, 0];
+  const outsideAt = (t) => {
+    const d = Math.floor((t - start) / 86400000);
+    const h = (new Date(t).getUTCHours() + new Date(t).getUTCMinutes() / 60);
+    return 7 + DAY_SHIFT[d % DAY_SHIFT.length] + 4 * Math.sin(((h - 9) / 24) * 2 * Math.PI);
+  };
+  const local = (t) => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(t)).map((x) => [x.type, x.value])); return { h: Number(p.hour) + Number(p.minute) / 60, key: `${p.year}-${p.month}-${p.day}` }; };
+  const targetAt = (t) => { const { h } = local(t); return h >= 6.5 && h < 8.5 ? 20 : h >= 16.5 && h < 22.5 ? 20.5 : 15; };
+  const rooms = [
+    { name: 'Lounge', k: 0.045, heat: 2.6, cold: 0.05, T: 18.5, rad: 0, calling: false, ids: ['sensor.lounge_temperature', 'climate.lounge_trv'] },
+    { name: 'Bedroom', k: 0.09, heat: 2.4, cold: 0.06, T: 17, rad: 0, calling: false, ids: ['climate.bedroom_trv'] },
+  ];
+  for (let t = start; t <= end; t += step) {
+    const out = outsideAt(t); const target = targetAt(t); const dk = local(t).key;
+    const day = (SIM.days[dk] ||= { boilerMin: 0, outSum: 0, outN: 0, rooms: {} });
+    day.outSum += out * 5; day.outN += 5;
+    let any = false;
+    for (const r of rooms) {
+      r.calling = r.calling ? r.T < target : r.T < target - 0.3;
+      if (r.calling) { any = true; if (!r.open) r.open = t; } else if (r.open) { SIM.calls[r.name].push([r.open, t]); r.open = null; }
+      // the radiator warms over ~15 min while heating and cools over ~25 min after
+      r.rad = r.calling ? Math.min(1, r.rad + step / (15 * 60000)) : r.rad * Math.exp(-step / (25 * 60000));
+      const heatRate = r.heat * (1 - r.cold * (12 - out) / 2); // °/h at full radiator: slower on colder days
+      r.T += (-r.k * (r.T - out) + r.rad * heatRate) * (step / Hr);
+      const rr = (day.rooms[r.name] ||= { callMin: 0, tempSum: 0, tempN: 0 });
+      if (r.calling) rr.callMin += 5;
+      rr.tempSum += r.T * 5; rr.tempN += 5;
+      for (const id of r.ids) {
+        const cur = Math.round(r.T * 10) / 10;
+        if (id.startsWith('sensor.')) history.push({ entity: id, t, s: String(cur), a: { unit_of_measurement: '°C' } });
+        else history.push({ entity: id, t, s: 'heat', a: { current_temperature: Math.round(r.T * 2) / 2, temperature: r.calling ? target : target - 0.5, hvac_action: r.calling ? 'heating' : 'idle' } });
+      }
+    }
+    if (any) day.boilerMin += 5;
+    if ((t - start) % (30 * 60000) === 0) history.push({ entity: 'weather.home', t, s: 'cloudy', a: { temperature: Math.round(out * 10) / 10, temperature_unit: '°C' } });
+    history.push({ entity: 'climate.heating', t, s: 'heat', a: { hvac_action: any ? 'heating' : 'idle', temperature: any ? 30 : 7 } });
+  }
+  for (const r of rooms) if (r.open) SIM.calls[r.name].push([r.open, end]);
+}
+
 // ---------- synthetic history for the last day ----------
 const history = [];
 (function seedHistory() {
@@ -329,22 +378,8 @@ const history = [];
     history.push({ entity: id, t: start + 13 * 3600000, s: 'on', a: { brightness: 220 } });
     history.push({ entity: id, t: start + 15 * 3600000, s: 'off', a: { brightness: null } });
   }
-  // the boiler (Hive thermostat) firing for an hour each morning and evening
-  for (let t = start; t <= end; t += 30 * 60000) {
-    const h = new Date(t).getHours();
-    const firing = h === 7 || h === 17;
-    history.push({ entity: 'climate.heating', t, s: 'heat', a: { hvac_action: firing ? 'heating' : 'idle', temperature: firing ? 30 : 7 } });
-  }
-  // a day of radiator and room temperatures
-  for (const [id, base] of [['climate.lounge_trv', 18.5], ['climate.bedroom_trv', 17], ['sensor.lounge_temperature', 18.4]]) {
-    for (let t = start; t <= end; t += 30 * 60000) {
-      const h = new Date(t).getHours();
-      const warm = (h >= 7 && h < 9) || (h >= 17 && h < 22);
-      const cur = Math.round((base + (warm ? 1.6 : -0.8) + Math.sin(t / 3.6e6) * 0.3) * 10) / 10;
-      if (id.startsWith('sensor.')) history.push({ entity: id, t, s: String(cur), a: { unit_of_measurement: '°C' } });
-      else history.push({ entity: id, t, s: 'heat', a: { current_temperature: cur, temperature: warm ? 20 : 16, hvac_action: warm ? 'heating' : 'idle' } });
-    }
-  }
+  // a week of room temperatures from a small physical model (see simulateWeek below)
+  simulateWeek(end);
   for (let k = 0; k < 8; k++) {
     const t = Date.now() - (k * 2.7 + 1) * 3600000;
     history.push({ entity: 'binary_sensor.hallway_motion', t, s: 'on', a: {} });
@@ -544,7 +579,7 @@ wss.on('connection', (ws) => {
           let before = null; const inside = [];
           for (const r of rows) { if (r.t < start) before = r; else inside.push(r); }
           const list = before ? [{ ...before, t: start }, ...inside] : inside;
-          out[id] = list.map((r, i) => ({ s: r.s, ...(i % 3 === 0 || r.s === 'on' ? { a: r.a } : {}), lu: r.t / 1000 }));
+          out[id] = list.map((r, i) => ({ s: r.s, ...(i % 3 === 0 || r.s === 'on' || /^(climate|weather)\./.test(id) ? { a: r.a } : {}), lu: r.t / 1000 }));
         }
         return reply(out);
       }
@@ -568,6 +603,7 @@ createServer(async (req, res) => {
   if (req.url === '/knob') { setState(body.entity, { attrs: { temperature: body.temperature } }); return done({ ok: true }); }
   if (req.url === '/bounce') { const st = states.get(body.entity); st._bounces = body.times; st._silent = !!body.silent; st._bounceDelay = body.delay ?? 600; return done({ ok: true }); }
   if (req.url === '/lag') { const st = states.get(body.entity); st._lag = { at: body.at, value: body.value }; return done({ ok: true }); }
+  if (req.url === '/sim-log') return done(SIM);
   if (req.url === '/picture') { if (body.mode) pictureMode[body.entity] = body.mode; else delete pictureMode[body.entity]; return done({ ok: true }); }
   if (req.url === '/freeze') { frozen = true; return done({ ok: true }); }
   if (req.url === '/unfreeze') { frozen = false; return done({ ok: true }); }

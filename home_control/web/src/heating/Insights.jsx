@@ -224,7 +224,88 @@ export default function Insights({ state }) {
         </div>
         {data.trackedDays < 7 && <p className="chart-explain" style={{ marginTop: 8 }}>Heating time and averages fill in as the app records them ({data.trackedDays} of 7 days so far).</p>}
       </section>
+
+      <RoomHeat />
     </>
+  );
+}
+
+// ---------- how each room holds its heat ----------
+const perHour = (v) => (v == null ? '–' : `${v.toFixed(v < 1 ? 2 : 1).replace(/0$/, '')}°/h`);
+const HOLD = { good: 'Holds heat well', average: 'About average', poor: 'Loses heat quickly' };
+
+function RoomHeat() {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    let gone = false;
+    const load = () => api('insights/rooms').then((d) => { if (!gone) { setData(d); setErr(null); } }).catch((e) => !gone && setErr(e.message));
+    load();
+    const t = setInterval(load, 20 * 60000);
+    return () => { gone = true; clearInterval(t); };
+  }, []);
+
+  const head = <div className="chart-head"><h2>How each room holds its heat</h2></div>;
+  if (err || data?.error) return <section className="chart-card">{head}<p className="chart-explain">Couldn't work these out: {err || data.error}</p></section>;
+  if (!data) return <section className="chart-card">{head}<p className="chart-explain">Going through the last week of temperatures…</p></section>;
+
+  const rooms = data.rooms || [];
+  const measured = rooms.filter((r) => r.loss.k != null);
+  const best = measured.length > 1 ? [...measured].sort((a, b) => a.loss.k - b.loss.k)[0] : null;
+  const worst = measured.length > 1 ? [...measured].sort((a, b) => b.loss.k - a.loss.k)[0] : null;
+  const weather = rooms.filter((r) => r.warm.mild && r.warm.cold)
+    .sort((a, b) => (b.warm.mild.rate - b.warm.cold.rate) - (a.warm.mild.rate - a.warm.cold.rate))[0];
+  const maxHold = Math.max(0, ...measured.map((r) => r.loss.holdHours || 0));
+
+  return (
+    <section className="chart-card">
+      {head}
+      <p className="chart-explain">
+        From the last {data.days >= 7 ? 'week' : `${data.days} days`} of temperatures{data.outside ? ` (${deg(data.outside.min)} to ${deg(data.outside.max)} outside)` : ''}: how fast each room warms, how much colder days slow that down, and how quickly it cools once the heating's off. Cooling is only measured when a room has had no heat at all for 45 minutes, so leftover radiator heat doesn't count.
+      </p>
+      {data.callsFrom > data.from + 86400000 && <p className="chart-explain">Warm-ups count from {dayLabel(new Date(data.callsFrom).toISOString().slice(0, 10), { weekday: 'short', day: 'numeric', month: 'short' })}, when Home Control started recording each room's heat-ups; heat loss uses the whole week.</p>}
+      {!data.outsideEntity && <p className="chart-explain">No outside temperature found, so heat loss can't be worked out. Choose one in <a href="#/settings">Settings</a>.</p>}
+      {(best || worst || weather) && (
+        <ul className="callouts">
+          {best && <li><b>Holds its heat best:</b> {best.name}. From 20° on a 5° night it takes about {hours(best.loss.holdHours)} to fall to 17°.</li>}
+          {worst && worst !== best && <li><b>Loses heat fastest:</b> {worst.name}, about {perHour(worst.loss.at10)} when it's 10° colder outside{best && worst.loss.k / best.loss.k >= 1.3 ? `, ${(worst.loss.k / best.loss.k).toFixed(1)} times as fast as ${best.name}` : ''}. Worth checking for draughts, a window or trickle vent left open, and whether its radiator is big enough for the room.</li>}
+          {weather && weather.warm.mild.rate - weather.warm.cold.rate >= 0.2 && <li><b>Cold days slow it most:</b> {weather.name} warms {perHour(weather.warm.mild.rate)} at {deg(weather.warm.mild.outside)} outside but {perHour(weather.warm.cold.rate)} at {deg(weather.warm.cold.outside)}. Starting heating early (Settings) allows for this.</li>}
+        </ul>
+      )}
+      <div className="table-wrap">
+        <table className="data-table league heatfit">
+          <thead><tr><th>Room</th><th>Warms up</th><th>Cools, 10° colder outside</th><th>20° → 17° on a 5° night</th><th>Heating per cold degree</th><th>Holds heat</th></tr></thead>
+          <tbody>
+            {rooms.map((r) => (
+              <tr key={r.id}>
+                <td data-label="Room">{r.name}</td>
+                <td data-label="Warms up"><span className="cv">
+                  {r.warm.mild && r.warm.cold
+                    ? <>{perHour(r.warm.mild.rate)} at {deg(r.warm.mild.outside)}<small className="cell-note">{perHour(r.warm.cold.rate)} at {deg(r.warm.cold.outside)} outside</small></>
+                    : r.warm.rate != null ? <>{perHour(r.warm.rate)}<small className="cell-note">{r.warm.samples < 4 ? 'a few more heat-ups to compare weathers' : 'needs colder and milder days to compare'}</small></>
+                      : <span className="muted">learning</span>}
+                </span></td>
+                <td data-label="Cools, 10° colder outside"><span className="cv">
+                  {r.loss.k != null ? <>{perHour(r.loss.at10)}<small className="cell-note">{perHour(r.loss.cold.rate)} for a 20° room on a 0° day</small></> : <span className="muted">learning</span>}
+                </span></td>
+                <td data-label="20° → 17° on a 5° night">
+                  {r.loss.holdHours != null
+                    ? <span className="hold"><span className="hold-bar" style={{ width: `${Math.max(6, (r.loss.holdHours / (maxHold || 1)) * 100)}%` }} /><span>{hours(r.loss.holdHours)}</span></span>
+                    : <span className="muted">learning</span>}
+                </td>
+                <td data-label="Heating per cold degree"><span className="cv">
+                  {r.perColdDegree != null ? <>{r.perColdDegree} min{r.open && <small className="cell-note">with other rooms' heat</small>}</> : '–'}
+                </span></td>
+                <td data-label="Holds heat">{r.rating ? <span className={`hold-chip hold-${r.rating}`}>{HOLD[r.rating]}</span> : <span className="muted">learning</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="chart-explain" style={{ marginTop: 8 }}>
+        <b>Heating per cold degree</b> is minutes of heating a day for each degree the day's average outside fell below 15.5°: lower means the room needs less heat for the weather. {measured.length < rooms.length ? 'Rooms still learning need a few more stretches with the heating off (overnight is ideal).' : ''}
+      </p>
+    </section>
   );
 }
 

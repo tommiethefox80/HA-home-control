@@ -7,6 +7,7 @@ import { Store } from './store.js';
 import { Engine } from './engine.js';
 import { TargetLog, CallLog, buildToday, detectCostEntity, detectOutsideEntity, readOutside } from './history.js';
 import { DailyLog, buildInsights } from './insights.js';
+import { buildRoomStats } from './roomstats.js';
 
 export function createHeating({ client, dataDir, log, lightingSummary = () => null }) {
   const store = new Store(dataDir);
@@ -22,6 +23,7 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
   engine.dailyLog.keepDays = keep('dailyDays', 400);
   store.pruneLog();
   let insightsCache = { at: 0, data: null };
+  let roomStatsCache = { at: 0, data: null };
   let todayCache = { at: 0, hours: 0, data: null };
 
   function extras() {
@@ -124,6 +126,13 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
         return json(res, 200, list), true;
       }
       if (p === '/api/people' && req.method === 'GET') return json(res, 200, engine.presenceView(true)), true;
+      // how each room warms, loses and holds heat: a week of history, so kept for 20 minutes
+      if (p === '/api/insights/rooms' && req.method === 'GET') {
+        if (!roomStatsCache.data || Date.now() - roomStatsCache.at > 20 * 60000 || url.searchParams.has('fresh')) {
+          roomStatsCache = { at: Date.now(), data: await buildRoomStats(engine, { days: 7 }) };
+        }
+        return json(res, 200, roomStatsCache.data), true;
+      }
       if (p === '/api/insights' && req.method === 'GET') {
         if (!insightsCache.data || Date.now() - insightsCache.at > 5 * 60000 || url.searchParams.has('fresh')) {
           insightsCache = { at: Date.now(), data: await buildInsights(engine, { days: 30 }) };

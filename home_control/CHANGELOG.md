@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.8.0
+- **How each room holds its heat**, a new part of Heating → Insights. From the last week of history in Home Assistant, for each room:
+  - how fast it warms up on a milder day and on a colder one, so you can see how much the weather slows it;
+  - how fast it cools once the heating's off when it's 10° colder outside, and on a 0° day;
+  - how long it takes to fall from 20° to 17° on a 5° night;
+  - minutes of heating it needs for each cold degree;
+  - and whether it holds its heat well, about average or loses it quickly compared with the other rooms.
+- Cooling is only measured when a room has had no heat at all (not calling, the boiler off and its radiator cooled), and stops counting when something else warms it, so the sun or cooking don't flatter a room.
+- Callouts name the room that holds its heat best, the one that loses it fastest (with what to check) and the one cold days slow most.
+
 ## 1.7.3
 - **Always-open radiators.** A room whose radiator has no TRV (usually the one with the boiler thermostat) gets heat whenever the boiler runs, for any room. Home Control now spots these (a room with no TRV of its own, only the boiler thermostat) and you can set it per room (Heating → Settings → Edit a room → Radiator valves).
   - Its card counts that heat separately: "Not fired itself · heated twice with other rooms (45m)", or "Fired once · 20m, and twice with other rooms (45m)".

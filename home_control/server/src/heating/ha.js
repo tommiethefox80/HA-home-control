@@ -75,10 +75,10 @@ export class HaClient extends EventEmitter {
   }
 
   // Same shape as before: send({ type, ...data })
-  send(payload) {
+  send(payload, timeoutMs = 20000) {
     const { type, ...data } = payload;
     if (!this.client.connected) return Promise.reject(new Error('not connected'));
-    return this.client.send(type, data, 20000);
+    return this.client.send(type, data, timeoutMs);
   }
 
   callService(domain, service, data) {

@@ -243,6 +243,15 @@ The **Insights** tab shows the last 30 days:
 - **Cost per cold degree.** A day's cold degrees are how far its average outside temperature fell below 15.5°. Dividing the cost by them takes the weather out, so a cold week doesn't look like a bad week. Weather entities only keep about 10 days of history, so this fills in over time (an outdoor thermometer sensor gives the full 30 days).
 - **Boiler hours**, compared week to week once both weeks are recorded.
 - **Rooms compared**: how fast each room warms, how much it overshoots, how early it now stops, how long it spent heating over the last week, and its average temperature. Useful for spotting a radiator that needs bleeding.
+- **How each room holds its heat**, from the last week of room, outside and boiler history in Home Assistant (so it has figures from the first day):
+  - **Warms up**: how fast the room heats on a milder day and on a colder one (e.g. "2.1°/h at 12°, 1.3°/h at 4° outside"). Needs a few heat-ups on days at least 3° apart.
+  - **Cools, 10° colder outside**: how fast it loses heat when it's 10° colder outside than the room, and how fast a 20° room cools on a 0° day. Only stretches with no heat at all count: not calling, the boiler off, and at least 45 minutes after its last heat so the radiator has cooled. A stretch ends if something else warms the room (sun, cooking, people).
+  - **20° → 17° on a 5° night**: how long the room keeps its warmth once the heating's off.
+  - **Heating per cold degree**: minutes of heating a day for each cold degree, over whole days. Lower means the room needs less heat for the weather. An always-open radiator counts the boiler's time for other rooms too.
+  - **Holds heat**: well, about average or loses heat quickly, against the house's other rooms.
+  - Callouts name the room that holds its heat best, the one that loses it fastest (worth checking for draughts, a window or trickle vent left open, or a radiator too small for the room), and the one cold days slow most.
+
+  Cooling follows Newton's law: each hour a room loses a fixed share of the gap between it and outside, so it cools faster on colder nights. That share is what's measured, and the figures above all come from it. It needs an outside temperature (Settings) and two or more stretches with the heating off; overnight is ideal.
 
 Comparisons only appear when both weeks have enough recorded days; otherwise the card says what's missing.
 

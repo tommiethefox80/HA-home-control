@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { scheduledAt, localWeekPosition } from './schedule.js';
 
-const STEP = 5 * 60 * 1000; // 5-minute buckets
+export const STEP = 5 * 60 * 1000; // 5-minute buckets
 const num = (v) => { const n = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(n) ? n : null; };
 const BAD = new Set(['unavailable', 'unknown']);
 
@@ -131,7 +131,7 @@ export function readOutside(ha, id) {
 }
 
 // ---- helpers over HA's compressed history rows ----
-function rowsFor(result, id) {
+export function rowsFor(result, id) {
   const rows = result?.[id] || [];
   let attrs = {};
   return rows.map((r) => {
@@ -142,7 +142,7 @@ function rowsFor(result, id) {
 }
 
 // Step-function sample of a value every STEP ms between from..to.
-function sample(rows, from, to, pick) {
+export function sample(rows, from, to, pick) {
   const out = [];
   let i = 0;
   let cur = null;
@@ -153,7 +153,7 @@ function sample(rows, from, to, pick) {
   return out;
 }
 
-const tempOf = (id) => (r) => {
+export const tempOf = (id) => (r) => {
   if (BAD.has(r.s)) return null;
   if (id.startsWith('climate.')) return num(r.a?.current_temperature);
   if (id.startsWith('weather.')) return num(r.a?.temperature);
