@@ -188,6 +188,15 @@ export async function buildRoomStats(engine, { days = 7 } = {}) {
   const dayKeys = Object.keys(log).sort().slice(-keep - 1, -1); // whole days only
   const dd = dayKeys.reduce((a, k) => { const d = log[k]; const o = d?.outN ? d.outSum / d.outN : null; return a + (o != null ? Math.max(0, BASE - o) : 0); }, 0);
 
+  // each day's heat-loss rate (for heat-loss alerts: is a room losing heat faster than usual?)
+  const tz = engine.ha.timeZone || 'UTC';
+  const dayOf = (t) => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(t)).map((x) => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}`; };
+  const daily = (cools) => {
+    const by = {};
+    for (const c of cools) (by[dayOf(c.at)] ||= []).push(c.k);
+    return Object.entries(by).sort().map(([day, ks]) => ({ day, k: Math.round(median(ks) * 10000) / 10000, n: ks.length }));
+  };
+
   const rooms = raw.map(({ z, warms, cools, warm, loss }) => {
     const open = engine.openRadiator(z);
     const mins = dayKeys.reduce((a, k) => {
@@ -200,6 +209,7 @@ export async function buildRoomStats(engine, { days = 7 } = {}) {
       rating: rate(loss.k ?? null, multi ? houseK : null),
       perColdDegree: dd >= 5 && dayKeys.length >= 3 ? Math.round(mins / dd) : null,
       recent: { warms: warms.slice(-12), cools: cools.slice(-12) },
+      daily: daily(cools),
     };
   });
   const outs = outside.filter((x) => x != null);

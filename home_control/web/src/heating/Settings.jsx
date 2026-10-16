@@ -233,7 +233,12 @@ function HistorySettings({ s, set }) {
 function SmartSettings({ s, set, state, show }) {
   const pre = s.preheat || { enabled: true, maxMinutes: 120 };
   const win = s.window || { enabled: true, drop: 1, minutes: 10, pauseMinutes: 20 };
+  const ease = s.easeOff || { enabled: false, drop: 0.5, maxMinutes: 60 };
+  const tog = s.together || { enabled: false, minutes: 30 };
   const learned = state.zones.filter((z) => z.warm?.samples).length;
+  // how early each room would stop before its next drop (worked out with the saved settings)
+  const easing = state.zones.filter((z) => z.enabled && z.easeOffMinutes != null && z.scheduled?.next);
+  const unmeasured = state.zones.filter((z) => z.enabled && z.scheduled?.next && z.scheduled.next.temp < z.scheduled.temp && z.easeOffMinutes == null);
   return (
     <>
       {show('early') && <section className="section">
@@ -246,6 +251,41 @@ function SmartSettings({ s, set, state, show }) {
           <label className="field" style={{ marginTop: 6 }}>
             <span>Start at most this early (minutes)</span>
             <input type="number" step="15" value={pre.maxMinutes} onChange={(e) => set({ preheat: { ...pre, maxMinutes: numIn(e.target.value) } })} />
+          </label>
+        )}
+      </section>}
+
+      {show('early') && <section className="section">
+        <h2>Stop early before a drop</h2>
+        <label className="toggle">
+          <input type="checkbox" checked={!!ease.enabled} onChange={(e) => set({ easeOff: { ...ease, enabled: e.target.checked } })} />
+          <span>Ease off before the temperature goes down<small>When a room is about to go down (say 20° until 22:30, then 16°), it stops heating a little early and the radiators' leftover heat carries it to the drop. How early depends on how fast each room cools, so it never falls more than the amount below before then.</small></span>
+        </label>
+        {ease.enabled && (
+          <div className="grid2" style={{ marginTop: 6 }}>
+            <label className="field"><span>Let it fall by up to (°)</span><input type="number" step="0.1" min="0.2" max="2" value={ease.drop} onChange={(e) => set({ easeOff: { ...ease, drop: numIn(e.target.value) } })} /></label>
+            <label className="field"><span>At most this early (minutes)</span><input type="number" step="5" min="10" max="120" value={ease.maxMinutes} onChange={(e) => set({ easeOff: { ...ease, maxMinutes: numIn(e.target.value) } })} /></label>
+          </div>
+        )}
+        {easing.length > 0 && (
+          <small className="hint-list">
+            {ease.enabled ? 'At the next drop: ' : 'With this on, at the next drop: '}
+            {easing.map((z, i) => <span key={z.id}>{i ? ', ' : ''}{z.name} {ease.enabled ? 'stops' : 'would stop'} about <b>{z.easeOffMinutes} min</b> before {deg(z.scheduled.next.temp)} at {z.scheduled.next.time}</span>)}.
+          </small>
+        )}
+        {unmeasured.length > 0 && <small className="hint-list">{unmeasured.map((z) => z.name).join(', ')}: waiting to measure how fast {unmeasured.length === 1 ? 'it cools' : 'they cool'}.</small>}
+      </section>}
+
+      {show('early') && <section className="section">
+        <h2>Fire rooms together</h2>
+        <label className="toggle">
+          <input type="checkbox" checked={!!tog.enabled} onChange={(e) => set({ together: { ...tog, enabled: e.target.checked } })} />
+          <span>Start rooms that are nearly due while the boiler's on<small>While the boiler is on for one room, any room the app expects to need heat within the next few minutes starts now too, so the boiler runs once instead of starting again soon after. Fewer, longer runs use less gas and are easier on the boiler. A room only joins in if it's below the point it would stop at, so it isn't pushed past its target.</small></span>
+        </label>
+        {tog.enabled && (
+          <label className="field" style={{ marginTop: 6 }}>
+            <span>Rooms due within (minutes)</span>
+            <input type="number" step="5" min="5" max="90" value={tog.minutes} onChange={(e) => set({ together: { ...tog, minutes: numIn(e.target.value) } })} />
           </label>
         )}
       </section>}
@@ -274,9 +314,10 @@ const ALERTS = [
   ['on', 'When the heating comes on', 'e.g. "Heating on: boiler fired for Lounge 18.9° (wants 21°)."'],
   ['off', 'When the heating goes off', 'e.g. "Heating off: no rooms need heat now, so the boiler has stopped. It ran for 42 min."'],
   ['window', 'When a window looks open', 'e.g. "Kitchen: window open? Kitchen dropped 1.2° in a few minutes, so its heating is paused until 21:05."'],
+  ['heatloss', 'When a room loses heat faster than usual', 'e.g. "Bedroom has been losing heat 45% faster than usual over the last two days." Usually a window or trickle vent left open, or a new draught.'],
 ];
 
-function PhoneAlerts({ s, setNotify, targets, saveFirst, dirty, notify }) {
+function PhoneAlerts({ s, set, setNotify, targets, saveFirst, dirty, notify }) {
   const [testing, setTesting] = useState(null);
   const n = s.notify || { on: {}, off: {} };
   const known = new Set(targets.map((t) => t.service));
@@ -291,7 +332,7 @@ function PhoneAlerts({ s, setNotify, targets, saveFirst, dirty, notify }) {
   return (
     <section className="section">
       <h2>Phone alerts</h2>
-      <p>Get a notification from the Home Assistant app when the boiler starts or stops, or when a window looks open. Pick a group service to alert several phones at once.</p>
+      <p>Get a notification from the Home Assistant app when the boiler starts or stops, when a window looks open, or when a room starts losing heat faster than usual. Pick a group service to alert several phones at once.</p>
       {ALERTS.map(([which, label, example]) => {
         const cfg = n[which] || {};
         const custom = cfg.service && !known.has(cfg.service);
@@ -314,6 +355,13 @@ function PhoneAlerts({ s, setNotify, targets, saveFirst, dirty, notify }) {
               )}
               <button className="btn" disabled={!cfg.service || testing === which} onClick={() => test(which)}>{testing === which ? 'Sending…' : 'Send test'}</button>
             </div>
+            {which === 'heatloss' && (
+              <label className="field" style={{ marginTop: 6 }}>
+                <span>When it's this much faster than usual (%)</span>
+                <small>Its heat loss over the last two days, against its usual over the month before. Also shown under Needs attention, alert or not.</small>
+                <input type="number" step="5" min="15" max="200" value={s.heatLoss?.percent ?? 40} onChange={(e) => set({ heatLoss: { percent: numIn(e.target.value) } })} />
+              </label>
+            )}
           </div>
         );
       })}
@@ -427,7 +475,7 @@ export default function Settings({ state, notify, focus }) {
 
       <SmartSettings s={s} set={set} state={state} show={show} />
 
-      {show('alerts') && <PhoneAlerts s={s} setNotify={setNotify} targets={targets} saveFirst={saveFirst} dirty={dirty} notify={notify} />}
+      {show('alerts') && <PhoneAlerts s={s} set={set} setNotify={setNotify} targets={targets} saveFirst={saveFirst} dirty={dirty} notify={notify} />}
 
       {show('sources') && <section className="section">
         <h2>Gas cost and outside temperature</h2>

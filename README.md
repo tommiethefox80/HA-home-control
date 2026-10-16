@@ -2,7 +2,7 @@
 
 A Home Assistant app for the heating, lighting, cameras and Wi-Fi of the whole house, in one panel.
 
-- **Heating**: room-by-room schedules for Hive and Zigbee radiator valves, with the boiler fired whenever a room needs heat. Boost, snooze, open-window detection, warming early to be ready on time, phone alerts, gas cost, when each room and the boiler should next heat, and Insights into how each room warms, holds its heat and copes with the weather.
+- **Heating**: room-by-room schedules for Hive and Zigbee radiator valves, with the boiler fired whenever a room needs heat. Boost, snooze, open-window detection, warming early to be ready on time, phone alerts, gas cost, when each room and the boiler should next heat (checked against what happens), easing off before a drop, firing rooms together, alerts when a room loses heat faster than usual, and Insights into how each room warms, holds its heat and copes with the weather.
 - **Lighting**: lights and smart sockets in groups, with on/off, dimming and warmth schedules (including sunrise and sunset times and slow fades), scenes, movement and light-level sensors, seasons, and a lived-in Away pattern.
 - **Cameras**: any camera Home Assistant knows about, with movement alerts (with a picture) and recording on schedules, offline alerts, and each camera's own settings in one place.
 - **Wi-Fi** (UniFi): access points, networks and who's connected; switch networks and access points off and on, the access points' lights off at night, a network on only at set times, and a QR code for guests to join.

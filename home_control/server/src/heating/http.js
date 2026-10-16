@@ -8,6 +8,8 @@ import { Engine } from './engine.js';
 import { TargetLog, CallLog, buildToday, detectCostEntity, detectOutsideEntity, readOutside } from './history.js';
 import { DailyLog, buildInsights } from './insights.js';
 import { buildRoomStats } from './roomstats.js';
+import { PredictionLog } from './predictions.js';
+import { HeatLossWatch } from './heatloss.js';
 
 export function createHeating({ client, dataDir, log, lightingSummary = () => null }) {
   const store = new Store(dataDir);
@@ -16,6 +18,8 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
   engine.targetLog = new TargetLog(dataDir);
   engine.dailyLog = new DailyLog(dataDir);
   engine.callLog = new CallLog(dataDir);
+  engine.predictionLog = new PredictionLog(dataDir);
+  engine.heatLoss = new HeatLossWatch(dataDir);
   // how long each of the app's own logs is kept (Settings → History)
   const keep = (k, d) => () => store.data.settings.retention?.[k] ?? d;
   engine.targetLog.keepDays = keep('detailDays', 7);
@@ -131,6 +135,10 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
         if (!roomStatsCache.data || Date.now() - roomStatsCache.at > 20 * 60000 || url.searchParams.has('fresh')) await refreshModel();
         return json(res, 200, roomStatsCache.data), true;
       }
+      // how good the predictions of each room's next heat have been
+      if (p === '/api/insights/predictions' && req.method === 'GET') {
+        return json(res, 200, engine.predictionLog.summary(store.data.zones.filter((z) => z.enabled).map((z) => ({ id: z.id, name: z.name })))), true;
+      }
       if (p === '/api/insights' && req.method === 'GET') {
         if (!insightsCache.data || Date.now() - insightsCache.at > 5 * 60000 || url.searchParams.has('fresh')) {
           insightsCache = { at: Date.now(), data: await buildInsights(engine, { days: 30 }) };
@@ -211,11 +219,21 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
   // first works (Home Assistant may still be starting).
   async function refreshModel() {
     const data = await buildRoomStats(engine, { days: 7 }).catch((e) => ({ error: e.message }));
-    roomStatsCache = { at: Date.now(), data };
     if (data && !data.error) {
       engine.model = { at: Date.now(), houseK: data.houseK, k: Object.fromEntries(data.rooms.filter((r) => r.loss?.k != null).map((r) => [r.id, r.loss.k])) };
+      // is any room losing heat faster than usual?
+      engine.heatLoss.update(data);
+      const enabled = store.data.zones.filter((z) => z.enabled);
+      const { alerts, normal } = engine.heatLoss.check(enabled.map((z) => z.id), { percent: store.data.settings.heatLoss?.percent ?? 40, tz: ha.timeZone || 'UTC' });
+      for (const a of alerts) engine.heatLossAlert(a.id, a.percent);
+      for (const id of normal) { const z = enabled.find((x) => x.id === id); if (z) engine.note(`${z.name}: losing heat at its usual rate again`); }
+      for (const r of data.rooms) {
+        r.lossTrend = engine.heatLoss.view(r.id);
+        r.correction = engine.predictionLog.scaleFor(r.id);
+      }
       engine.requestTick();
     }
+    roomStatsCache = { at: Date.now(), data };
     return data;
   }
   function forecastEntity() {
@@ -261,6 +279,7 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
     try { engine.targetLog.flush(); } catch {}
     try { engine.dailyLog.flush(); } catch {}
     try { engine.callLog.flush(); } catch {}
+    try { engine.predictionLog.flush(); } catch {}
     try { await engine.handBack(); } catch {}
   }
 

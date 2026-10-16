@@ -20,6 +20,7 @@ export function statusLine(z, tz) {
   switch (z.source) {
     case 'boost': return <>Boost to <b>{deg(z.target)}</b>, {minutesLeft(z.until)} left</>;
     case 'preheat': return <>Warming early to reach <b>{deg(z.target)}</b> by {z.readyBy}</>;
+    case 'ease-off': return <>Easing off early for <b>{deg(z.target)}</b> at {at(next)}</>;
     case 'window': return <>Window open? Heating paused until {fmtTime(z.until, tz)}</>;
     case 'hold': return <>Held at <b>{deg(z.target)}</b> until {fmtTime(z.until, tz)}</>;
     case 'manual': return <>Changed on {z.by || 'the radiator'} to <b>{deg(z.target)}</b> until {fmtTime(z.until, tz)}</>;
@@ -30,6 +31,8 @@ export function statusLine(z, tz) {
     default: return next ? <>On schedule, <b>{deg(next.temp)}</b> from {at(next)}</> : <>On schedule</>;
   }
 }
+
+const list = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
 
 /** A room below its target that isn't heating: when it will, short for the card. */
 export function waitLine(z) {
@@ -47,7 +50,12 @@ export function nextLine(z, tz) {
   const n = z.next;
   if (!z.enabled || !n) return waitLine(z);
   const at = n.at ? fmtTime(n.at, tz) : null;
-  if (z.calling) return n.until ? <>Heating until about <b>{fmtTime(n.until, tz)}</b>{n.warm ? <>, when it reaches {deg(z.stopAt)}</> : ', when its target drops'}</> : null;
+  if (z.calling) {
+    const together = z.joined ? <>Heating with {list(z.joined.with)} so the boiler runs once</> : null;
+    if (!n.until) return together;
+    const until = <>until about <b>{fmtTime(n.until, tz)}</b></>;
+    return together ? <>{together}, {until}</> : <>Heating {until}{n.warm ? <>, when it reaches {deg(z.stopAt)}</> : ', when its target drops'}</>;
+  }
   if (n.withOthers) return <>Warming while the boiler runs for other rooms</>;
   if (z.waiting && (!at || n.reason === 'cooling')) {
     const when = at ? <>, about <b>{at}</b></> : null;
@@ -67,7 +75,9 @@ function nextWhy(z, tz, out) {
   const n = z.next;
   if (!z.enabled || !n) return null;
   if (z.calling) {
-    if (!n.until) return 'Heating now. Once it has learned how fast it warms, this says when it should be done.';
+    const together = z.joined ? `Started early with ${list(z.joined.with)}: it would have needed heat about ${fmtTime(z.joined.due, tz)}, so the boiler runs once instead of starting again (Settings → Starting and stopping). ` : '';
+    if (!n.until) return `${together}Heating now. Once it has learned how fast it warms, this says when it should be done.`;
+    if (together) return `${together}At the speed it's learned (about ${deg(z.warmRate)} an hour) it should be done about ${fmtTime(n.until, tz)}.`;
     return n.warm
       ? `Heating now. At the speed it's learned (about ${deg(z.warmRate)} an hour) it should reach ${deg(z.stopAt)}, where it stops, about ${fmtTime(n.until, tz)}.`
       : `Heating now, until its target drops about ${fmtTime(n.until, tz)}. At the speed it's learned (about ${deg(z.warmRate)} an hour) it should be about ${deg(n.temp)} by then.`;
@@ -80,6 +90,8 @@ function nextWhy(z, tz, out) {
   if (!n.at) return n.k ? `${cools} It shouldn't need heat in the next 24 hours.` : 'Still learning how quickly it cools: a prediction appears once it\'s had some time with the heating off (overnight is ideal).';
   const at = fmtTime(n.at, tz);
   const then = n.temp != null ? ` It should be about ${deg(n.temp)} by then.` : '';
+  const eased = z.source === 'ease-off' && z.early ? `It stopped heating ${z.early} min before its drop to ${deg(z.target)}, as the radiators' leftover heat carries it. ` : '';
+  if (eased) return `${eased}Next heat about ${at}.`;
   switch (n.reason) {
     case 'preheat': return `Next heat about ${at}, so it's ${deg(n.target)} by ${n.readyBy}.${then} ${cools}`;
     case 'schedule': return `Next heat at ${at}, when its schedule goes up to ${deg(n.target)}.${then} ${cools}`;

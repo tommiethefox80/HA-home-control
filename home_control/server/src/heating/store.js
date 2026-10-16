@@ -30,10 +30,14 @@ const DEFAULTS = () => ({
       on: { enabled: false, service: '' },
       off: { enabled: false, service: '' },
       window: { enabled: false, service: '' },
+      heatloss: { enabled: false, service: '' },
     },
     retention: { activityDays: 30, detailDays: 7, dailyDays: 400 },     // how long the add-on keeps its own history
     cards: { spark: true, fires: true },                                 // room cards: today's mini graph, times fired today
     preheat: { enabled: true, maxMinutes: 120 },                         // warm by the scheduled time
+    easeOff: { enabled: false, drop: 0.5, maxMinutes: 60 },              // stop early before a drop: let it cool by up to `drop`
+    together: { enabled: false, minutes: 30 },                           // fire rooms together: start rooms due within `minutes`
+    heatLoss: { percent: 40 },                                           // heat-loss alerts: this much faster than usual
     window: { enabled: true, drop: 1, minutes: 10, pauseMinutes: 20 },   // open window detection
     presence: { enabled: false, people: [], delayMinutes: 15, nearMiles: 2 }, // away automatically
   },

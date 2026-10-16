@@ -39,6 +39,7 @@ export class Engine extends EventEmitter {
     this.nextCache = {};           // zoneId -> { at, key, value }: when each room next needs heat
     this.boilerNext = null;        // { at, rooms } when the boiler is off
     this.boilerUntil = null;       // when it's on: about when the last room calling is warm
+    this.joined = {};              // zoneId -> { at, with, reason, target, readyBy, until, due }: started early with another room
   }
 
   get s() { return this.store.data.settings; }
@@ -124,7 +125,41 @@ export class Engine extends EventEmitter {
     if (!sched) return { temp: this.s.frostTemp, source: 'no-schedule', sched };
     const pre = preheat ? this.#preheat(zone, sched, now) : null;
     if (pre) return { temp: pre.temp, source: 'preheat', until: pre.until, readyBy: pre.readyBy, sched };
+    // stop early before a drop: the lower temperature takes over a little before its time
+    const ease = this.#easeOff(zone, sched);
+    if (ease != null) return { temp: sched.next.temp, source: 'ease-off', until: now + sched.next.inMinutes * 60000, early: ease, sched };
     return { temp: sched.temp, source: 'schedule', sched };
+  }
+
+  /** How fast a room loses heat (share of the gap to outside per hour): measured, corrected by how its predictions have done. */
+  lossRate(zone) {
+    const own = this.model?.k?.[zone.id];
+    const k = own ?? this.model?.houseK ?? null;
+    if (k == null) return null;
+    return k * (this.predictionLog?.scaleFor(zone.id) ?? 1);
+  }
+
+  /**
+   * Stop early before a drop: how many minutes before a scheduled drop from `temp` the room can
+   * stop heating and still lose no more than the set amount by then (null: not on, or the room's
+   * heat loss isn't known yet).
+   */
+  easeOffMinutes(zone, temp, { out = this.outsideNow(), always = false } = {}) {
+    const e = this.s.easeOff;
+    if ((!e?.enabled && !always) || temp == null) return null;
+    const k = this.lossRate(zone);
+    if (!k) return null;
+    const drop = Number(e.drop) || 0.5;
+    const max = Number(e.maxMinutes) || 60;
+    // a mild day (outside close to the room): it hardly cools, so the longest
+    if (out == null || temp - drop - out <= 0.3) return max;
+    return Math.min(max, Math.round((Math.log((temp - out) / (temp - drop - out)) / k) * 60));
+  }
+
+  #easeOff(zone, sched) {
+    if (!this.s.easeOff?.enabled || !sched?.next || sched.next.temp >= sched.temp) return null;
+    const mins = this.easeOffMinutes(zone, sched.temp);
+    return mins != null && sched.next.inMinutes <= mins ? mins : null;
   }
 
   // ---- outside temperature (for warm-up predictions) ----
@@ -179,7 +214,7 @@ export class Engine extends EventEmitter {
     // an always-open radiator is warming whenever the boiler runs for another room
     if (this.openRadiator(zone) && views.some((o) => o.id !== zone.id && o.enabled && o.calling)) return { withOthers: true };
     const own = this.model?.k?.[zone.id];
-    const k = own ?? this.model?.houseK ?? null;
+    const k = this.lossRate(zone);
     const c = this.rt.coast?.[zone.id];
     // just after a heat-up the radiators' leftover heat holds it up for a while
     const settleUntil = c && !c.done && c.at ? c.at + 45 * 60000 : 0;
@@ -191,24 +226,52 @@ export class Engine extends EventEmitter {
       leadFor: (to, from, out) => this.preheatLead(zone, to, from, out),
     });
     return {
-      at: r.at ? toFive(r.at) : null, reason: r.reason, target: r.target ?? null, threshold: r.threshold ?? null,
-      readyBy: r.readyBy ?? null, temp: r.temp ?? null,
-      basis: own != null ? 'room' : k != null ? 'house' : 'none', k, path: r.path,
+      at: r.at ? toFive(r.at) : null, exact: r.at, reason: r.reason, target: r.target ?? null, threshold: r.threshold ?? null,
+      readyBy: r.readyBy ?? null, riseAt: r.riseAt ?? null, temp: r.temp ?? null,
+      basis: own != null ? 'room' : k != null ? 'house' : 'none', k, settleUntil, path: r.path,
     };
+  }
+
+  // Fire rooms together: while the boiler runs for a room, start any room that would need heat
+  // within the set minutes (and is below the point it stops at), so the boiler runs once, not twice.
+  #together(views, now) {
+    const set = this.s.together;
+    if (!set?.enabled) return;
+    const firing = views.filter((v) => v.enabled && v.calling && !this.joined[v.id]);
+    if (!firing.length) return;
+    const names = firing.map((v) => v.name);
+    let added = false;
+    for (const v of views) {
+      const n = v.next;
+      if (!v.enabled || v.calling || this.joined[v.id] || !n?.at || v.current == null) continue;
+      if (!['cooling', 'preheat'].includes(n.reason) || n.at - now > (Number(set.minutes) || 30) * 60000) continue;
+      const zone = this.zones.find((z) => z.id === v.id);
+      const target = n.reason === 'preheat' ? n.target : v.target;
+      if (v.current >= target - this.stopMarginFor(zone, target) - 0.05) continue; // nothing to gain: it's above where it stops
+      this.joined[v.id] = { at: now, with: names, reason: n.reason, target, readyBy: n.readyBy, until: n.riseAt, due: n.at };
+      const due = new Intl.DateTimeFormat('en-GB', { timeZone: this.ha.timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(n.at));
+      this.note(`${v.name}: heating now with ${names.join(' and ')}, as it would have needed heat at about ${due}, so the boiler runs once`);
+      added = true;
+    }
+    if (added) this.requestTick(300);
   }
 
   #forecast(views, now) {
     for (const v of views) {
       const zone = this.zones.find((z) => z.id === v.id);
       const others = this.openRadiator(zone) && views.some((o) => o.id !== v.id && o.enabled && o.calling);
-      const key = [v.calling, v.target, v.source, v.current, v.stopAt, others, this.model?.at, this.outsideForecastAt].join('|');
+      const key = [v.calling, v.target, v.source, v.current, v.stopAt, others, this.model?.at, this.outsideForecastAt, this.settingsAt].join('|');
       const c = this.nextCache[v.id];
       if (c && c.key === key && now - c.at < 60000) { v.next = c.value; continue; }
       let value = null;
       try { value = this.#nextFor(zone, v, views, now); } catch (e) { this.log(`${v.name}: couldn't work out when it next needs heat: ${e.message}`); }
       this.nextCache[v.id] = { at: now, key, value };
       v.next = value;
+      // kept to check against what happens (Insights → How good the predictions are)
+      if (value && !value.heating && !value.withOthers) this.predictionLog?.note(v.id, now, value, { current: v.current, outside: this.outsideNow(), source: v.source });
     }
+    this.predictionLog?.sweep(now, views);
+    this.#together(views, now);
     const upcoming = views.filter((v) => v.enabled && v.next?.at).sort((a, b) => a.next.at - b.next.at);
     const first = upcoming[0];
     this.boilerNext = !this.rt.boiler.on && first
@@ -354,6 +417,11 @@ export class Engine extends EventEmitter {
         if (b != null && b <= 20) out.push({ key: `bat-${t.entity_id}`, room: v.name, text: `${t.name} battery is at ${Math.round(b)}%. Replace it soon.` });
       }
     }
+    // a room losing heat faster than usual (heatloss.js)
+    for (const h of this.heatLoss?.elevated?.() || []) {
+      const v = views.find((x) => x.id === h.id && x.enabled);
+      if (v) out.push({ key: `loss-${v.id}`, room: v.name, text: `${v.name} has been losing heat ${h.percent}% faster than usual over the last two days. Check for a window or trickle vent left open, or a new draught.` });
+    }
     const b = this.s.boiler;
     if (b.entity) {
       const st = this.ha.get(b.entity);
@@ -435,11 +503,17 @@ export class Engine extends EventEmitter {
   }
 
   #runZone(zone, now) {
-    const t = this.targetFor(zone, now);
+    let t = this.targetFor(zone, now);
     const current = this.currentTemp(zone);
     const warnings = [];
     const wasCalling = this.calling.get(zone.id) || false;
     let calling = wasCalling;
+    // fire rooms together: a room started early with another warms early to its next temperature
+    let j = this.joined[zone.id];
+    if (j && (now - j.at > 3 * 3600000 || !this.s.together?.enabled)) { delete this.joined[zone.id]; j = null; }
+    if (j?.reason === 'preheat' && t.source === 'schedule' && j.until > now && j.target > t.temp) {
+      t = { temp: j.target, source: 'preheat', until: j.until, readyBy: j.readyBy, sched: t.sched };
+    }
     const stop = this.stopMarginFor(zone, t.temp);
     const start = this.startGapFor(stop);
     if (!zone.enabled) {
@@ -451,9 +525,18 @@ export class Engine extends EventEmitter {
       calling = true;
     } else if (current >= t.temp - stop) {
       calling = false;
+    } else if (j && !wasCalling) {
+      calling = true; // below its stop point and due soon: starting now, with the room the boiler's on for
     }
+    if (!calling && j) { delete this.joined[zone.id]; j = null; }
     if (calling !== wasCalling && zone.enabled) {
       this.log(`${zone.name}: ${calling ? 'calling for heat' : 'satisfied'} (${current}° vs ${t.temp}°, stops at ${Math.round((t.temp - stop) * 10) / 10}°)`);
+      if (!calling && t.source === 'ease-off') {
+        const next = t.sched?.next;
+        this.note(`${zone.name}: stopped heating ${t.early} min before its drop to ${next?.temp}° at ${next?.time}, as the radiators' leftover heat carries it`);
+      }
+      // check how the prediction made earlier did (not for starts someone asked for, or started early with another room)
+      if (calling) this.predictionLog?.started(zone.id, now, { forced: !!j && !(current < t.temp - start), source: t.source });
     }
     this.calling.set(zone.id, calling);
     if (zone.enabled) {
@@ -506,6 +589,10 @@ export class Engine extends EventEmitter {
       startAt: Math.round((t.temp - start) * 10) / 10,
       startGap: Math.round(start * 100) / 100,
       gapFromStop: stop + 0.2 > (Number(this.s.hysteresis) || 0), // the start point is set by stopping early, not the house gap
+      joined: j && calling ? { with: j.with, due: j.due, at: j.at } : null,
+      early: t.early ?? null, // easing off: minutes before the drop it stopped
+      // for Settings: how early it would stop before its next drop, on or off
+      easeOffMinutes: t.sched?.next && t.sched.next.temp < t.sched.temp ? this.easeOffMinutes(zone, t.sched.temp, { always: true }) : null,
       id: zone.id, name: zone.name, icon: zone.icon || 'room', enabled: zone.enabled,
       current, target: t.temp, source: t.source, until: t.until || null, by: t.by || null, forever: !!t.forever,
       snoozedUnder: this.#snoozeUnder(zone.id, now) ? true : false,
@@ -685,6 +772,10 @@ export class Engine extends EventEmitter {
   // ---- phone alerts when the heating comes on / goes off ----
   #alertText(which, calling, ranFor, extra) {
     const list = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+    if (which === 'heatloss') {
+      const e = extra || { room: 'Bedroom', percent: 45 };
+      return { title: `${e.room}: losing heat faster`, message: `${e.room} has been losing heat ${e.percent}% faster than usual over the last two days. Worth checking for a window or trickle vent left open, or a new draught.` };
+    }
     if (which === 'window') {
       const e = extra || { room: 'Kitchen', drop: 1.2, until: Date.now() + 20 * 60000 };
       return { title: `${e.room}: window open?`, message: `${e.room} dropped ${e.drop}° in a few minutes, so its heating is paused until ${this.#fmtTime(e.until)}.` };
@@ -711,12 +802,20 @@ export class Engine extends EventEmitter {
     return true;
   }
 
+  /** A room losing heat faster than usual: the phone alert (if it's on), and a line in Activity. */
+  heatLossAlert(zoneId, percent) {
+    const zone = this.zones.find((z) => z.id === zoneId);
+    if (!zone?.enabled) return;
+    this.note(`${zone.name}: losing heat ${percent}% faster than usual over the last two days`);
+    this.#alert('heatloss', [], null, false, { room: zone.name, percent });
+  }
+
   sendTestAlert(which) {
-    if (!['on', 'off', 'window'].includes(which)) throw new Error('Unknown alert');
+    if (!['on', 'off', 'window', 'heatloss'].includes(which)) throw new Error('Unknown alert');
     const calling = this.views.filter((v) => v.enabled && v.calling);
     const sample = calling.length ? calling : this.views.filter((v) => v.enabled).slice(0, 1);
     if (!this.#alert(which, sample, which === 'off' ? 42 : null, true)) throw new Error('Pick a device first');
-    this.note(`Sent a test "${{ on: 'Heating on', off: 'Heating off', window: 'Window open' }[which]}" alert to ${this.s.notify[which].service}`);
+    this.note(`Sent a test "${{ on: 'Heating on', off: 'Heating off', window: 'Window open', heatloss: 'Losing heat faster' }[which]}" alert to ${this.s.notify[which].service}`);
   }
 
   boilerView() {
@@ -998,7 +1097,7 @@ export class Engine extends EventEmitter {
         if (svc && !svc.includes('.')) svc = `notify.${svc}`;
         return { enabled: !!c?.enabled, service: /^notify\.\w+$/.test(svc) ? svc : '' };
       };
-      s.notify = { on: clean(input.notify.on), off: clean(input.notify.off), window: clean(input.notify.window) };
+      s.notify = { on: clean(input.notify.on), off: clean(input.notify.off), window: clean(input.notify.window), heatloss: clean(input.notify.heatloss) };
     }
     if (input.retention) {
       const r = input.retention;
@@ -1013,6 +1112,9 @@ export class Engine extends EventEmitter {
     }
     if (input.cards) s.cards = { spark: input.cards.spark !== false, fires: input.cards.fires !== false };
     if (input.preheat) s.preheat = { enabled: !!input.preheat.enabled, maxMinutes: n(input.preheat.maxMinutes, 15, 240, 120) };
+    if (input.easeOff) s.easeOff = { enabled: !!input.easeOff.enabled, drop: n(input.easeOff.drop, 0.2, 2, 0.5), maxMinutes: Math.round(n(input.easeOff.maxMinutes, 10, 120, 60)) };
+    if (input.together) s.together = { enabled: !!input.together.enabled, minutes: Math.round(n(input.together.minutes, 5, 90, 30)) };
+    if (input.heatLoss) s.heatLoss = { percent: Math.round(n(input.heatLoss.percent, 15, 200, 40)) };
     if (input.window) {
       s.window = {
         enabled: !!input.window.enabled,
@@ -1038,6 +1140,7 @@ export class Engine extends EventEmitter {
     }
     if (typeof input.respectManualChanges === 'boolean') s.respectManualChanges = input.respectManualChanges;
     if (typeof input.takeOverTrvMode === 'boolean') s.takeOverTrvMode = input.takeOverTrvMode;
+    this.settingsAt = Date.now(); // predictions are worked out again
     this.store.save();
     this.note('Settings updated');
     this.requestTick(100);

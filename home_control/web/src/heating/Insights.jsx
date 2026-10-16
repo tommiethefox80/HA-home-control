@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, deg } from './lib.js';
+import { api, deg, fmtTime } from './lib.js';
 
 // ---------- formatting ----------
 const sym = (u) => ({ GBP: '£', EUR: '€', USD: '$' }[u] ?? '');
@@ -226,6 +226,7 @@ export default function Insights({ state }) {
       </section>
 
       <RoomHeat />
+      <PredictionCheck tz={state.timeZone} />
     </>
   );
 }
@@ -256,6 +257,7 @@ function RoomHeat() {
   const weather = rooms.filter((r) => r.warm.mild && r.warm.cold)
     .sort((a, b) => (b.warm.mild.rate - b.warm.cold.rate) - (a.warm.mild.rate - a.warm.cold.rate))[0];
   const maxHold = Math.max(0, ...measured.map((r) => r.loss.holdHours || 0));
+  const faster = rooms.filter((r) => r.lossTrend?.elevated);
 
   return (
     <section className="chart-card">
@@ -265,8 +267,9 @@ function RoomHeat() {
       </p>
       {data.callsFrom > data.from + 86400000 && <p className="chart-explain">Warm-ups count from {dayLabel(new Date(data.callsFrom).toISOString().slice(0, 10), { weekday: 'short', day: 'numeric', month: 'short' })}, when Home Control started recording each room's heat-ups; heat loss uses the whole week.</p>}
       {!data.outsideEntity && <p className="chart-explain">No outside temperature found, so heat loss can't be worked out. Choose one in <a href="#/settings/sources">Settings</a>.</p>}
-      {(best || worst || weather) && (
+      {(best || worst || weather || faster.length > 0) && (
         <ul className="callouts">
+          {faster.map((r) => <li key={r.id}><b>Losing heat faster than usual:</b> {r.name}, {r.lossTrend.percent}% faster over the last two days than its usual. Check for a window or trickle vent left open, or a new draught.</li>)}
           {best && <li><b>Holds its heat best:</b> {best.name}. From 20° on a 5° night it takes about {hours(best.loss.holdHours)} to fall to 17°.</li>}
           {worst && worst !== best && <li><b>Loses heat fastest:</b> {worst.name}, about {perHour(worst.loss.at10)} when it's 10° colder outside{best && worst.loss.k / best.loss.k >= 1.3 ? `, ${(worst.loss.k / best.loss.k).toFixed(1)} times as fast as ${best.name}` : ''}. Worth checking for draughts, a window or trickle vent left open, and whether its radiator is big enough for the room.</li>}
           {weather && weather.warm.mild.rate - weather.warm.cold.rate >= 0.2 && <li><b>Cold days slow it most:</b> {weather.name} warms {perHour(weather.warm.mild.rate)} at {deg(weather.warm.mild.outside)} outside but {perHour(weather.warm.cold.rate)} at {deg(weather.warm.cold.outside)}. <a href="#/settings/early">Starting heating early</a> allows for this.</li>}
@@ -296,7 +299,7 @@ function RoomHeat() {
                 <td data-label="Heating per cold degree"><span className="cv">
                   {r.perColdDegree != null ? <>{r.perColdDegree} min{r.open && <small className="cell-note">with other rooms' heat</small>}</> : '–'}
                 </span></td>
-                <td data-label="Holds heat">{r.rating ? <span className={`hold-chip hold-${r.rating}`}>{HOLD[r.rating]}</span> : <span className="muted">learning</span>}</td>
+                <td data-label="Holds heat">{r.rating ? <span className={`hold-chip hold-${r.rating}`}>{HOLD[r.rating]}</span> : <span className="muted">learning</span>}{r.lossTrend?.elevated && <small className="cell-note"><span className="hold-chip hold-faster">{r.lossTrend.percent}% faster lately</span></small>}</td>
               </tr>
             ))}
           </tbody>
@@ -305,6 +308,73 @@ function RoomHeat() {
       <p className="chart-explain" style={{ marginTop: 8 }}>
         <b>Heating per cold degree</b> is minutes of heating a day for each degree the day's average outside fell below 15.5°: lower means the room needs less heat for the weather. {measured.length < rooms.length ? 'Rooms still learning need a few more stretches with the heating off (overnight is ideal).' : ''}
       </p>
+    </section>
+  );
+}
+
+// ---------- how good the predictions are ----------
+const signed = (m) => (m == null ? '–' : m === 0 ? 'on time' : `${Math.abs(m)} min ${m > 0 ? 'later' : 'earlier'}`);
+
+function PredictionCheck({ tz }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let gone = false;
+    const load = () => api('insights/predictions').then((d) => { if (!gone) setData(d); }).catch(() => {});
+    load();
+    const t = setInterval(load, 5 * 60000);
+    return () => { gone = true; clearInterval(t); };
+  }, []);
+  if (!data) return null;
+  const head = <div className="chart-head"><h2>How good the predictions are</h2></div>;
+  const intro = <p className="chart-explain">Each room's next heat is predicted from how fast it cools, the weather forecast and its schedule. Here's how those predictions, made an hour and 15 minutes ahead, compared with when each room really started heating over the last {data.days} days. Rooms that keep starting earlier or later than predicted are corrected as it goes.</p>;
+  const rooms = data.rooms.filter((r) => r.h60.samples || r.m15.samples || r.h60.didntHappen || r.h60.notForeseen);
+  if (!rooms.length) {
+    return <section className="chart-card">{head}{intro}<p className="chart-explain">Nothing to compare yet: the first results come in after each room's next heat-up{data.pending ? ` (${data.pending} prediction${data.pending === 1 ? '' : 's'} waiting)` : ''}.</p></section>;
+  }
+  const a = data.all.h60;
+  const clock = (t) => (t ? fmtTime(t, tz, true) : '–');
+  return (
+    <section className="chart-card">
+      {head}
+      {intro}
+      {a.samples > 0 && (
+        <ul className="callouts">
+          <li><b>An hour ahead:</b> usually within {a.typical} min{a.within15 != null ? `, ${a.within15}% within a quarter of an hour` : ''}{a.bias ? `; rooms tend to start ${signed(a.bias)} than predicted` : ''}.</li>
+          {data.all.m15.samples > 0 && <li><b>15 minutes ahead:</b> usually within {data.all.m15.typical} min.</li>}
+        </ul>
+      )}
+      <div className="table-wrap">
+        <table className="data-table league heatfit">
+          <thead><tr><th>Room</th><th>An hour ahead</th><th>15 min ahead</th><th>Didn't happen</th><th>Correction</th></tr></thead>
+          <tbody>
+            {rooms.map((r) => (
+              <tr key={r.id}>
+                <td data-label="Room">{r.name}</td>
+                <td data-label="An hour ahead"><span className="cv">{r.h60.samples ? <>within {r.h60.typical} min<small className="cell-note">{r.h60.samples} heat-up{r.h60.samples === 1 ? '' : 's'}{r.h60.bias ? `, usually ${signed(r.h60.bias)}` : ''}{r.h60.notForeseen ? `, ${r.h60.notForeseen} not foreseen` : ''}</small></> : <span className="muted">none yet</span>}</span></td>
+                <td data-label="15 min ahead"><span className="cv">{r.m15.samples ? <>within {r.m15.typical} min<small className="cell-note">{r.m15.samples} heat-up{r.m15.samples === 1 ? '' : 's'}</small></> : <span className="muted">none yet</span>}</span></td>
+                <td data-label="Didn't happen">{r.h60.didntHappen || '–'}</td>
+                <td data-label="Correction"><span className="cv">{r.corrections < 3
+                  ? <span className="muted">{`after ${3 - r.corrections} more heat-up${3 - r.corrections === 1 ? '' : 's'}`}</span>
+                  : Math.abs(r.scale - 1) < 0.03 ? 'none needed' : <>cools {Math.round(Math.abs(1 - r.scale) * 100)}% {r.scale > 1 ? 'faster' : 'slower'}<small className="cell-note">than measured</small></>}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {data.latest.length > 0 && (
+        <>
+          <p className="chart-explain" style={{ marginTop: 12 }}>Latest, predicted an hour ahead:</p>
+          <ul className="pred-latest">
+            {data.latest.slice(0, 8).map((e, i) => (
+              <li key={i}>
+                <span>{e.room}: {e.predicted ? `predicted ${clock(e.predicted)}` : 'not foreseen'}{e.actual ? `, started ${clock(e.actual)}` : ', didn\'t need heat then'}</span>
+                <span className={`num pred-err ${e.error == null ? '' : Math.abs(e.error) <= 15 ? 'pred-good' : 'pred-off'}`}>{e.error == null ? '' : signed(e.error)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <p className="chart-explain" style={{ marginTop: 8 }}><b>Didn't happen</b>: predicted an hour ahead, but the room didn't need heat within two hours of then (it stayed warmer than expected). <b>Correction</b>: once a room has three heat-ups to go on, how much faster or slower it really cools than measured, allowed for in its predictions. Heat-ups someone asked for (a boost or a hold), and rooms started early with another room, aren't counted.</p>
     </section>
   );
 }

@@ -13,7 +13,7 @@ export const SETTINGS_MENU = {
       { id: 'rooms', label: 'Rooms' },
       { id: 'boiler', label: 'Boiler' },
       { id: 'temperatures', label: 'Temperatures' },
-      { id: 'early', label: 'Warm by the scheduled time' },
+      { id: 'early', label: 'Starting and stopping' },
       { id: 'windows', label: 'Open windows' },
       { id: 'behaviour', label: 'How it behaves' },
       { id: 'alerts', label: 'Phone alerts' },

@@ -55,6 +55,7 @@ function baseStatus(z, tz) {
   switch (z.source) {
     case 'boost': return `Boost to ${deg(z.target)}, ${minutesLeft(z.until)} left`;
     case 'preheat': return `Warming early to reach ${deg(z.target)} by ${z.readyBy}`;
+    case 'ease-off': return `Easing off early for ${deg(z.target)} at ${at(next)}`;
     case 'window': return `Window open? Heating paused until ${clock(z.until, tz)}`;
     case 'hold': return `Held at ${deg(z.target)} until ${clock(z.until, tz)}`;
     case 'manual': return `Changed on ${z.by || 'the radiator'} to ${deg(z.target)} until ${clock(z.until, tz)}`;
@@ -73,7 +74,10 @@ const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
 export function nextText(z, tz) {
   const n = z.next;
   if (!z.enabled || !n) return null;
-  if (z.calling) return n.until ? `Heating until about ${clock(n.until, tz)}` : null;
+  if (z.calling) {
+    const withOthers = z.joined ? ` with ${list(z.joined.with)}` : '';
+    return n.until ? `Heating${withOthers} until about ${clock(n.until, tz)}` : withOthers ? `Heating${withOthers}` : null;
+  }
   if (n.withOthers) return 'Warming with the other rooms';
   if (!n.at) return null;
   return `Next heat ${n.reason === 'schedule' ? '' : 'about '}${clock(n.at, tz)}`;

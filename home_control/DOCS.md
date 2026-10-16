@@ -183,9 +183,19 @@ It's worked out from:
 
 It's a prediction: sun, cooking, people and doors move it, so it says "about". It looks a day ahead, and is worked out again every minute or so.
 
+The predictions are checked: when a room's next heat is an hour away, and again at 15 minutes, the prediction is kept and later compared with when the room really started heating. **Insights → How good the predictions are** shows, for each room, how close they've been, which way they tend to be out, and any that didn't happen. If a room keeps starting earlier or later than predicted (it really cools faster or slower than measured), its predictions are corrected for it once it has three heat-ups to go on. Heat-ups someone asked for (a boost or a hold), and rooms started early with another room, aren't counted.
+
+### Stop early before a drop
+
+Off to start with: turn it on in **Settings → Heating → Starting and stopping**. When a room's temperature is about to go down (20° until 22:30, then 16°, say), it stops heating a little early and lets the radiators' leftover heat carry it to the drop. How early depends on how fast the room loses heat and how cold it is outside: as early as it can go while falling no more than half a degree by the drop (and at most an hour; both can be changed). A room that holds its heat well eases off earlier than one that doesn't. The room shows "Easing off early for 16° at 22:30", and Activity notes each time it stopped a room heating early. The settings page shows how early each room would stop at its next drop. A room has to have its heat loss measured first (it usually is from the first day).
+
+### Fire rooms together
+
+Off to start with: turn it on in **Settings → Heating → Starting and stopping**. While the boiler is on for one room, any room the app expects to need heat within the next 30 minutes (from [When each room heats next](#when-each-room-heats-next)) starts now as well, so the boiler runs once instead of starting again soon after. Fewer, longer runs use less gas and are easier on the boiler. A room joins in only if it's below the point it would stop at, so it's never pushed past its target; one that was going to warm early for a scheduled rise starts warming now. It then carries on until it reaches its stop point, like any other heat-up. Its card says "Heating with Bedroom so the boiler runs once", and Activity notes it.
+
 ### Warm by the scheduled time
 
-Each room learns how quickly it warms (degrees per hour) from every heat-up of 20 minutes or more, and how cold it was outside at the time. Before a scheduled rise, the app works out how long the room needs, allowing for tonight's outside temperature, and starts that much early, so the room is at the new temperature by the scheduled time instead of only starting to warm then. The room shows "Warming early to reach 20.5° by 16:30" while it does. Turn it off or limit how early it can start (2 hours by default) in **Settings → Heating → Warm by the scheduled time**. A room's learned speed is shown in its settings.
+Each room learns how quickly it warms (degrees per hour) from every heat-up of 20 minutes or more, and how cold it was outside at the time. Before a scheduled rise, the app works out how long the room needs, allowing for tonight's outside temperature, and starts that much early, so the room is at the new temperature by the scheduled time instead of only starting to warm then. The room shows "Warming early to reach 20.5° by 16:30" while it does. Turn it off or limit how early it can start (2 hours by default) in **Settings → Heating → Starting and stopping**. A room's learned speed is shown in its settings.
 
 ### Open windows
 
@@ -260,6 +270,7 @@ The **Insights** tab shows the last 30 days:
 - **Cost per cold degree.** A day's cold degrees are how far its average outside temperature fell below 15.5°. Dividing the cost by them takes the weather out, so a cold week doesn't look like a bad week. Weather entities only keep about 10 days of history, so this fills in over time (an outdoor thermometer sensor gives the full 30 days).
 - **Boiler hours**, compared week to week once both weeks are recorded.
 - **Rooms compared**: how fast each room warms, how much it overshoots, how early it now stops, how long it spent heating over the last week, and its average temperature. Useful for spotting a radiator that needs bleeding.
+- **How good the predictions are**: see [When each room heats next](#when-each-room-heats-next).
 - **How each room holds its heat**, from the last week of room, outside and boiler history in Home Assistant (so it has figures from the first day):
   - **Warms up**: how fast the room heats on a milder day and on a colder one (e.g. "2.1°/h at 12°, 1.3°/h at 4° outside"). Needs a few heat-ups on days at least 3° apart.
   - **Cools, 10° colder outside**: how fast it loses heat when it's 10° colder outside than the room, and how fast a 20° room cools on a 0° day. Only stretches with no heat at all count: not calling, the boiler off, and at least 45 minutes after its last heat so the radiator has cooled. A stretch ends if something else warms the room (sun, cooking, people).
@@ -271,6 +282,10 @@ The **Insights** tab shows the last 30 days:
   Cooling follows Newton's law: each hour a room loses a fixed share of the gap between it and outside, so it cools faster on colder nights. That share is what's measured, and the figures above all come from it. It needs an outside temperature (Settings) and two or more stretches with the heating off; overnight is ideal.
 
 Comparisons only appear when both weeks have enough recorded days; otherwise the card says what's missing.
+
+## Losing heat faster than usual
+
+Every half hour the app works out each room's heat loss for each day (from its stretches with no heat, as in Insights) and keeps it for 60 days. If a room's last two days are 40% or more faster than its usual over the month before, it's worth a look: usually a window or trickle vent left open, or a new draught. It shows under **Needs attention**, in Insights ("45% faster lately"), and, if you turn it on, as a phone alert (Settings → Heating → Phone alerts, where the 40% can be changed). It needs at least four earlier days to compare with, and tells you once, then not again for three days.
 
 ## Phone alerts
 

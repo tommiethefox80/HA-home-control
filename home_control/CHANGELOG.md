@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.0
+- **Stop early before a drop** (Settings → Heating → Starting and stopping, off to start with). When a room's temperature is about to go down, it stops heating early and lets the radiators' leftover heat carry it to the drop: as early as it can while falling no more than half a degree (from how fast it loses heat and how cold it is outside), up to an hour. "Easing off early for 16° at 22:30".
+- **Fire rooms together** (same page, off to start with). While the boiler is on for one room, rooms expected to need heat within 30 minutes start too, so the boiler runs once instead of twice. Only rooms below their stop point join, so none is pushed past its target. "Heating with Bedroom so the boiler runs once".
+- **How good the predictions are** (Insights). Each room's next-heat prediction, made an hour and 15 minutes ahead, is compared with when it really started heating: how close, which way out, and any that didn't happen. Rooms that keep cooling faster or slower than measured are corrected for it.
+- **Losing heat faster than usual.** Each room's daily heat loss is kept; if the last two days are 40% or more faster than its usual, it's shown under Needs attention and in Insights, with an optional phone alert (Settings → Heating → Phone alerts). Usually a window or trickle vent left open, or a new draught.
+- Settings → Heating: "Warm by the scheduled time" is now **Starting and stopping**, with the two new settings.
+
 ## 1.9.0
 - **When each room heats next.** Every room predicts when it'll next need heat, so when the boiler will next fire: from how fast the room loses heat (the figures from 1.8.0), the weather forecast, its schedule, and the rules the app heats by (the start gap, warming early, leftover radiator heat).
   - Room cards: "Next heat about 22:05, once it's cooled to 20.7°", "Next heat about 04:30, to be 20° by 06:30", or while heating, "Heating until about 21:15" (or "when its target drops"). The mini graph carries on from now as a dashed line, with a dot where it should start heating.

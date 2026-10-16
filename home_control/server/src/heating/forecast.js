@@ -58,15 +58,15 @@ export function nextHeat({ now, current, k, outsideAt, targetAt, startGapFor, le
     if (k && out != null && t > settleUntil) T = out + (T - out) * Math.exp((-k * (t - last)) / H);
     last = t;
     const tg = targetAt(t);
-    const fire = (reason, target, threshold, readyBy = null) => {
+    const fire = (reason, target, threshold, readyBy = null, riseAt = null) => {
       path.push([t, r1(T)]);
-      return { at: t, reason, target, threshold: threshold != null ? r1(threshold) : null, readyBy, temp: r1(T), path };
+      return { at: t, reason, target, threshold: threshold != null ? r1(threshold) : null, readyBy, riseAt, temp: r1(T), path };
     };
     // warming early so it's at the next scheduled temperature on time, as the engine does
     const nx = tg.sched?.next;
     if (leadFor && tg.source === 'schedule' && nx && nx.temp > tg.temp && nx.temp - T > 0.1) {
       const lead = leadFor(nx.temp, T, out);
-      if (lead != null && nx.inMinutes <= lead) return fire('preheat', nx.temp, null, nx.time);
+      if (lead != null && nx.inMinutes <= lead) return fire('preheat', nx.temp, null, nx.time, t + nx.inMinutes * 60000);
     }
     const start = tg.temp - startGapFor(tg.temp);
     if (T < start) {
