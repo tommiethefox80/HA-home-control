@@ -158,7 +158,13 @@ function CameraTile({ cam, tz, tick, run, openControls, go }) {
         {cam.online && !failed && (
           <img src={src} alt="" loading="lazy" onLoad={() => setLoaded(true)} onError={() => setFailed(true)} className={loaded ? 'in' : ''} />
         )}
-        {(!cam.online || failed) && <span className="cam-nopic"><Icon name={cam.online ? 'image' : 'offline'} size={28} /><span>{cam.online ? 'No picture right now' : 'Offline'}</span></span>}
+        {(!cam.online || failed) && (
+          <span className="cam-nopic">
+            <Icon name={cam.online ? 'image' : 'offline'} size={28} />
+            <span>{cam.online ? 'No picture right now' : 'Offline'}</span>
+            {!cam.online && cam.offlineWhy && <span className="cam-why">{cam.offlineWhy}</span>}
+          </span>
+        )}
         {status && <span className={`cam-badge cam-badge-${status.tone}`}>{status.text}</span>}
         {cam.online && <span className="cam-live"><Icon name="live" size={16} />Live</span>}
       </button>
@@ -194,6 +200,7 @@ function ControlsSheet({ cam, run, onClose, go, groups }) {
   return (
     <Sheet title={cam.name} subtitle={[cam.make, cam.model].filter(Boolean).join(' ') || null} onClose={onClose}
       footer={<button type="button" className="btn btn-quiet" onClick={() => { onClose(); go('settings', cam.id); }}>Alerts and recording for {cam.name}</button>}>
+      {!cam.online && <p className="cam-why-note"><Icon name="warn" size={16} /> <span>Offline: {cam.offlineWhy || 'Home Assistant has no picture from it'}.</span></p>}
       {!byGroup.length && <p className="fine">This camera doesn't have any settings Home Assistant can change. Alerts and recording still work.</p>}
       {byGroup.map((g) => (
         <section key={g.id} className="sheet-section">
@@ -352,7 +359,7 @@ function Settings({ state, run, edit, go }) {
                   {[c.make, c.model].filter(Boolean).join(' ')}{c.make || c.model ? '. ' : ''}
                   Alerts {c.alerts.on ? whenText(c.alerts) : 'off'}; saving clips {whenText(c.record)}.
                 </span>
-                {!c.online && <span className="warn-text"><Icon name="warn" size={14} /> Offline</span>}
+                {!c.online && <span className="warn-text" title={c.offlineWhy || ''}><Icon name="warn" size={14} /> Offline{c.offlineWhy ? `: ${c.offlineWhy}` : ''}</span>}
               </div>
               <div className="group-li-actions">
                 <button type="button" className="icon-btn" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${c.name} up`}><Icon name="up" /></button>

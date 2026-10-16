@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.1
+- Fixed a camera showing as offline while it was working, when another integration had added its own "connected" sensor to the camera's device in Home Assistant (UniFi Protect cameras could show this). Only the camera itself, or its own integration's connected sensor, now decides.
+- An offline camera now says why: on its picture on the Cameras page, in its Camera settings and in the Settings list (for example "Home Assistant shows the camera as unavailable").
+
 ## 1.6.0
 - **Cameras.** A new part of Home Control, off until you turn it on in Settings → Home Control. Works with any camera Home Assistant knows about (UniFi Protect, Reolink, Ring, Frigate, Tapo, Hikvision, ONVIF, generic RTSP and more), using its own sensors and settings, so there's nothing to set up per make.
   - A Cameras page with every camera's picture, what it last saw, and Home Assistant's live view a tap away.

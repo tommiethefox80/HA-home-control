@@ -371,6 +371,8 @@ Alerts say what was seen, most specific first: "Someone at the door", "Person se
 
 **Offline cameras**: a camera that's been offline for a while (5 minutes to start with) is reported to the same phones, and again when it's back. A camera can be left out of these in its own settings.
 
+A camera counts as offline when Home Assistant shows it as unavailable, or when its own integration's "connected" sensor (Amcrest, Axis and Hikvision cameras have one) says it's disconnected. The Cameras page says which, under **Offline** on the camera and in its **Camera settings**. Sensors from other integrations that Home Assistant has put on the same device, such as a network tracker, don't count.
+
 ## Recordings
 
 On movement, a picture and a short clip (30 seconds to start with, starting 5 seconds before the movement) are saved in Home Assistant's media folder, under **Media → home_control**, and play from the **Activity** page. Each camera has its own schedule for this, with the same choices as alerts; new cameras save always.

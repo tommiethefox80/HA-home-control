@@ -209,6 +209,26 @@ await step('offline: told after the wait, and when it\'s back', async () => {
   assert.match(ev[1], /offline since/);
 });
 
+await step('offline means the camera, or its own "connected" sensor, not another integration\'s', async () => {
+  await cam('PUT', 'settings', { offlineMinutes: 0 });
+  let st = await cam('GET', 'state');
+  let by = Object.fromEntries(st.cameras.map((c) => [c.id, c]));
+  assert.equal(by.garden.online, true, `a "disconnected" sensor from another integration doesn't count: ${by.garden.offlineWhy}`);
+  assert.equal(by.garden.offlineWhy, null);
+  await sensor('binary_sensor.driveway_online', 'off');
+  await sleep(300);
+  by = Object.fromEntries((await cam('GET', 'state')).cameras.map((c) => [c.id, c]));
+  assert.equal(by.driveway.online, false, 'the camera\'s own one does');
+  assert.match(by.driveway.offlineWhy, /"Online" \(binary_sensor\.driveway_online\) says it's disconnected/);
+  await sensor('binary_sensor.driveway_online', 'on');
+  await sensor('camera.shed', 'unavailable');
+  await sleep(300);
+  by = Object.fromEntries((await cam('GET', 'state')).cameras.map((c) => [c.id, c]));
+  assert.equal(by.driveway.online, true);
+  assert.match(by.shed.offlineWhy, /shows the camera \(camera\.shed\) as unavailable/);
+  await sensor('camera.shed', 'idle');
+});
+
 await step('the dashboard sensor lists every camera and the settings chosen for the card', async () => {
   await cam('PUT', 'cameras/driveway', { card: ['light.driveway_floodlight', 'siren.driveway_siren', 'not.mine'] });
   await sleep(3000);

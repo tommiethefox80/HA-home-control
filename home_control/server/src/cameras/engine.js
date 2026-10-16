@@ -218,18 +218,31 @@ export class Engine extends EventEmitter {
     }).sort((x, y) => GROUPS.findIndex((g) => g[0] === x.group) - GROUPS.findIndex((g) => g[0] === y.group) || x.name.localeCompare(y.name));
   }
 
+  /** The camera's own "connected" sensor (Amcrest, Axis, Hikvision, Netatmo…). Only one from the
+   *  camera's own integration counts: Home Assistant puts other integrations' entities for the same
+   *  device (a network tracker, say) on the same device, and those can disagree with the camera. */
   connectivity(cam) {
+    const platform = this.reg.entities.get(cam.entity)?.platform;
     return this.related(cam.entity).find((r) => r.entity_id.startsWith('binary_sensor.')
+      && (!platform || !r.platform || r.platform === platform)
       && (this.states.get(r.entity_id)?.attributes?.device_class || r.original_device_class) === 'connectivity')?.entity_id || null;
   }
 
-  isOnline(cam) {
+  /** Why a camera counts as offline (null when it's online), in words for the page. */
+  offlineReason(cam) {
     const st = this.states.get(cam.entity);
-    if (!st || st.state === 'unavailable') return false;
+    if (!st) return { entity: cam.entity, text: `Home Assistant doesn't have ${cam.entity} any more (renamed or removed?)` };
+    if (st.state === 'unavailable') return { entity: cam.entity, text: `Home Assistant shows the camera (${cam.entity}) as unavailable` };
     const conn = this.connectivity(cam);
-    if (conn && this.states.get(conn)?.state === 'off') return false;
-    return true;
+    const cs = conn && this.states.get(conn);
+    if (cs?.state === 'off') {
+      const dev = this.deviceOf(cam.entity);
+      return { entity: conn, text: `"${this.shortName(conn, dev?.name_by_user || dev?.name)}" (${conn}) says it's disconnected` };
+    }
+    return null;
   }
+
+  isOnline(cam) { return !this.offlineReason(cam); }
 
   makeOf(entity) {
     const dev = this.deviceOf(entity);
@@ -528,9 +541,11 @@ export class Engine extends EventEmitter {
   // ---------- offline ----------
 
   _trackOnline(cam, ms, quiet = false) {
-    const online = this.isOnline(cam);
+    const why = this.offlineReason(cam);
+    const online = !why;
     const o = this.offline.get(cam.id);
-    if (!online && !o) this.offline.set(cam.id, { since: quiet ? (Date.parse(this.states.get(cam.entity)?.last_changed) || ms) : ms, alerted: false });
+    // on start-up, offline since whenever the entity behind it last changed
+    if (!online && !o) this.offline.set(cam.id, { since: quiet ? (Date.parse(this.states.get(why.entity)?.last_changed) || ms) : ms, alerted: false });
     if (online && o) {
       this.offline.delete(cam.id);
       if (o.alerted && !this.disabled) {
@@ -602,10 +617,12 @@ export class Engine extends EventEmitter {
     const used = sensors.filter((m) => cam.movement == null || cam.movement.includes(m.id));
     const lastEv = this.data.events.find((e) => e.camera === cam.id && e.type === 'movement');
     const o = this.offline.get(cam.id);
+    const why = this.offlineReason(cam);
     return {
       id: cam.id, entity: cam.entity, name: cam.name, ...this.makeOf(cam.entity),
-      online: this.isOnline(cam),
+      online: !why,
       offlineSince: o?.since || null,
+      offlineWhy: why?.text || null,
       state: st?.state || 'unavailable',
       movingNow: used.some((m) => !m.event && this.states.get(m.id)?.state === 'on'),
       lastMovement: lastEv ? { at: lastEv.at, text: lastEv.text, kind: lastEv.kind } : null,

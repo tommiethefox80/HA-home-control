@@ -78,8 +78,8 @@ const cameraPicture = {};
 function addCameraDevice(slug, name, { manufacturer, model, platform, area, stream = true, picture, camera, extras = [] }) {
   const device_id = `dev_cam_${slug}`;
   devices.push({ id: device_id, area_id: area, name, manufacturer, model, name_by_user: null });
-  const reg = (entity_id, attrs, { state = 'off', category = null, deviceClass = null } = {}) => {
-    entities.push({ entity_id, device_id, area_id: null, entity_category: category, disabled_by: null, hidden_by: null, original_device_class: deviceClass, name: null, platform });
+  const reg = (entity_id, attrs, { state = 'off', category = null, deviceClass = null, from = platform } = {}) => {
+    entities.push({ entity_id, device_id, area_id: null, entity_category: category, disabled_by: null, hidden_by: null, original_device_class: deviceClass, name: null, platform: from });
     states.set(entity_id, { entity_id, state, attributes: { friendly_name: attrs.name, ...attrs.extra }, last_changed: nowIso(), last_updated: nowIso(), context: { id: randomUUID(), parent_id: null, user_id: null } });
   };
   const camId = `camera.${camera}`;
@@ -92,7 +92,7 @@ function addCameraDevice(slug, name, { manufacturer, model, platform, area, stre
     if (domain === 'select') extra.options = opts.options;
     if (domain === 'number') Object.assign(extra, { min: opts.min ?? 0, max: opts.max ?? 100, step: opts.step ?? 1, unit_of_measurement: opts.unit ?? '' });
     if (domain === 'event') extra.event_types = opts.types || ['ring'];
-    reg(id, { name: `${name} ${label}`, extra }, { state: opts.state ?? (domain === 'select' ? opts.options[0] : domain === 'number' ? String(opts.value ?? 50) : domain === 'event' || domain === 'button' ? 'unknown' : 'off'), category: opts.category || null, deviceClass: opts.deviceClass || null });
+    reg(id, { name: `${name} ${label}`, extra }, { state: opts.state ?? (domain === 'select' ? opts.options[0] : domain === 'number' ? String(opts.value ?? 50) : domain === 'event' || domain === 'button' ? 'unknown' : 'off'), category: opts.category || null, deviceClass: opts.deviceClass || null, from: opts.platform || platform });
   }
 }
 areas.push({ area_id: 'driveway', name: 'Driveway' });
@@ -110,6 +110,9 @@ addCameraDevice('garden', 'Garden', {
     ['switch.garden_detections_person', 'Detections: person', { category: 'config', state: 'on' }],
     ['number.garden_microphone_level', 'Microphone level', { category: 'config', min: 0, max: 100, value: 60, unit: '%' }],
     ['button.garden_reboot_device', 'Reboot device', { category: 'diagnostic' }],
+    // another integration's view of the same device (Home Assistant joins them by network address),
+    // which says "disconnected" while the camera itself is fine, as on Tom's Garden CCTV
+    ['binary_sensor.garden_connected', 'Connected', { deviceClass: 'connectivity', platform: 'ping', state: 'off' }],
   ],
 });
 addCameraDevice('front_door', 'Front door', {
@@ -135,6 +138,8 @@ addCameraDevice('driveway', 'Driveway', {
     ['select.driveway_day_night_mode', 'Day night mode', { category: 'config', options: ['Auto', 'Color', 'Black&White'] }],
     ['number.driveway_motion_sensitivity', 'Motion sensitivity', { category: 'config', min: 1, max: 50, value: 41 }],
     ['button.driveway_restart', 'Restart', { category: 'diagnostic' }],
+    // the camera's own "online" sensor, as Amcrest, Axis and Hikvision cameras have
+    ['binary_sensor.driveway_online', 'Online', { deviceClass: 'connectivity', category: 'diagnostic', state: 'on' }],
   ],
 });
 addCameraDevice('shed', 'Shed', { manufacturer: 'Generic', model: 'RTSP camera', platform: 'generic', area: 'garden', picture: 'shed.jpg', camera: 'shed', stream: false });

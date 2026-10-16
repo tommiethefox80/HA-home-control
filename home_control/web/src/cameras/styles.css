@@ -29,6 +29,9 @@
   position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px;
   color: #aab4bb; font-size: .92rem;
 }
+.cam-why { max-width: 84%; font-size: .8rem; line-height: 1.35; text-align: center; color: #8d989f; overflow-wrap: anywhere; }
+.cam-why-note { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; background: var(--warn-bg); color: var(--ink); font-size: .9rem; overflow-wrap: anywhere; }
+.cam-why-note svg { flex: none; margin-top: 2px; color: var(--warn); }
 .cam-off .cam-pic { background: repeating-linear-gradient(135deg, #1a2127 0 14px, #161c21 14px 28px); }
 
 .cam-badge {
