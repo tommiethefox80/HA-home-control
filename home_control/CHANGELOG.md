@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.10.1
+- **Activity says when each room starts and stops heating, and why**, not just when the boiler switches. Before, a room starting while the boiler was already on for another room left no trace. Now: "Bathroom: heating, warming early to be 19° by 06:30: 18° now, and it warms about 1.8° an hour, so it started 50 min before. The boiler was already on for Main Bedroom", then "Bathroom: warm enough at 18.7°, ready for 19° by 06:30, after 12 min". Starts give the reason (warming early, below its start point, a schedule rise, a boost, a hold, a change on the radiator, Away, frost protection); stops say where it got to.
+- Activity can show **Heating on and off** (the boiler and each room) or **Changes** (everything else), as well as everything.
+- A room's mini graph says why it was heating when you hover over it ("heating, warming early for 19°").
+
 ## 1.10.0
 - **Stop early before a drop** (Settings → Heating → Starting and stopping, off to start with). When a room's temperature is about to go down, it stops heating early and lets the radiators' leftover heat carry it to the drop: as early as it can while falling no more than half a degree (from how fast it loses heat and how cold it is outside), up to an hour. "Easing off early for 16° at 22:30".
 - **Fire rooms together** (same page, off to start with). While the boiler is on for one room, rooms expected to need heat within 30 minutes start too, so the boiler runs once instead of twice. Only rooms below their stop point join, so none is pushed past its target. "Heating with Bedroom so the boiler runs once".

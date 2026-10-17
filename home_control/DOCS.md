@@ -341,7 +341,7 @@ The panel is visible to every Home Assistant user, not just admins, so give each
 - **A room shows "No temperature reading"**: its TRVs and thermometer are all unavailable. It won't call for heat until a reading comes back.
 - **Hive changes take a minute to show**: Hive is polled through the cloud. The add-on waits 3 minutes (configurable) before re-sending a command.
 - **The screen looks out of date**: it updates live. If that connection drops without saying so (common when the Home Assistant phone app has been in the background), the panel refreshes as soon as you come back to it and reconnects by itself within about a minute. Anything you press updates the screen straight away either way.
-- **The Activity tab** records every boiler start and stop, boost, schedule change and change made on a radiator.
+- **The Activity tab** records every boiler start and stop, every room starting and stopping heating and why, boosts, schedule changes and changes made on a radiator. A room's start says what set it off ("Bathroom: heating, warming early to be 19° by 06:30: 18° now, and it warms about 1.8° an hour, so it started 50 min before. The boiler was already on for Main Bedroom", or "17.8° fell below 18.5°, where it starts", or a boost or hold) and its stop says where it got to ("warm enough at 18.7°, stopping 0.3° early so the radiators' leftover heat takes it to 19°, after 12 min"). **Heating on and off** shows just those and the boiler; **Changes** everything else. Hovering over a room's mini graph where it was heating says why too ("heating, warming early for 19°").
 
 Settings and schedules are stored in the add-on's `/data` folder and are included in Home Assistant backups.
 

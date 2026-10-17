@@ -175,3 +175,27 @@ test('heat-loss alerts: two days well above its usual month, told once', () => {
   fresh.update({ rooms: [{ id: 'x', daily: [{ day: day(5), k: 0.1, n: 2 }, { day: day(0), k: 0.3, n: 3 }] }] }, now);
   assert.equal(fresh.check(['x'], { now, tz: 'UTC' }).alerts.length, 0);
 });
+
+test('Activity says why each room starts and stops, even with the boiler already on', async () => {
+  const now = Date.now();
+  const riseAt = Math.ceil((now + 30 * M) / M) * M;
+  const rising = (low, high, at) => { const t = hhmm(at); return Object.fromEntries(DAYS.map((d) => [d, [{ time: '00:00', temp: low }, { time: t, temp: high }]])); };
+  const { engine, ha, store } = house([
+    { id: 'bed', name: 'Main Bedroom', temp: 15, schedule: flat(20) },
+    { id: 'bath', name: 'Bathroom', temp: 18, schedule: rising(15, 19, riseAt) },
+  ]);
+  store.data.runtime.warm = { bath: { rate: 1.8, samples: 5, gap: null, history: [] } };
+  store.data.runtime.boiler.on = true; // already firing for the bedroom
+  engine.calling.set('bed', true);
+  engine.calling.set('bath', false); // seen before, not heating (a room already heating when the app starts isn't logged)
+  await engine.tick();
+  const lines = store.log.map((l) => l.msg);
+  const bath = lines.find((m) => m.startsWith('Bathroom: heating'));
+  assert.ok(bath, lines.join('\n'));
+  assert.match(bath, new RegExp(`warming early to be 19° by ${hhmm(riseAt)}: 18° now, and it warms about 1\\.8° an hour, so it started 3\\d min before\\. The boiler was already on for Main Bedroom`));
+  assert.equal(store.log.find((l) => l.msg === bath).kind, 'room');
+  // and when it's warm enough
+  ha.set('sensor.bath', { state: '19' });
+  await engine.tick();
+  assert.match(store.log[0].msg, new RegExp(`^Bathroom: warm enough at 19°, ready for 19° by ${hhmm(riseAt)}, after \\d+ min \\(from 18°\\)$`));
+});

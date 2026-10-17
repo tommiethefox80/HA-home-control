@@ -88,9 +88,9 @@ export class Engine extends EventEmitter {
     this.tickTimer = setTimeout(() => { this.tickTimer = null; this.tick(); }, delay);
   }
 
-  note(msg) {
+  note(msg, kind = null) {
     this.log(msg);
-    this.store.addLog(msg);
+    this.store.addLog(msg, kind);
   }
 
   // ---- service calls, serialised and spaced out (Hive is a cloud API) ----
@@ -129,6 +129,55 @@ export class Engine extends EventEmitter {
     const ease = this.#easeOff(zone, sched);
     if (ease != null) return { temp: sched.next.temp, source: 'ease-off', until: now + sched.next.inMinutes * 60000, early: ease, sched };
     return { temp: sched.temp, source: 'schedule', sched };
+  }
+
+  /** Why a room started or stopped heating, for Activity. */
+  #callNote(zone, t, current, { calling, start, stop, joined, now }) {
+    const d = (x) => `${Math.round(x * 10) / 10}°`;
+    const clock = (ms) => new Intl.DateTimeFormat('en-GB', { timeZone: this.ha.timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
+    const names = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+    const before = (this.views || []).find((v) => v.id === zone.id)?.target;
+    if (calling) {
+      if (current == null) return null;
+      if (joined && !(current < t.temp - start)) return null; // "heating now with …" has said why
+      let why;
+      switch (t.source) {
+        case 'preheat': {
+          const mins = t.until ? Math.round((t.until - now) / 60000 / TS) : null;
+          const rate = this.warmRateFor(zone, t.temp);
+          why = `warming early to be ${d(t.temp)} by ${t.readyBy}: ${d(current)} now${rate ? `, and it warms about ${d(rate)} an hour` : ''}${mins != null ? `, so it started ${mins} min before` : ''}`;
+          break;
+        }
+        case 'boost': why = `boosted to ${d(t.temp)} until ${clock(t.until)} (${d(current)} now)`; break;
+        case 'hold': why = `held at ${d(t.temp)} until ${clock(t.until)} (${d(current)} now)`; break;
+        case 'manual': why = `changed on ${t.by || 'the radiator'} to ${d(t.temp)} (${d(current)} now)`; break;
+        case 'snooze': why = `${d(current)} is below its snooze temperature of ${d(t.temp)}`; break;
+        case 'away': why = `${d(current)} is below Away's ${d(t.temp)}`; break;
+        case 'off': why = `${d(current)} is below frost protection (${d(t.temp)})`; break;
+        default:
+          why = before != null && t.temp > before + 0.05
+            ? `its schedule went up to ${d(t.temp)} (${d(current)} now)`
+            : `${d(current)} fell below ${d(t.temp - start)}, where it starts (${d(t.temp)} target)`;
+      }
+      const others = this.zones.filter((z) => z.id !== zone.id && z.enabled && this.calling.get(z.id)).map((z) => z.name);
+      const boiler = this.rt.boiler.on ? (others.length ? `. The boiler was already on for ${names(others)}` : '. The boiler was still on') : '';
+      return `${zone.name}: heating, ${why}${boiler}`;
+    }
+    if (['ease-off', 'window'].includes(t.source)) return null; // those say why themselves
+    const since = this.callSince[zone.id];
+    const mins = since ? Math.max(1, Math.round((now - since.at) / 60000 / TS)) : null;
+    const took = mins ? `, after ${mins} min${since.temp != null && current != null ? ` (from ${d(since.temp)})` : ''}` : '';
+    if (current == null) return `${zone.name}: stopped heating, no temperature reading${took}`;
+    if (t.source === 'off') return `${zone.name}: stopped heating, the heating is off${took}`;
+    // warming early, and warm already: ready for the scheduled time
+    const was = (this.views || []).find((v) => v.id === zone.id);
+    if (was?.source === 'preheat' && current >= was.target - this.stopMarginFor(zone, was.target) - 0.05) {
+      return `${zone.name}: warm enough at ${d(current)}, ready for ${d(was.target)} by ${was.readyBy}${took}`;
+    }
+    if (before != null && t.temp < before - 0.05) return `${zone.name}: stopped heating, its target went down to ${d(t.temp)}${took}`;
+    return stop > 0.05
+      ? `${zone.name}: warm enough at ${d(current)}, stopping ${d(stop)} early so the radiators' leftover heat takes it to ${d(t.temp)}${took}`
+      : `${zone.name}: reached ${d(current)} (${d(t.temp)} target)${took}`;
   }
 
   /** How fast a room loses heat (share of the gap to outside per hour): measured, corrected by how its predictions have done. */
@@ -250,7 +299,7 @@ export class Engine extends EventEmitter {
       if (v.current >= target - this.stopMarginFor(zone, target) - 0.05) continue; // nothing to gain: it's above where it stops
       this.joined[v.id] = { at: now, with: names, reason: n.reason, target, readyBy: n.readyBy, until: n.riseAt, due: n.at };
       const due = new Intl.DateTimeFormat('en-GB', { timeZone: this.ha.timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(n.at));
-      this.note(`${v.name}: heating now with ${names.join(' and ')}, as it would have needed heat at about ${due}, so the boiler runs once`);
+      this.note(`${v.name}: heating now with ${names.join(' and ')}, as it would have needed heat at about ${due}, so the boiler runs once`, 'room');
       added = true;
     }
     if (added) this.requestTick(300);
@@ -506,6 +555,7 @@ export class Engine extends EventEmitter {
     let t = this.targetFor(zone, now);
     const current = this.currentTemp(zone);
     const warnings = [];
+    const known = this.calling.has(zone.id); // not the first look since the app started
     const wasCalling = this.calling.get(zone.id) || false;
     let calling = wasCalling;
     // fire rooms together: a room started early with another warms early to its next temperature
@@ -533,8 +583,12 @@ export class Engine extends EventEmitter {
       this.log(`${zone.name}: ${calling ? 'calling for heat' : 'satisfied'} (${current}° vs ${t.temp}°, stops at ${Math.round((t.temp - stop) * 10) / 10}°)`);
       if (!calling && t.source === 'ease-off') {
         const next = t.sched?.next;
-        this.note(`${zone.name}: stopped heating ${t.early} min before its drop to ${next?.temp}° at ${next?.time}, as the radiators' leftover heat carries it`);
+        this.note(`${zone.name}: stopped heating ${t.early} min before its drop to ${next?.temp}° at ${next?.time}, as the radiators' leftover heat carries it`, 'room');
       }
+      // every room starting or stopping, and why, in Activity (not only when the boiler itself switches)
+      // (not just after the app has started: a room already heating then isn't news)
+      const why = known ? this.#callNote(zone, t, current, { calling, start, stop, joined: !!j, now }) : null;
+      if (why) this.note(why, 'room');
       // check how the prediction made earlier did (not for starts someone asked for, or started early with another room)
       if (calling) this.predictionLog?.started(zone.id, now, { forced: !!j && !(current < t.temp - start), source: t.source });
     }
@@ -730,7 +784,7 @@ export class Engine extends EventEmitter {
         bs.on = want;
         bs.lastSwitch = now;
         this.store.save();
-        this.note(want ? `Boiler ON — ${demand.join(', ')} calling for heat` : 'Boiler OFF — all rooms satisfied');
+        this.note(want ? `Boiler ON — ${demand.join(', ')} calling for heat` : 'Boiler OFF — all rooms satisfied', 'boiler');
         this.#alert(want ? 'on' : 'off', views.filter((v) => v.enabled && v.calling), ranFor);
       }
     }

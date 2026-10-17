@@ -10,6 +10,8 @@ const clock = (t, tz) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: 
 export const hm = (mins) => (mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}`);
 
 const times = (n) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
+// why a heat-up started (recorded with each one)
+const WHY = { preheat: 'warming early', boost: 'boost', hold: 'hold', manual: 'changed on the radiator', away: 'away', snooze: 'snooze', off: 'frost protection' };
 
 // show: { spark, fires } from Settings → Room cards. Either can be off; with both off nothing shows.
 // next: when the room next needs heat (from the app's prediction): its expected temperature from now
@@ -39,7 +41,7 @@ export default function DaySpark({ room, today, tz, current, next = null, show =
     const x = (t) => ((t - start) / DAY) * 1440; // viewBox x is minutes of the day
     const y = (v) => 3 + (1 - (v - lo) / (hi - lo)) * (H - 9);
     const path = pts.map((p, k) => `${k ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
-    const calls = (room.calls || []).map(([a, b]) => [Math.max(a, start), b]).filter(([a, b]) => b > a);
+    const calls = (room.calls || []).map(([a, b, why, target]) => [Math.max(a, start), b, why, target]).filter(([a, b]) => b > a);
     const forePath = fore.length > 1 ? fore.map((p, k) => `${k ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join('') : null;
     return { start, pts: [...pts, ...fore.slice(1)], path, forePath, mark, calls, x, y, lo: Math.min(...vals), hi: Math.max(...vals) };
   }, [room, today, current, next]);
@@ -70,7 +72,8 @@ export default function DaySpark({ room, today, tz, current, next = null, show =
     const t = d.start + f * DAY;
     let best = d.pts[0];
     for (const p of d.pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
-    setHv({ ...best, f: (best.t - d.start) / DAY, heating: !best.predicted && d.calls.some(([a, b]) => best.t >= a && best.t <= b) });
+    const call = !best.predicted && d.calls.find(([a, b]) => best.t >= a && best.t <= b);
+    setHv({ ...best, f: (best.t - d.start) / DAY, heating: !!call, why: call ? WHY[call[2]] || null : null, target: call?.[3] ?? null });
   };
 
   return (
@@ -98,7 +101,7 @@ export default function DaySpark({ room, today, tz, current, next = null, show =
         )}
         {hv && (
           <div className="spark-tip" style={{ left: `${Math.min(Math.max(hv.f, 0.14), 0.86) * 100}%` }} role="status">
-            {clock(hv.t, tz)} · <b>{deg(hv.v)}</b>{hv.predicted ? ' · expected' : hv.heating ? ' · heating' : ''}
+            {clock(hv.t, tz)} · <b>{deg(hv.v)}</b>{hv.predicted ? ' · expected' : hv.heating ? ` · heating${hv.why ? `, ${hv.why}${hv.why === 'warming early' && hv.target != null ? ` for ${deg(hv.target)}` : ''}` : ''}` : ''}
           </div>
         )}
       </div>

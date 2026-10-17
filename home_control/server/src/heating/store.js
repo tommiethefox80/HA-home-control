@@ -92,8 +92,9 @@ export class Store {
     fs.renameSync(tmp, this.file);
   }
 
-  addLog(msg) {
-    this.log.unshift({ at: Date.now(), msg });
+  // kind: 'room' (a room starting or stopping), 'boiler', or nothing (everything else), for Activity's filter
+  addLog(msg, kind = null) {
+    this.log.unshift(kind ? { at: Date.now(), msg, kind } : { at: Date.now(), msg });
     this.pruneLog();
     clearTimeout(this.logTimer);
     this.logTimer = setTimeout(() => this.flushLog(), 3000);

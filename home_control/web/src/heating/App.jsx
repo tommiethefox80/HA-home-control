@@ -110,10 +110,15 @@ function when(ms, tz) {
   return new Intl.DateTimeFormat('en-GB', opts).format(new Date(ms));
 }
 
+// Activity's filter: heat-ups (the boiler and each room starting and stopping) or everything else
+const isHeat = (l) => l.kind === 'room' || l.kind === 'boiler' || /^Boiler (ON|OFF)/.test(l.msg);
+const SHOW = [['all', 'Everything'], ['heat', 'Heating on and off'], ['changes', 'Changes']];
+
 function Activity({ state }) {
   const [older, setOlder] = useState([]);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const [show, setShow] = useState('all');
   if (!state.log.length) return <div className="empty"><h2>Nothing yet</h2><p>Boiler starts, schedule changes and boosts will appear here.</p></div>;
   const lastLive = state.log[state.log.length - 1].at;
   const all = [...state.log, ...older.filter((o) => o.at < lastLive)];
@@ -127,16 +132,21 @@ function Activity({ state }) {
       if (d.entries.length < 100) setDone(true);
     } catch { /* leave the button for another try */ } finally { setBusy(false); }
   };
+  const shown = show === 'all' ? all : all.filter((l) => (show === 'heat') === isHeat(l));
   return (
     <>
+      <div className="seg log-filter" role="group" aria-label="Show">
+        {SHOW.map(([id, label]) => <button key={id} type="button" aria-pressed={show === id} onClick={() => setShow(id)}>{label}</button>)}
+      </div>
+      {shown.length === 0 && <p className="mode-note">Nothing like that in the {all.length} latest entries.</p>}
       <ul className="log">
-        {all.map((l, i) => (
+        {shown.map((l, i) => (
           <li key={`${l.at}-${i}`}><time dateTime={new Date(l.at).toISOString()} title={new Date(l.at).toLocaleString('en-GB')}>{when(l.at, state.timeZone)}</time><span>{l.msg}</span></li>
         ))}
       </ul>
       <div className="log-foot">
         {!done && all.length < total && <button className="btn" disabled={busy} onClick={more}>{busy ? 'Loading…' : 'Show older'}</button>}
-        <small>Showing {all.length} of {total}. The app keeps {days} day{days === 1 ? '' : 's'} of activity; change that in <a href="#/settings/history">Settings → History</a>.</small>
+        <small>{show === 'all' ? `Showing ${all.length} of ${total}.` : `${shown.length} of the latest ${all.length} entries${all.length < total ? ` (of ${total})` : ''}.`} The app keeps {days} day{days === 1 ? '' : 's'} of activity; change that in <a href="#/settings/history">Settings → History</a>.</small>
       </div>
     </>
   );
