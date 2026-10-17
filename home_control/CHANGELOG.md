@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.11.2
+- **"Losing heat faster than usual" allows for the weather.** A mild or windy spell could make a room look far leakier than it is (197% faster, say), because heat loss is measured against the gap to outside, and on a mild day a weather service's reading being a degree or two out is a big share of that gap.
+  - Only cool-downs at least 5° above outside count, and the last two days must be faster even if the outside reading was 2° out. The figure shown is the least it could be ("at least 45% faster").
+  - Windy days are compared with the room's own windy days (from the weather entity's wind speed). If it's been windier than any day it can compare with, it isn't compared.
+  - The figures kept before this version are rebuilt from the last week's history, so any notices showing now are looked at again within a couple of minutes of updating.
+- **Dismiss** under a "losing heat faster" notice hides it until the room is back to normal. It comes back only if the room starts losing heat faster again after that, and no phone alert is sent for it meanwhile.
+
 ## 1.11.1
 - **Renamed devices are followed.** If a light, socket, radiator, thermometer, camera or other device used here gets a new entity ID in Home Assistant, groups, rooms and cameras switch to the new one by themselves, and Activity says so ("Home Assistant renamed switch.kettle_plug to switch.kitchen_kettle: Kitchen follows it"). Before, the old ID just stopped working and the device showed as not found.
   - The app now keeps each device's permanent Home Assistant ID (which never changes) and its last name, so a rename made while the app was off, updating or disconnected is caught when it starts or reconnects. An integration removed and added back is matched by its own ID for the device.

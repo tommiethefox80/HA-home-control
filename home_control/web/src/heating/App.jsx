@@ -92,12 +92,30 @@ function ModeBar({ state, notify }) {
   );
 }
 
-function Attention({ items }) {
+// Some notices can be dismissed (a room losing heat faster than usual): hidden until it's back to normal
+function Attention({ items, notify }) {
+  const [busy, setBusy] = useState(null);
   if (!items?.length) return null;
+  const dismiss = async (a) => {
+    setBusy(a.key);
+    try { await api(`${a.dismiss}/dismiss`, 'POST'); notify(`Hidden until ${a.room || 'it'} is back to normal`); }
+    catch (e) { notify(e.message, true); }
+    setBusy(null);
+  };
   return (
     <section className="attention" aria-label="Needs attention">
       <h2><Icon.alert />Needs attention</h2>
-      <ul>{items.map((a) => <li key={a.key}>{a.text}</li>)}</ul>
+      <ul>
+        {items.map((a) => (
+          <li key={a.key}>
+            {a.text}
+            {a.dismiss && (
+              <button type="button" className="btn link att-dismiss" disabled={busy === a.key} onClick={() => dismiss(a)}
+                title="Hide this until the room is back to its usual. It shows again if it starts losing heat faster after that.">Dismiss</button>
+            )}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -197,7 +215,7 @@ export default function App({ active = true, switcher }) {
         {state && page === '' && (
           <>
             <ModeBar state={state} notify={notify} />
-            <Attention items={state.attention} />
+            <Attention items={state.attention} notify={notify} />
             <div className="home-layout">
               <div className="home-main"><Rooms state={state} notify={notify} today={today} /></div>
               {state.zones.length > 0 && <aside className="home-side"><SideCards state={state} today={today} /></aside>}

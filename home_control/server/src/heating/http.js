@@ -183,7 +183,7 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
         || route('PUT', /^\/api\/zones\/([\w-]+)\/schedule$/) || route('POST', /^\/api\/zones\/([\w-]+)\/override$/)
         || route('DELETE', /^\/api\/zones\/([\w-]+)\/override$/) || route('DELETE', /^\/api\/zones\/([\w-]+)\/learn$/)
         || route('DELETE', /^\/api\/zones\/([\w-]+)\/window$/) || route('POST', '/api/boost') || route('DELETE', '/api/boost')
-        || route('POST', '/api/notify/test') || route('POST', '/api/childlock');
+        || route('POST', '/api/notify/test') || route('POST', '/api/childlock') || route('POST', /^\/api\/heatloss\/([\w-]+)\/dismiss$/);
       if (!known) return false;
       if (engine.disabled && (/^\/api\/(mode|boost|childlock|notify\/test)$/.test(p) || /\/override$/.test(p))) {
         return json(res, 409, { error: 'Heating is turned off in Home Control\'s settings.' }), true;
@@ -202,6 +202,7 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
       else if ((m = p.match(/^\/api\/zones\/([\w-]+)\/window$/)) && req.method === 'DELETE') engine.resumeWindow(m[1]);
       else if (p === '/api/boost' && req.method === 'POST') engine.boostHouse(body);
       else if (p === '/api/boost' && req.method === 'DELETE') engine.stopHouseBoost();
+      else if ((m = p.match(/^\/api\/heatloss\/([\w-]+)\/dismiss$/)) && req.method === 'POST') engine.dismissHeatLoss(m[1]);
       else if (p === '/api/notify/test' && req.method === 'POST') engine.sendTestAlert(String(body.which));
       else if (p === '/api/childlock' && req.method === 'POST') await engine.setChildLock(body.all ? 'all' : [String(body.entity_id || '')], !!body.on);
 
@@ -218,7 +219,7 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
   // engine predicts each room's next heat from. Every half hour, and every two minutes until the
   // first works (Home Assistant may still be starting).
   async function refreshModel() {
-    const data = await buildRoomStats(engine, { days: 7 }).catch((e) => ({ error: e.message }));
+    const data = await buildRoomStats(engine, { days: 7, windEntity: forecastEntity() }).catch((e) => ({ error: e.message }));
     if (data && !data.error) {
       engine.model = { at: Date.now(), houseK: data.houseK, k: Object.fromEntries(data.rooms.filter((r) => r.loss?.k != null).map((r) => [r.id, r.loss.k])) };
       // is any room losing heat faster than usual?

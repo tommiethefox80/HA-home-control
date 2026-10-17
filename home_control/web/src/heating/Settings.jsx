@@ -358,7 +358,7 @@ function PhoneAlerts({ s, set, setNotify, targets, saveFirst, dirty, notify }) {
             {which === 'heatloss' && (
               <label className="field" style={{ marginTop: 6 }}>
                 <span>When it's this much faster than usual (%)</span>
-                <small>Its heat loss over the last two days, against its usual over the month before. Also shown under Needs attention, alert or not.</small>
+                <small>Its heat loss over the last two days, against its usual over the month before, allowing for the weather: it must be this much faster even if the outside temperature reading was 2° out (which matters most on mild days), and windy days are compared with its own windy days. Also shown under Needs attention, alert or not, where it can be dismissed until the room's back to normal.</small>
                 <input type="number" step="5" min="15" max="200" value={s.heatLoss?.percent ?? 40} onChange={(e) => set({ heatLoss: { percent: numIn(e.target.value) } })} />
               </label>
             )}

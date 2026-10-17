@@ -285,7 +285,14 @@ Comparisons only appear when both weeks have enough recorded days; otherwise the
 
 ## Losing heat faster than usual
 
-Every half hour the app works out each room's heat loss for each day (from its stretches with no heat, as in Insights) and keeps it for 60 days. If a room's last two days are 40% or more faster than its usual over the month before, it's worth a look: usually a window or trickle vent left open, or a new draught. It shows under **Needs attention**, in Insights ("45% faster lately"), and, if you turn it on, as a phone alert (Settings → Heating → Phone alerts, where the 40% can be changed). It needs at least four earlier days to compare with, and tells you once, then not again for three days.
+Every half hour the app works out each room's heat loss for each day (from its stretches with no heat, as in Insights) and keeps it for 60 days. If a room's last two days are 40% or more faster than its usual over the month before, it's worth a look: usually a window or trickle vent left open, or a new draught. It shows under **Needs attention**, in Insights ("45%+ faster lately"), and, if you turn it on, as a phone alert (Settings → Heating → Phone alerts, where the 40% can be changed). It needs at least four earlier days to compare with, and tells you once, then not again for three days.
+
+**The weather is allowed for**, so a change in the weather doesn't set it off:
+
+- Heat loss is measured against the gap between the room and outside, and the outside temperature usually comes from a weather service, which can be a degree or two out at your walls. On a mild day the room may be only a few degrees warmer than outside, and then that error can make it look twice as leaky as it is. So only stretches at least 5° above outside count, and the last two days have to be faster **even if the outside reading was 2° out**: the percentage shown is the least it could be.
+- Wind really does make a room lose heat faster (draughts), but that isn't something to fix. When the outside temperature comes from a weather entity, how windy it was is kept too, and the last two days are compared with the room's own days that were about as windy. If it's been windier than any day it can compare with, it isn't compared at all.
+
+**It clears itself** once the room is back to its usual, which, as it goes by the last two days, is usually a day or two after the cause has gone (or the weather settles). Or press **Dismiss** under the notice: it stays hidden until the room is back to normal, and comes back only if it starts losing heat faster again after that. Insights still shows it, marked as dismissed.
 
 ## Phone alerts
 

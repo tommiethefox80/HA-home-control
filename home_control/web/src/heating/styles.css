@@ -438,6 +438,7 @@ a.chip { color: inherit; text-decoration: none; }
 .attention h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 1rem; font-weight: 650; }
 .attention h2 svg { width: 18px; height: 18px; color: #c98a1a; }
 .attention ul { margin: 0; padding-left: 20px; font-size: .92rem; display: grid; gap: 4px; }
+.attention .att-dismiss { display: block; padding: 2px 0 4px; font-size: .88rem; }
 
 /* ---------- insights ---------- */
 .insights-cards { margin-bottom: 0; }

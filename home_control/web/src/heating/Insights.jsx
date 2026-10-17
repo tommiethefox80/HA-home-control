@@ -269,7 +269,7 @@ function RoomHeat() {
       {!data.outsideEntity && <p className="chart-explain">No outside temperature found, so heat loss can't be worked out. Choose one in <a href="#/settings/sources">Settings</a>.</p>}
       {(best || worst || weather || faster.length > 0) && (
         <ul className="callouts">
-          {faster.map((r) => <li key={r.id}><b>Losing heat faster than usual:</b> {r.name}, {r.lossTrend.percent}% faster over the last two days than its usual. Check for a window or trickle vent left open, or a new draught.</li>)}
+          {faster.map((r) => <li key={r.id}><b>Losing heat faster than usual:</b> {r.name}, at least {r.lossTrend.percent}% faster over the last two days than its usual, allowing for the weather{r.lossTrend.windMatched ? ` (compared with its days as windy, about ${r.lossTrend.wind} km/h)` : ''}. Check for a window or trickle vent left open, or a new draught.{r.lossTrend.dismissed && <span className="muted"> Dismissed from Needs attention until it's back to normal.</span>}</li>)}
           {best && <li><b>Holds its heat best:</b> {best.name}. From 20° on a 5° night it takes about {hours(best.loss.holdHours)} to fall to 17°.</li>}
           {worst && worst !== best && <li><b>Loses heat fastest:</b> {worst.name}, about {perHour(worst.loss.at10)} when it's 10° colder outside{best && worst.loss.k / best.loss.k >= 1.3 ? `, ${(worst.loss.k / best.loss.k).toFixed(1)} times as fast as ${best.name}` : ''}. Worth checking for draughts, a window or trickle vent left open, and whether its radiator is big enough for the room.</li>}
           {weather && weather.warm.mild.rate - weather.warm.cold.rate >= 0.2 && <li><b>Cold days slow it most:</b> {weather.name} warms {perHour(weather.warm.mild.rate)} at {deg(weather.warm.mild.outside)} outside but {perHour(weather.warm.cold.rate)} at {deg(weather.warm.cold.outside)}. <a href="#/settings/early">Starting heating early</a> allows for this.</li>}
@@ -299,7 +299,7 @@ function RoomHeat() {
                 <td data-label="Heating per cold degree"><span className="cv">
                   {r.perColdDegree != null ? <>{r.perColdDegree} min{r.open && <small className="cell-note">with other rooms' heat</small>}</> : '–'}
                 </span></td>
-                <td data-label="Holds heat">{r.rating ? <span className={`hold-chip hold-${r.rating}`}>{HOLD[r.rating]}</span> : <span className="muted">learning</span>}{r.lossTrend?.elevated && <small className="cell-note"><span className="hold-chip hold-faster">{r.lossTrend.percent}% faster lately</span></small>}</td>
+                <td data-label="Holds heat">{r.rating ? <span className={`hold-chip hold-${r.rating}`}>{HOLD[r.rating]}</span> : <span className="muted">learning</span>}{r.lossTrend?.elevated && <small className="cell-note"><span className="hold-chip hold-faster">{r.lossTrend.percent}%+ faster lately</span></small>}</td>
               </tr>
             ))}
           </tbody>

@@ -467,9 +467,11 @@ export class Engine extends EventEmitter {
       }
     }
     // a room losing heat faster than usual (heatloss.js)
+    // (unless it's been dismissed: hidden until it's back to normal)
     for (const h of this.heatLoss?.elevated?.() || []) {
+      if (h.dismissed) continue;
       const v = views.find((x) => x.id === h.id && x.enabled);
-      if (v) out.push({ key: `loss-${v.id}`, room: v.name, text: `${v.name} has been losing heat ${h.percent}% faster than usual over the last two days. Check for a window or trickle vent left open, or a new draught.` });
+      if (v) out.push({ key: `loss-${v.id}`, room: v.name, dismiss: `heatloss/${v.id}`, text: `${v.name} has been losing heat at least ${h.percent}% faster than usual over the last two days, allowing for the weather${h.windMatched ? ' and the wind' : ''}. Check for a window or trickle vent left open, or a new draught.` });
     }
     const b = this.s.boiler;
     if (b.entity) {
@@ -828,7 +830,7 @@ export class Engine extends EventEmitter {
     const list = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
     if (which === 'heatloss') {
       const e = extra || { room: 'Bedroom', percent: 45 };
-      return { title: `${e.room}: losing heat faster`, message: `${e.room} has been losing heat ${e.percent}% faster than usual over the last two days. Worth checking for a window or trickle vent left open, or a new draught.` };
+      return { title: `${e.room}: losing heat faster`, message: `${e.room} has been losing heat at least ${e.percent}% faster than usual over the last two days, allowing for the weather. Worth checking for a window or trickle vent left open, or a new draught.` };
     }
     if (which === 'window') {
       const e = extra || { room: 'Kitchen', drop: 1.2, until: Date.now() + 20 * 60000 };
@@ -888,11 +890,18 @@ export class Engine extends EventEmitter {
     return true;
   }
 
+  /** Hide a room's losing-heat notice until it's back to its usual. */
+  dismissHeatLoss(zoneId) {
+    const zone = this.zones.find((z) => z.id === zoneId);
+    if (!zone) throw new Error('No such room');
+    if (this.heatLoss?.dismiss(zoneId)) this.note(`${zone.name}: losing heat faster notice dismissed, until it's back to normal`);
+  }
+
   /** A room losing heat faster than usual: the phone alert (if it's on), and a line in Activity. */
   heatLossAlert(zoneId, percent) {
     const zone = this.zones.find((z) => z.id === zoneId);
     if (!zone?.enabled) return;
-    this.note(`${zone.name}: losing heat ${percent}% faster than usual over the last two days`);
+    this.note(`${zone.name}: losing heat at least ${percent}% faster than usual over the last two days, allowing for the weather`);
     this.#alert('heatloss', [], null, false, { room: zone.name, percent });
   }
 

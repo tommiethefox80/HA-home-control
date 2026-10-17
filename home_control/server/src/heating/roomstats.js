@@ -10,6 +10,13 @@
 // as k = ln((start - outside) / (end - outside)) / hours. From k: how fast it cools at a given
 // outside temperature (k x the gap), how long it takes to fall from 20° to 17° on a 5° night, and
 // how it compares with the house's other rooms.
+//
+// The outside temperature is usually a weather service's, which can be a degree or two out at your
+// walls; on a mild day, with the room only a few degrees above outside, that's a big share of the gap
+// and k can look far higher or lower than it is (k is out by about the error over the gap). So each
+// stretch also keeps its gap to outside, the lowest k it could be if outside were 2° colder than the
+// reading (kLow), and how windy it was (wind makes a room lose heat faster, for real). Heat-loss
+// alerts use those to be sure (heatloss.js).
 import { STEP, rowsFor, sample, tempOf, detectOutsideEntity } from './history.js';
 
 const H = 3600000;
@@ -18,6 +25,17 @@ const median = (a) => { if (!a.length) return null; const s = [...a].sort((x, y)
 const mean = (a) => { const v = a.filter((x) => x != null); return v.length ? v.reduce((x, y) => x + y, 0) / v.length : null; };
 const r1 = (x) => (x == null ? null : Math.round(x * 10) / 10);
 const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
+const r4 = (x) => (x == null ? null : Math.round(x * 10000) / 10000);
+export const OUTSIDE_SLACK = 2; // how far out the outside reading may be, in degrees
+export const MIN_GAP = 5;       // stretches nearer to outside than this are too sensitive to it for alerts
+
+/** A wind speed in km/h, from a weather entity's wind_speed in its own unit. */
+export function windKmh(speed, unit) {
+  const v = Number(speed);
+  if (speed == null || speed === '' || !Number.isFinite(v)) return null;
+  const f = { 'km/h': 1, 'mph': 1.609344, 'm/s': 3.6, 'kn': 1.852, 'ft/s': 1.09728 }[unit] ?? 1;
+  return v * f;
+}
 
 /** Each heat-up of 20 minutes or more: how fast it warmed, and how cold it was outside. */
 export function warmUps(times, temps, outside, calls, { minMinutes = 20 } = {}) {
@@ -37,7 +55,7 @@ export function warmUps(times, temps, outside, calls, { minMinutes = 20 } = {}) 
 }
 
 /** Stretches with no heat at all, each turned into a heat-loss rate k (share of the gap to outside lost per hour). */
-export function coolDowns(times, temps, outside, heated, { settleMinutes = 45, minMinutes = 90, maxMinutes = 360 } = {}) {
+export function coolDowns(times, temps, outside, heated, { settleMinutes = 45, minMinutes = 90, maxMinutes = 360, wind = null } = {}) {
   const step = times[1] - times[0];
   const settle = Math.ceil((settleMinutes * 60000) / step);
   // usable: no heat now, none in the last `settle` steps (radiators cooled), readings present
@@ -66,7 +84,10 @@ export function coolDowns(times, temps, outside, heated, { settleMinutes = 45, m
       const hours = ((e - i) * step) / H;
       if (o != null && t0 - o >= 3 && t1 - o >= 1 && t0 - t1 >= (hours >= 3 ? 0.05 : 0.15)) {
         const k = Math.log((t0 - o) / (t1 - o)) / hours;
-        if (k > 0 && k < 1) out.push({ at: times[i], hours: r1(hours), from: r1(t0), to: r1(t1), outside: r1(o), k: Math.round(k * 10000) / 10000 });
+        const lo = o - OUTSIDE_SLACK;
+        const kLow = Math.log((t0 - lo) / (t1 - lo)) / hours;
+        const w = wind ? mean(wind.slice(i, e + 1)) : null;
+        if (k > 0 && k < 1) out.push({ at: times[i], hours: r1(hours), from: r1(t0), to: r1(t1), outside: r1(o), k: r4(k), kLow: r4(kLow), gap: r1(t1 - o), wind: r1(w) });
       }
     }
     i = e + 1;
@@ -128,7 +149,7 @@ export function rate(k, houseK) {
   return tau >= 20 ? 'good' : tau <= 8 ? 'poor' : 'average';
 }
 
-export async function buildRoomStats(engine, { days = 7 } = {}) {
+export async function buildRoomStats(engine, { days = 7, windEntity = null } = {}) {
   const ha = engine.ha;
   const s = engine.s;
   // the whole week from Home Assistant's history, even before Home Control kept its own log of
@@ -146,6 +167,9 @@ export async function buildRoomStats(engine, { days = 7 } = {}) {
   for (const z of zones) { if (z.sensor) ids.add(z.sensor); else (z.trvs || []).forEach((e) => ids.add(e)); }
   if (outsideId) ids.add(outsideId);
   if (boilerId) ids.add(boilerId);
+  // how windy it was, from a weather entity (the outside one if it's a weather entity)
+  const windId = outsideId?.startsWith('weather.') ? outsideId : windEntity?.startsWith('weather.') ? windEntity : null;
+  if (windId) ids.add(windId);
 
   let result = {};
   try {
@@ -161,6 +185,8 @@ export async function buildRoomStats(engine, { days = 7 } = {}) {
   for (let t = from; t <= to; t += STEP) times.push(t);
   if (times.length < 3) return { from, to, days: 0, rooms: [], outsideEntity: outsideId || null };
   const outside = outsideId ? sample(rowsFor(result, outsideId), from, to, tempOf(outsideId)) : times.map(() => null);
+  const wind = windId ? sample(rowsFor(result, windId), from, to, (r) => windKmh(r.a?.wind_speed, r.a?.wind_speed_unit)) : null;
+  const windy = wind && wind.some((x) => x != null) ? wind : null;
   // the boiler firing (Hive's hvac_action, or a switch on)
   const boiler = boilerId
     ? sample(rowsFor(result, boilerId), from, to, (r) => (boilerId.startsWith('climate.') ? r.a?.hvac_action === 'heating' : r.s === 'on'))
@@ -177,7 +203,7 @@ export async function buildRoomStats(engine, { days = 7 } = {}) {
     // (before the app's log, without a boiler to go by, there's no knowing: leave it out)
     const heated = times.map((t, i) => (t < callsFrom && !boilerId) || inCall(t) || !!boiler[i]);
     const warms = warmUps(times, temps, outside, calls);
-    const cools = coolDowns(times, temps, outside, heated);
+    const cools = coolDowns(times, temps, outside, heated, { wind: windy });
     return { z, warms, cools, ...summarise(warms, cools) };
   });
 
@@ -191,10 +217,14 @@ export async function buildRoomStats(engine, { days = 7 } = {}) {
   // each day's heat-loss rate (for heat-loss alerts: is a room losing heat faster than usual?)
   const tz = engine.ha.timeZone || 'UTC';
   const dayOf = (t) => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(t)).map((x) => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}`; };
+  // (only stretches far enough above outside to be sure of: see OUTSIDE_SLACK)
   const daily = (cools) => {
     const by = {};
-    for (const c of cools) (by[dayOf(c.at)] ||= []).push(c.k);
-    return Object.entries(by).sort().map(([day, ks]) => ({ day, k: Math.round(median(ks) * 10000) / 10000, n: ks.length }));
+    for (const c of cools) if (c.gap >= MIN_GAP) (by[dayOf(c.at)] ||= []).push(c);
+    return Object.entries(by).sort().map(([day, cs]) => {
+      const winds = cs.map((c) => c.wind).filter((x) => x != null);
+      return { day, k: r4(median(cs.map((c) => c.k))), kLow: r4(median(cs.map((c) => c.kLow ?? c.k))), n: cs.length, wind: winds.length ? r1(median(winds)) : null };
+    });
   };
 
   const rooms = raw.map(({ z, warms, cools, warm, loss }) => {
@@ -216,6 +246,7 @@ export async function buildRoomStats(engine, { days = 7 } = {}) {
   return {
     from, to, days: Math.round(((to - from) / 86400000) * 10) / 10, callsFrom,
     outsideEntity: outsideId || null,
+    windEntity: windId,
     outside: outs.length ? { min: r1(Math.min(...outs)), max: r1(Math.max(...outs)) } : null,
     houseK: houseK != null ? Math.round(houseK * 10000) / 10000 : null,
     degreeDays: r1(dd), weatherDays: dayKeys.length,
