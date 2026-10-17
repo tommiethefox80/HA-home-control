@@ -11,7 +11,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 
 // everything Home Control keeps in its data folder
-export const DATA_FILES = ['heating.json', 'activity.json', 'daily.json', 'targets.json', 'calls.json', 'predictions.json', 'heatloss.json', 'lighting.json', 'house.json', 'cameras.json', 'wifi.json'];
+export const DATA_FILES = ['heating.json', 'activity.json', 'daily.json', 'targets.json', 'calls.json', 'predictions.json', 'heatloss.json', 'lighting.json', 'house.json', 'cameras.json', 'wifi.json', 'entity-ids.json'];
 const STAGE = 'move-in';
 const MAX_INNER = 512 * 1024 * 1024;
 

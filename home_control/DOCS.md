@@ -327,6 +327,7 @@ Two places (for heating; lighting keeps everything in `lighting.json`):
 | `targets.json` | What each room was aiming for, for the 24-hour chart | Room detail: 7 days (1–90) |
 | `calls.json` | When each room called for heat, for the room cards | Room detail, as above |
 | `lighting.json` | Lighting: groups, schedules, scenes, settings and the lighting Activity log (last 300 entries) | Always |
+| `entity-ids.json` | For each device the app uses, its permanent Home Assistant ID and last name, so a renamed one can be followed | While it's in use |
 
 **Settings → Heating → History** shows how much each uses. Lowering a number deletes the older records when you save. The Activity tab shows the latest 60 entries; **Show older** pages back through the rest. Home Assistant's own history isn't changed by these settings: set `purge_keep_days` under `recorder:` in Home Assistant's configuration for that.
 
@@ -340,6 +341,11 @@ The panel is visible to every Home Assistant user, not just admins, so give each
 
 - **A room shows "No temperature reading"**: its TRVs and thermometer are all unavailable. It won't call for heat until a reading comes back.
 - **Hive changes take a minute to show**: Hive is polled through the cloud. The add-on waits 3 minutes (configurable) before re-sending a command.
+- **A device was renamed in Home Assistant**:
+  - **A new name** (the name shown in Home Assistant) appears here straight away, everywhere: lighting groups, rooms, cameras, the dashboard card.
+  - **A name changed in the maker's app** (Hue, Tapo, Shelly and so on) reaches Home Assistant only when that integration reloads (Settings → Devices & services → the integration → ⋮ → Reload, or a restart). If you've ever named the device in Home Assistant, that name stays and the maker's app's name is ignored.
+  - **A new entity ID** (e.g. `switch.kettle_plug` to `switch.kitchen_kettle`, or renaming a device with "Change entity IDs" ticked) is followed by itself: lighting groups, rooms (radiators, thermometers, the boiler, outside and gas cost), cameras and access points switch to the new ID, and Activity says so. This works even if the rename happened while the app was off or updating: the app keeps each device's permanent Home Assistant ID and matches it up when it starts. An integration removed and added back is matched by its own ID for the device. A device that has gone for good keeps showing its last name.
+  - Renames made **before version 1.11.1** can't be matched, as nothing was kept to match them by: that device shows as not found. Edit its group or room and tick the new one, once.
 - **The screen looks out of date**: it updates live. If that connection drops without saying so (common when the Home Assistant phone app has been in the background), the panel refreshes as soon as you come back to it and reconnects by itself within about a minute. Anything you press updates the screen straight away either way.
 - **The Activity tab** records every boiler start and stop, every room starting and stopping heating and why, boosts, schedule changes and changes made on a radiator. A room's start says what set it off ("Bathroom: heating, warming early to be 19° by 06:30: 18° now, and it warms about 1.8° an hour, so it started 50 min before. The boiler was already on for Main Bedroom", or "17.8° fell below 18.5°, where it starts", or a boost or hold) and its stop says where it got to ("warm enough at 18.7°, stopping 0.3° early so the radiators' leftover heat takes it to 19°, after 12 min"). **Heating on and off** shows just those and the boiler; **Changes** everything else. Hovering over a room's mini graph where it was heating says why too ("heating, warming early for 19°").
 

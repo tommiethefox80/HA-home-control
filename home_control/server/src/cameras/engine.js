@@ -97,6 +97,28 @@ export class Engine extends EventEmitter {
 
   changed() { this.emit('change'); }
 
+  /** Home Assistant renamed an entity's ID: a camera (its movement sensors, its card controls) follows it. */
+  /** Every entity ID the cameras use (so a renamed one can be followed, see renames.js). */
+  entityIds() {
+    return this.data.cameras.flatMap((c) => [c.entity, ...(Array.isArray(c.movement) ? c.movement : []), ...(Array.isArray(c.card) ? c.card : [])]).filter(Boolean);
+  }
+
+  renameEntity(from, to) {
+    let hit = null;
+    for (const cam of this.data.cameras) {
+      let c = false;
+      if (cam.entity === from) { cam.entity = to; c = true; }
+      if (Array.isArray(cam.movement) && cam.movement.includes(from)) { cam.movement = cam.movement.map((e) => (e === from ? to : e)); c = true; }
+      if (Array.isArray(cam.card) && cam.card.includes(from)) { cam.card = cam.card.map((e) => (e === from ? to : e)); c = true; }
+      if (c) hit = cam;
+    }
+    if (!hit) return false;
+    this.store.save();
+    this.addEvent(hit, 'note', `Home Assistant renamed ${from} to ${to}: ${hit.name} follows it.`);
+    this.loadRegistries().then(() => this.changed()).catch(() => this.changed());
+    return true;
+  }
+
   async _onReady() {
     const [config, states] = await Promise.all([this.ha.getConfig(), this.ha.getStates()]);
     this.tz = config?.time_zone || 'UTC';
@@ -133,7 +155,7 @@ export class Engine extends EventEmitter {
 
   // ---------- what Home Assistant has ----------
 
-  friendly(id) { return this.states.get(id)?.attributes?.friendly_name || id; }
+  friendly(id) { return this.states.get(id)?.attributes?.friendly_name || this.lastName?.(id) || id; }
 
   deviceOf(entity) {
     const e = this.reg.entities.get(entity);

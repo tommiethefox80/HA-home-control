@@ -93,6 +93,21 @@ export class Engine extends EventEmitter {
 
   changed() { this.emit('change'); }
 
+  /** Home Assistant renamed an entity's ID: an access point's PoE port follows it. */
+  /** Every entity ID Wi-Fi keeps (most is by MAC address): the PoE switches access points are turned off with. */
+  entityIds() {
+    return Object.values(this.data.devices || {}).map((d) => d?.poe).filter((e) => typeof e === 'string');
+  }
+
+  renameEntity(from, to) {
+    let hit = false;
+    for (const conf of Object.values(this.data.devices || {})) if (conf?.poe === from) { conf.poe = to; hit = true; }
+    if (!hit) return false;
+    this.store.save();
+    this.addEvent(`Home Assistant renamed ${from} to ${to}: the access point switched off through it follows it.`);
+    return true;
+  }
+
   async _onReady() {
     const [config, states] = await Promise.all([this.ha.getConfig(), this.ha.getStates()]);
     this.tz = config?.time_zone || 'UTC';
@@ -157,7 +172,7 @@ export class Engine extends EventEmitter {
     this.ix = { devices, networks, poe: poe.sort((a, b) => a.port - b.port), relevant, apMacs: new Set() };
   }
 
-  friendly(id) { return this.states.get(id)?.attributes?.friendly_name || id; }
+  friendly(id) { return this.states.get(id)?.attributes?.friendly_name || this.lastName?.(id) || id; }
   deviceEntry(id) { return id ? this.reg.devices.get(id) || null : null; }
   deviceName(d) { const r = this.deviceEntry(d.device_id); return r?.name_by_user || r?.name || this.friendly(d.entities.led || d.entities.tracker || d.entities.state) || d.mac; }
   macOfId(id) { return String(id || '').toLowerCase().replace(/[^0-9a-f]/g, '').replace(/(..)(?!$)/g, '$1:'); }

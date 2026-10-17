@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.11.1
+- **Renamed devices are followed.** If a light, socket, radiator, thermometer, camera or other device used here gets a new entity ID in Home Assistant, groups, rooms and cameras switch to the new one by themselves, and Activity says so ("Home Assistant renamed switch.kettle_plug to switch.kitchen_kettle: Kitchen follows it"). Before, the old ID just stopped working and the device showed as not found.
+  - The app now keeps each device's permanent Home Assistant ID (which never changes) and its last name, so a rename made while the app was off, updating or disconnected is caught when it starts or reconnects. An integration removed and added back is matched by its own ID for the device.
+  - A device that has gone shows the last name it had, not its entity ID.
+  - A new name (rather than a new ID) already showed straight away. A name changed in the maker's app reaches Home Assistant only when that integration reloads: see Troubleshooting.
+  - Renames made before this version can't be matched up: edit the group or room once and tick the new one.
+
 ## 1.11.0
 - **Each light and socket.** Settings → Lighting → Each light and socket lists every light and socket under its group, with its own switch and, where it dims, its own minus and plus, so one can be turned off without the rest. On or off separately for the Lighting page and the dashboard card (off to start with: a group is one control). A change to one lasts until the group's next scheduled change. A dashboard card can choose for itself with `devices: true` or `devices: false`.
 - `sensor.home_lighting`: each group's `devices` now have their name, kind, whether they're on and their brightness, and there's `show_devices`.

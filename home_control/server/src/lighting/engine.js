@@ -85,7 +85,7 @@ export class Engine extends EventEmitter {
     this.config = config;
     this.states = new Map(states.map((s) => [s.entity_id, s]));
     await this.ha.subscribeStateChanged();
-    for (const type of ['lighting_control_scene', 'lighting_control_mode']) {
+    for (const type of ['lighting_control_scene', 'lighting_control_mode', 'entity_registry_updated', 'device_registry_updated', 'area_registry_updated']) {
       try { await this.ha.subscribeEvent(type); } catch (err) { this.log.warn?.(`Couldn't listen for ${type}: ${err.message}`); }
     }
     await this._loadRegistries();
@@ -180,7 +180,7 @@ export class Engine extends EventEmitter {
 
   friendly(entityId) {
     const st = this.states.get(entityId);
-    return st?.attributes?.friendly_name || this.reg.entities.get(entityId)?.name || entityId;
+    return st?.attributes?.friendly_name || this.reg.entities.get(entityId)?.name || this.lastName?.(entityId) || entityId;
   }
 
   deviceInfo(id, groupName = '') {
@@ -1120,7 +1120,45 @@ export class Engine extends EventEmitter {
     this.changed();
   }
 
+  /** Home Assistant renamed an entity's ID: groups (and their sensors) follow it. */
+  /** Every entity ID lighting uses (so a renamed one can be followed, see renames.js). */
+  entityIds() {
+    const s = this.data.settings;
+    return [
+      ...this.data.groups.flatMap((g) => [...g.devices, g.motion?.entity, g.lux?.entity]),
+      s.sunEntity && s.sunEntity !== 'auto' ? s.sunEntity : null,
+      ...(Array.isArray(s.autoAwayPeople) ? s.autoAwayPeople : []),
+    ].filter(Boolean);
+  }
+
+  renameEntity(from, to) {
+    const hit = [];
+    for (const g of this.data.groups) {
+      let changed = false;
+      if (g.devices.includes(from)) { g.devices = g.devices.map((id) => (id === from ? to : id)); changed = true; }
+      if (g.motion?.entity === from) { g.motion.entity = to; changed = true; }
+      if (g.lux?.entity === from) { g.lux.entity = to; changed = true; }
+      const ov = this.data.overrides[g.id];
+      if (ov?.devices?.[from]) { ov.devices[to] = ov.devices[from]; delete ov.devices[from]; }
+      if (changed) hit.push(g.name);
+    }
+    if (this.data.settings.sunEntity === from) { this.data.settings.sunEntity = to; hit.push('sunrise and sunset'); }
+    const people = this.data.settings.autoAwayPeople;
+    if (Array.isArray(people) && people.includes(from)) { this.data.settings.autoAwayPeople = people.map((p) => (p === from ? to : p)); hit.push('Away automatically'); }
+    if (!hit.length) return false;
+    this.store.save();
+    this.addActivity(`Home Assistant renamed ${from} to ${to}: ${hit.join(', ')} ${hit.length === 1 ? 'follows' : 'follow'} it.`);
+    this.changed();
+    return true;
+  }
+
   _onHaEvent(type, data) {
+    // a name, an area or a kind changed in Home Assistant: read them again shortly
+    if (type.endsWith('_registry_updated')) {
+      clearTimeout(this._regTimer);
+      this._regTimer = setTimeout(() => this._loadRegistries().then(() => this.changed()).catch(() => {}), 3000);
+      return;
+    }
     try {
       if (this.disabled) return; // turned off in Home Control's settings: something else looks after the lights
       if (this.data.paused) { this.addActivity('Home Assistant asked for a scene or mode, but lighting is paused while you switch over.'); return; }

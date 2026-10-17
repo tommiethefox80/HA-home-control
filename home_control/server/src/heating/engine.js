@@ -105,7 +105,7 @@ export class Engine extends EventEmitter {
   }
 
   #name(entityId) {
-    return this.ha.get(entityId)?.attributes?.friendly_name || entityId;
+    return this.ha.get(entityId)?.attributes?.friendly_name || this.lastName?.(entityId) || entityId;
   }
 
   // ---- target calculation ----
@@ -853,6 +853,38 @@ export class Engine extends EventEmitter {
       message,
       data: { tag: 'heating-control', group: 'heating-control' },
     });
+    return true;
+  }
+
+  /** Home Assistant renamed an entity's ID: rooms, the boiler and the sensors chosen follow it. */
+  /** Every entity ID heating uses (so a renamed one can be followed, see renames.js). */
+  entityIds() {
+    const s = this.s;
+    return [
+      ...this.zones.flatMap((z) => [...(z.trvs || []), z.sensor]),
+      s.boiler?.entity, s.outsideEntity, s.costEntity, ...(s.presence?.people || []),
+    ].filter(Boolean);
+  }
+
+  renameEntity(from, to) {
+    const hit = [];
+    for (const z of this.zones) {
+      let c = false;
+      if ((z.trvs || []).includes(from)) { z.trvs = z.trvs.map((e) => (e === from ? to : e)); c = true; }
+      if (z.sensor === from) { z.sensor = to; c = true; }
+      if (c) hit.push(z.name);
+    }
+    const s = this.s;
+    if (s.boiler?.entity === from) { s.boiler.entity = to; hit.push('the boiler'); }
+    if (s.outsideEntity === from) { s.outsideEntity = to; hit.push('the outside temperature'); }
+    if (s.costEntity === from) { s.costEntity = to; hit.push('the gas cost'); }
+    if (s.presence?.people?.includes(from)) { s.presence.people = s.presence.people.map((p) => (p === from ? to : p)); hit.push('Away automatically'); }
+    if (!hit.length) return false;
+    const names = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+    this.store.save();
+    this.ha.refreshRegistry?.();
+    this.note(`Home Assistant renamed ${from} to ${to}: ${names(hit)} ${hit.length === 1 ? 'follows' : 'follow'} it`);
+    this.requestTick(200);
     return true;
   }
 

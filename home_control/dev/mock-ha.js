@@ -26,11 +26,13 @@ const devices = [];
 const entities = [];
 const states = new Map();
 const nowIso = () => new Date().toISOString();
+// each registry entry's permanent ID, which stays the same when its entity ID changes
+const regId = () => randomUUID().replace(/-/g, '');
 
 function add(entity_id, attrs, { area, state = 'off', category = null, deviceClass = null, slow = false, quirk = null } = {}) {
   const device_id = `dev_${entity_id.replace('.', '_')}`;
   devices.push({ id: device_id, area_id: area, name: attrs.friendly_name });
-  entities.push({ entity_id, device_id, area_id: null, entity_category: category, disabled_by: null, hidden_by: null, original_device_class: deviceClass, name: null, platform: entity_id.startsWith('light.') ? 'zha' : 'demo' });
+  entities.push({ id: regId(), entity_id, unique_id: `u_${entity_id}`, device_id, area_id: null, entity_category: category, disabled_by: null, hidden_by: null, original_device_class: deviceClass, name: null, platform: entity_id.startsWith('light.') ? 'zha' : 'demo' });
   states.set(entity_id, { entity_id, state, attributes: attrs, last_changed: nowIso(), last_updated: nowIso(), context: { id: randomUUID(), parent_id: null, user_id: null }, _slow: slow, _quirk: quirk });
 }
 
@@ -80,7 +82,7 @@ function addCameraDevice(slug, name, { manufacturer, model, platform, area, stre
   const device_id = `dev_cam_${slug}`;
   devices.push({ id: device_id, area_id: area, name, manufacturer, model, name_by_user: null });
   const reg = (entity_id, attrs, { state = 'off', category = null, deviceClass = null, from = platform } = {}) => {
-    entities.push({ entity_id, device_id, area_id: null, entity_category: category, disabled_by: null, hidden_by: null, original_device_class: deviceClass, name: null, platform: from });
+    entities.push({ id: regId(), entity_id, unique_id: `u_${entity_id}`, device_id, area_id: null, entity_category: category, disabled_by: null, hidden_by: null, original_device_class: deviceClass, name: null, platform: from });
     states.set(entity_id, { entity_id, state, attributes: { friendly_name: attrs.name, ...attrs.extra }, last_changed: nowIso(), last_updated: nowIso(), context: { id: randomUUID(), parent_id: null, user_id: null } });
   };
   const camId = `camera.${camera}`;
@@ -151,7 +153,7 @@ addCameraDevice('shed', 'Shed', { manufacturer: 'Generic', model: 'RTSP camera',
 const QR_PICTURE = new URL('./wifi/qr.png', import.meta.url).pathname;
 const unifiDisabled = new Map(); // entity -> its state, for when it's turned on
 function unifi(entity_id, unique_id, attrs, { device_id = null, state = 'on', category = 'config', disabled = false, deviceClass = null } = {}) {
-  entities.push({ entity_id, unique_id, device_id, area_id: null, entity_category: category, disabled_by: disabled ? 'integration' : null, hidden_by: null, original_device_class: deviceClass, name: null, platform: 'unifi' });
+  entities.push({ id: regId(), entity_id, unique_id, device_id, area_id: null, entity_category: category, disabled_by: disabled ? 'integration' : null, hidden_by: null, original_device_class: deviceClass, name: null, platform: 'unifi' });
   const st = { entity_id, state, attributes: { ...attrs }, last_changed: nowIso(), last_updated: nowIso(), context: { id: randomUUID(), parent_id: null, user_id: null } };
   if (disabled) unifiDisabled.set(entity_id, st); else states.set(entity_id, st);
 }
@@ -635,6 +637,46 @@ createServer(async (req, res) => {
   if (req.url === '/freeze') { frozen = true; return done({ ok: true }); }
   if (req.url === '/unfreeze') { frozen = false; return done({ ok: true }); }
   if (req.url === '/fire') { fireEvent(body.event_type, body.data || {}); return done({ ok: true }); }
+  // an entity's ID changed in Settings → Entities (or with its device, "rename entity IDs" ticked)
+  if (req.url === '/rename') {
+    const { from, to, name } = body;
+    const st = states.get(from);
+    const reg = entities.find((e) => e.entity_id === from);
+    if (!st || !reg || states.has(to)) return done({ ok: false });
+    const old = publicState(st);
+    states.delete(from);
+    const ns = { ...st, entity_id: to, attributes: { ...st.attributes, ...(name ? { friendly_name: name } : {}) }, last_updated: nowIso() };
+    states.set(to, ns);
+    reg.entity_id = to;
+    if (name) reg.name = name;
+    fireEvent('state_changed', { entity_id: from, old_state: old, new_state: null });
+    fireEvent('state_changed', { entity_id: to, old_state: null, new_state: publicState(ns) });
+    // silent: as if Home Control wasn't connected to hear it
+    if (!body.silent) fireEvent('entity_registry_updated', { action: 'update', entity_id: to, old_entity_id: from, changes: { entity_id: from, ...(name ? { name: null } : {}) } });
+    return done({ ok: true });
+  }
+  // the integration removed and added back: a new registry entry (new permanent ID), same unique ID
+  if (req.url === '/readd') {
+    const { from, to } = body;
+    const reg = entities.find((e) => e.entity_id === from);
+    const st = states.get(from);
+    if (!reg || !st || states.has(to)) return done({ ok: false });
+    entities.splice(entities.indexOf(reg), 1);
+    states.delete(from);
+    fireEvent('state_changed', { entity_id: from, old_state: publicState(st), new_state: null });
+    fireEvent('entity_registry_updated', { action: 'remove', entity_id: from });
+    entities.push({ ...reg, id: regId(), entity_id: to });
+    const ns = { ...st, entity_id: to, last_updated: nowIso() };
+    states.set(to, ns);
+    fireEvent('state_changed', { entity_id: to, old_state: null, new_state: publicState(ns) });
+    fireEvent('entity_registry_updated', { action: 'create', entity_id: to });
+    return done({ ok: true });
+  }
+  // drop every connection (Home Assistant restarting, or the network blinking)
+  if (req.url === '/drop') {
+    for (const ws of sockets) try { ws.close(); } catch { /* gone */ }
+    return done({ ok: true });
+  }
   if (req.url === '/calls') return done(calls);
   if (req.url === '/published') return done({ count: published.length, states: Object.fromEntries([...states].filter(([k]) => /^(sensor|binary_sensor)\.home_/.test(k)).map(([k, v]) => [k, publicState(v)])) });
   if (req.url === '/resources') return done(resources);

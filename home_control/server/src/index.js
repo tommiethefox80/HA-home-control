@@ -11,6 +11,7 @@ import { createHeating } from './heating/http.js';
 import { createLighting } from './lighting/http.js';
 import { createCameras } from './cameras/http.js';
 import { createWifi } from './wifi/http.js';
+import { watchRenames } from './renames.js';
 import { createHouse } from './house.js';
 import { createPublisher } from './publish.js';
 import { createCardInstaller, panelPath, selfSlug } from './card.js';
@@ -68,6 +69,9 @@ const wifi = createWifi({ client, dataDir: DATA_DIR, log: logObj, house, restBas
 house.attach(heating, lighting, cameras, wifi);
 house.panel = panelPath;
 lighting.engine.on('change', () => heating.push());
+// an entity's ID renamed in Home Assistant: rooms, groups, cameras and access points follow it
+// follow renamed entity IDs (and keep each device's last name), see renames.js
+watchRenames(client, () => [heating.engine, lighting.engine, cameras.engine, wifi.engine], { dataDir: DATA_DIR, log: logObj });
 /** Nothing set up yet (a fresh install): no rooms, no boiler and no lighting groups. */
 const isEmpty = () => !heating.store.data.zones.length && !heating.store.data.settings.boiler?.entity && !lighting.store.data.groups.length && !cameras.store.data.cameras.length && !house.on('wifi');
 createPublisher({ restBase: REST_BASE, token: HA_TOKEN, log: logObj, heating, lighting, cameras, wifi, client, panel: panelPath, isEmpty, house });
