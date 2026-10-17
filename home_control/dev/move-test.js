@@ -238,7 +238,8 @@ await step('rooms, boiler, settings, groups, schedules and scenes are all here, 
   const cfg = await j('GET', `${APP}/api/lighting/config`);
   assert.deepEqual(cfg.groups.map((g) => g.name), oldLight.groups.map((g) => g.name));
   assert.deepEqual(cfg.scenes, oldLight.scenes);
-  assert.deepEqual(cfg.settings, oldLight.settings);
+  // every setting the old app had came across (settings added since start at their defaults)
+  assert.deepEqual(Object.fromEntries(Object.keys(oldLight.settings).map((k) => [k, cfg.settings[k]])), oldLight.settings);
   assert.deepEqual((await j('GET', `${APP}/api/lighting/schedules`)).schedules, oldSched);
   // the files themselves came across
   const read = (dir, f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));

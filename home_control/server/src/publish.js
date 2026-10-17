@@ -188,7 +188,11 @@ export function lightingState(snap, panel = null) {
       shown: g.onCard !== false,
       // so a dashboard can switch the group: what's in it, and the level "on" means right now
       available: g.devices.some((d) => d.available !== false),
-      devices: g.devices.map((d) => ({ id: d.id, dimmable: !!d.dimmable, ct: !!d.ct, available: d.available !== false })),
+      devices: g.devices.map((d) => ({
+        id: d.id, name: d.short || d.name || d.id, kind: d.kind === 'light' ? 'light' : 'socket',
+        dimmable: !!d.dimmable, ct: !!d.ct, available: d.available !== false,
+        on: !!d.on, brightness: d.on && d.dimmable ? d.brightness ?? null : null, kelvin: d.on ? d.kelvin ?? null : null,
+      })),
       turn_on: g.turnOn ? { brightness: g.dimmable ? g.turnOn.brightness ?? null : null, kelvin: g.ct ? g.turnOn.kelvin ?? null : null } : null,
     };
   });
@@ -209,6 +213,7 @@ export function lightingState(snap, panel = null) {
       mode_text: LIGHT_MODE_NAME[snap.mode] || snap.mode,
       paused: !!snap.paused,
       step: snap.settings?.stepSize || 10, // the brightness step for minus and plus, as in the app
+      show_devices: !!snap.settings?.showDevices?.card, // each light and socket under its group (Lighting → Settings)
       summary,
       groups,
       connected: !!snap.connected,

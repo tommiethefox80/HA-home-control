@@ -25,6 +25,7 @@ export const SETTINGS_MENU = {
   lighting: {
     name: 'Lighting', base: '#/lighting/settings', items: [
       { id: 'groups', label: 'Groups' },
+      { id: 'each', label: 'Each light and socket' },
       { id: 'scenes', label: 'Scenes' },
       { id: 'behaviour', label: 'How it behaves' },
       { id: 'away', label: 'Away' },

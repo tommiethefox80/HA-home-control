@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS = {
   autoAwayPeople: 'auto',       // 'auto' (every person) or a list of person entity ids
   autoAwayDelay: 10,            // minutes everyone must be out before Away starts
   morningTime: '05:00',         // "until the morning" holds end at the first scheduled change after this
+  showDevices: { page: false, card: false }, // each light and socket under its group, on the Lighting page and the dashboard card
 };
 
 function defaults() {

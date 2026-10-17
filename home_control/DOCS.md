@@ -95,7 +95,7 @@ Home Assistant forgets them when it restarts; the app writes them again as soon 
 A dashboard card that shows the heating or the lighting at a glance, in the app's colours.
 
 - **Heating:** every room's temperature, what it's aiming for and why, when it next heats ("Next heat about 22:05", or "Heating until about 21:15"), and the boiler, with when it next fires and how long it has run today. Tap it to open the app. Add `next: false` to leave out the next-heat lines.
-- **Lighting:** every group, with a power button and, where its lights dim, minus and plus (in the brightness step from Lighting settings). Switching on uses the level the group's schedule uses at that time of day. A change made here counts as a change in Home Assistant by whoever made it, so it lasts until the group's next scheduled change. Tap a group's name, or the title, to open the app.
+- **Lighting:** every group, with a power button and, where its lights dim, minus and plus (in the brightness step from Lighting settings). With **Each light and socket** turned on for the dashboard card (Lighting settings), each one is listed under its group with its own switch and minus and plus; `devices: true` or `devices: false` on a card overrides that for that card. Switching on uses the level the group's schedule uses at that time of day. A change made here counts as a change in Home Assistant by whoever made it, so it lasts until the group's next scheduled change. Tap a group's name, or the title, to open the app.
 - **Which groups it shows:** each group has a **Dashboard** setting (Lighting → Settings → Edit the group): **Show**, **Hide**, or, for a group with a season, show only between its dates (Christmas lights only in December, say). Hidden groups still follow their schedules and are all still in the app.
 
 The app looks after the card itself. Every time it starts it copies the card into Home Assistant's `www` folder and points your dashboards' resource at that version (`/local/home-control-card.js?v=1.3.0`), adding the resource if there isn't one. So after an update, a refresh of the page brings the new card. (If the `www` folder didn't exist before, restart Home Assistant once so it serves it. If your dashboards' resources are set in YAML, add `/local/home-control-card.js?v=` plus the version there yourself.)
@@ -363,6 +363,10 @@ Settings and schedules are stored in the add-on's `/data` folder and are include
 - **All off** (with the scene buttons) switches everything off until each group's next scheduled change. Schedules keep running.
 - A movement sensor can turn a group on for a few minutes when it would otherwise be off. A light-level sensor stops a group switching on when it's already bright.
 - When the app stops or updates, lights and sockets are left exactly as they are. If a scheduled change was missed while it was stopped, it catches up on start.
+
+## Each light and socket
+
+A group is normally one control: one power button and one brightness for everything in it. To control the lights and sockets in a group one at a time as well, turn on **Settings → Lighting → Each light and socket**, separately for the Lighting page and the dashboard card. Each one is then listed under its group with its own switch and, where it dims, minus and plus. A change to one is like any other change: it lasts until the group's next scheduled change, and the rest of the group is left as it is. Groups with just one light or socket stay as they are. (Each light can always be switched from a group's details too: tap its name on the Lights page.)
 
 ## Scenes
 

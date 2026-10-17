@@ -40,6 +40,12 @@ await step('settings validate and save', async () => {
   assert.equal(r.settings.graceSeconds, 5);
   assert.equal(r.settings.dashboardPath, '/');
   assert.equal(r.settings.stepSize, 10);
+  // each light and socket: off to start with, on the page and the card separately
+  assert.deepEqual(r.settings.showDevices, { page: false, card: false });
+  const r2 = await app('PUT', '/api/lighting/settings', { showDevices: { page: 'yes', card: 0 } });
+  assert.deepEqual(r2.settings.showDevices, { page: true, card: false });
+  assert.deepEqual((await app('GET', '/api/lighting/state')).settings.showDevices, { page: true, card: false });
+  await app('PUT', '/api/lighting/settings', { showDevices: { page: false, card: false } });
 });
 
 await step('groups are created, validated and devices are exclusive', async () => {

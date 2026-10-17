@@ -980,6 +980,7 @@ export class Engine extends EventEmitter {
     if (input.awayBrightness !== undefined) s.awayBrightness = clamp(Math.round(Number(input.awayBrightness)) || 70, 1, 100);
     if (input.stepSize !== undefined) s.stepSize = [5, 10, 20, 25].includes(Number(input.stepSize)) ? Number(input.stepSize) : 10;
     if (input.autoAway !== undefined) s.autoAway = !!input.autoAway;
+    if (input.showDevices !== undefined) s.showDevices = { page: !!input.showDevices?.page, card: !!input.showDevices?.card };
     if (input.autoAwayPeople !== undefined) {
       s.autoAwayPeople = Array.isArray(input.autoAwayPeople) ? input.autoAwayPeople.filter((id) => /^person\.[a-z0-9_]+$/.test(id)) : 'auto';
       if (Array.isArray(s.autoAwayPeople) && !s.autoAwayPeople.length) s.autoAwayPeople = 'auto';
@@ -1250,7 +1251,7 @@ export class Engine extends EventEmitter {
       ctx: { tz: ctx.tz, lat: ctx.lat, lon: ctx.lon, sun: ctx.sun },
       today: { ...today, minutes: zonedParts(ms, ctx.tz).minutes, sunrise: sun.sunrise, sunset: sun.sunset },
       sunFound: this.sunEntity(),
-      settings: { dashboardPath: this.settings.dashboardPath, stepSize: this.settings.stepSize, detectManual: this.settings.detectManual },
+      settings: { dashboardPath: this.settings.dashboardPath, stepSize: this.settings.stepSize, detectManual: this.settings.detectManual, showDevices: this.settings.showDevices || { page: false, card: false } },
       groups,
       scenes: (this.data.scenes || []).map((sc) => ({ id: sc.id, name: sc.name })),
       presence: this.settings.autoAway ? (() => {

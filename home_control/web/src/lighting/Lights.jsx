@@ -164,6 +164,12 @@ function GroupCard({ g, state, run, onOpen }) {
         <p className="gwarn"><Icon name="warn" size={16} /> Can't reach {unreachable.map((x) => x.short).join(' and ')}</p>
       )}
 
+      {state.settings.showDevices?.page && g.devices.length > 1 && (
+        <ul className="gdevs" aria-label={`Lights and sockets in ${g.name}`}>
+          {g.devices.map((x) => <DeviceRow key={x.id} x={x} g={g} run={run} step={step} />)}
+        </ul>
+      )}
+
       {g.segments.length ? (
         <Ribbon segments={g.segments} nowMin={state.today.minutes} dimmable={g.dimmable} />
       ) : g.hasSchedule ? (
@@ -172,6 +178,55 @@ function GroupCard({ g, state, run, onOpen }) {
         <a className="link-quiet" href={`#/lighting/schedules/${g.id}`}>Add a schedule</a>
       )}
     </article>
+  );
+}
+
+// One light or socket in a group's card (Lighting → Settings → Each light and socket): its own
+// switch and, where it dims, minus and plus. A change lasts until the group's next scheduled change.
+function DeviceRow({ x, g, run, step }) {
+  const [pending, setPending] = useState(null);
+  const timer = useRef(null);
+  const seq = useRef(0);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const on = pending ? pending.on : x.on;
+  const bri = pending?.brightness ?? (x.on ? x.brightness : null);
+  const send = (body, delay) => {
+    const mine = ++seq.current;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      try { await run(() => api('POST', `groups/${g.id}/set`, { ...body, device: x.id })); } catch { /* shown at the top */ }
+      if (seq.current === mine) setPending(null);
+    }, delay);
+  };
+  const toggle = () => {
+    setPending(on ? { on: false } : { on: true, brightness: x.dimmable ? g.turnOn?.brightness ?? 100 : null });
+    send({ on: !on }, 0);
+  };
+  const stepBy = (dir) => {
+    const cur = on ? (bri ?? 100) : 0;
+    let next = Math.round((cur + dir * step) / step) * step;
+    if (dir > 0 && cur === 0) next = step;
+    next = Math.min(100, next);
+    if (next <= 0) { setPending({ on: false }); send({ on: false }, STEP_WAIT); return; }
+    setPending({ on: true, brightness: next });
+    send({ on: true, brightness: next }, STEP_WAIT);
+  };
+  const level = !x.available ? 'Can\'t be reached' : !on ? 'Off' : x.dimmable ? `${bri ?? 100}%` : 'On';
+  return (
+    <li className={`gdev${on ? ' gdev-on' : ''}${x.available ? '' : ' gdev-gone'}`}>
+      <span className="gdev-icon" style={{ background: lightCss(on, bri, x.kelvin), color: inkOn(on, bri, x.kelvin) }} aria-hidden="true">
+        <Icon name={kindIcon(x.kind)} size={16} />
+      </span>
+      <span className="gdev-name">{x.short}<small aria-live="polite">{level}</small></span>
+      {x.dimmable && x.available && (
+        <span className="gdev-step">
+          <button type="button" className="icon-btn" onClick={() => stepBy(-1)} disabled={!on} aria-label={`Dim ${x.short}`}><Icon name="minus" size={16} /></button>
+          <button type="button" className="icon-btn" onClick={() => stepBy(1)} disabled={on && (bri ?? 100) >= 100} aria-label={`Brighten ${x.short}`}><Icon name="plus" size={16} /></button>
+        </span>
+      )}
+      <button type="button" role="switch" aria-checked={on} className="switch" disabled={!x.available}
+        aria-label={`${x.short} ${on ? 'on' : 'off'}`} onClick={toggle}><span /></button>
+    </li>
   );
 }
 

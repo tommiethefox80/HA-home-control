@@ -449,3 +449,13 @@ pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 /* a change that has just been added or moved into time order */
 .point-flash { animation: l-point-flash 1.4s ease-out; }
 @keyframes l-point-flash { 0% { box-shadow: 0 0 0 3px var(--focus); } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+/* each light and socket under its group (Lighting → Settings → Each light and socket) */
+.gdevs { list-style: none; margin: 2px 0 0; padding: 6px 0 0; border-top: 1px solid var(--line); display: grid; gap: 2px; }
+.gdev { display: flex; align-items: center; gap: 10px; min-height: 46px; }
+.gdev-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; flex: none; transition: background 0.3s; }
+.gdev-name { flex: 1; min-width: 0; display: grid; font-weight: 600; font-size: 0.95rem; line-height: 1.25; }
+.gdev-name small { font-weight: 500; font-size: 0.82rem; color: var(--ink-2); }
+.gdev-step { display: flex; gap: 6px; flex: none; }
+.gdev-step .icon-btn { width: 36px; height: 36px; border-radius: 10px; }
+.gdev-gone { opacity: 0.6; }

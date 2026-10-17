@@ -75,6 +75,23 @@ for (const [name, vars] of Object.entries(THEMES)) {
     await p.evaluate(() => document.getElementById('l').shadowRoot.querySelector('.head.open').click());
     const nav2 = await p.evaluate(() => window.__nav);
     if (nav2[1] !== '/bea84e52_home_control?section=lighting') errors.push(`lighting tap with the app's address went to ${nav2[1]}`);
+    // each light and socket (when shown): its own power button switches just that one
+    const lg = published.states['sensor.home_lighting']?.attributes;
+    if (lg?.show_devices) {
+      const call = await p.evaluate(async (states) => {
+        const el = document.getElementById('l');
+        const calls = [];
+        el.hass = { states, callService: async (...a) => { calls.push(a); } };
+        await new Promise((r) => setTimeout(r, 100));
+        const row = el.shadowRoot.querySelector('.drow[data-dev]');
+        if (!row) return null;
+        row.querySelector('[data-act=power]').click();
+        await new Promise((r) => setTimeout(r, 200));
+        return { dev: row.dataset.dev, calls };
+      }, published.states);
+      if (!call) errors.push('no light or socket rows on the lighting card');
+      else if (call.calls.length !== 1 || JSON.stringify(call.calls[0][2]) !== JSON.stringify({ entity_id: call.dev })) errors.push(`one light's button sent ${JSON.stringify(call.calls)}`);
+    }
     await p.close();
   }
 }

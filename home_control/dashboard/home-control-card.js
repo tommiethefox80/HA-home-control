@@ -9,10 +9,11 @@
 //   show: heating            # or: lighting, cameras or wifi
 //   panel: /local_heating_control   # optional: where the Home app is (the app says, from 1.3)
 //   next: false              # heating: leave out each room's "Next heat about 22:05" line
+//   devices: true            # lighting: each light and socket under its group (or false; the app's setting otherwise)
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.10.1';
+const VERSION = '1.11.0';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 
@@ -144,6 +145,18 @@ const STYLE = `
   @keyframes hc-pulse { 50% { opacity: .6; } }
   @media (prefers-reduced-motion: reduce) { .grow.busy .power { animation: none; } .hcbtn { transition: none; } }
   .empty { font-size: .88rem; color: var(--secondary-text-color); }
+  /* each light and socket under its group */
+  .drows { display: flex; flex-direction: column; gap: 2px; margin: -2px 0 2px 14px; padding-left: 8px; border-left: 2px solid var(--divider-color); }
+  .drow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 3px 4px 3px 6px; border-radius: 12px;
+    user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  .drow.dead { opacity: .55; }
+  .dname { min-width: 0; font-weight: 600; font-size: .86rem; color: var(--primary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dsub { display: block; font-weight: 500; font-size: .76rem; color: var(--secondary-text-color); }
+  .drow .step .hcbtn { width: 30px; height: 30px; border-radius: 9px; }
+  .drow .step .hcbtn svg { width: 16px; height: 16px; }
+  .power.sm { width: 34px; height: 34px; }
+  .power.sm svg { width: 16px; height: 16px; }
+  .drow.busy .power { animation: hc-pulse 1s ease-in-out infinite; }
 
   /* cameras */
   .cameras { cursor: default; }
@@ -342,6 +355,116 @@ class HomeControlCard extends HTMLElement {
         });
       }
     }
+    // one light or socket in a group
+    for (const row of root.querySelectorAll('.drow[data-gid]')) {
+      const { gid, dev } = row.dataset;
+      for (const btn of row.querySelectorAll('.hcbtn')) {
+        btn.addEventListener('pointerdown', pressing);
+        for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(ev, released);
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const act = btn.dataset.act;
+          if (act === 'power') this._toggleDev(gid, dev);
+          else this._stepDev(gid, dev, act === 'up' ? 1 : -1);
+        });
+      }
+    }
+  }
+
+  // ---- one light or socket (when the card shows each one) ----
+  _dev(gid, dev) { return this._group(gid)?.devices?.find((d) => d.id === dev); }
+
+  _shownDev(gid, d) {
+    const key = `${gid}|${d.id}`;
+    const p = this._pending.get(key);
+    const real = { on: !!d.on, brightness: d.brightness ?? (d.on ? 100 : null), busy: false };
+    if (!p) return real;
+    const landed = p.sent && p.on === real.on && (!p.on || p.brightness == null || !d.brightness || Math.abs(d.brightness - p.brightness) <= 3);
+    if (landed || Date.now() - p.at > PENDING_MS) { this._pending.delete(key); return real; }
+    return { on: p.on, brightness: p.on ? p.brightness ?? real.brightness : null, busy: true };
+  }
+
+  _toggleDev(gid, dev) {
+    const g = this._group(gid);
+    const d = this._dev(gid, dev);
+    if (!g || !d) return;
+    const now = this._shownDev(gid, d);
+    this._wantDev(gid, d, now.on ? { on: false } : { on: true, brightness: d.dimmable ? (g.turn_on || {}).brightness ?? null : null, kelvin: d.ct ? (g.turn_on || {}).kelvin ?? null : null }, 0);
+  }
+
+  _stepDev(gid, dev, dir) {
+    const d = this._dev(gid, dev);
+    if (!d) return;
+    const now = this._shownDev(gid, d);
+    const step = Number(this._last?.attributes?.step) || 10;
+    const cur = now.on ? (now.brightness ?? 100) : 0;
+    let next = Math.round((cur + dir * step) / step) * step;
+    if (dir > 0 && cur === 0) next = step;
+    next = Math.min(100, next);
+    this._wantDev(gid, d, next <= 0 ? { on: false } : { on: true, brightness: next }, STEP_WAIT);
+  }
+
+  _wantDev(gid, d, want, delay) {
+    const key = `${gid}|${d.id}`;
+    this._pending.set(key, { ...want, at: Date.now(), sent: false });
+    this._error = null;
+    this.dispatchEvent(new CustomEvent('haptic', { bubbles: true, composed: true, detail: 'light' }));
+    clearTimeout(this._timers[key]);
+    this._timers[key] = setTimeout(() => this._applyDev(gid, d.id), delay);
+    clearTimeout(this._expiry);
+    this._expiry = setTimeout(() => this._render(), PENDING_MS + delay + 50);
+    this._render();
+  }
+
+  async _applyDev(gid, dev) {
+    const key = `${gid}|${dev}`;
+    const d = this._dev(gid, dev);
+    const p = this._pending.get(key);
+    if (!d || !p) return;
+    p.sent = true; p.at = Date.now();
+    const light = d.id.startsWith('light.');
+    let call;
+    if (!p.on) call = light ? ['light', 'turn_off', { entity_id: d.id }] : ['homeassistant', 'turn_off', { entity_id: d.id }];
+    else if (!light) call = ['homeassistant', 'turn_on', { entity_id: d.id }];
+    else {
+      call = ['light', 'turn_on', {
+        entity_id: d.id,
+        ...(d.dimmable && p.brightness != null ? { brightness_pct: p.brightness } : {}),
+        ...(d.ct && !d.on && p.kelvin ? { color_temp_kelvin: p.kelvin } : {}),
+      }];
+    }
+    try {
+      await this._hass.callService(...call);
+    } catch (err) {
+      this._pending.delete(key);
+      this._error = `Couldn't change ${d.name || d.id}: ${err?.message || err}`;
+      setTimeout(() => { this._error = null; this._render(); }, 6000);
+      this._render();
+    }
+  }
+
+  _devRows(g) {
+    const step = Number(this._last?.attributes?.step) || 10;
+    return `<div class="drows">${g.devices.map((d) => {
+      const s = this._shownDev(g.id, d);
+      const dead = d.available === false;
+      const c = lightRgb(s.on, s.brightness, d.kelvin);
+      const vars = c ? `--light:${css(c)};--ink:${inkOn(c)};--glow:${css(c, 0.35)};` : '';
+      const level = dead ? 'Unavailable' : !s.on ? 'Off' : d.dimmable ? `${s.brightness ?? 100}%` : 'On';
+      const name = d.name || d.id;
+      const step2 = d.dimmable && !dead
+        ? `<div class="step">
+            <button type="button" class="hcbtn" data-act="down" ${!s.on ? 'disabled' : ''} aria-label="Dim ${esc(name)} by ${step}%">${ICON.minus}</button>
+            <button type="button" class="hcbtn" data-act="up" ${s.on && (s.brightness ?? 100) >= 100 ? 'disabled' : ''} aria-label="Brighten ${esc(name)} by ${step}%">${ICON.plus}</button>
+          </div>`
+        : '<span></span>';
+      return `<div class="drow${s.on ? ' on' : ''}${s.busy ? ' busy' : ''}${dead ? ' dead' : ''}" data-gid="${esc(g.id)}" data-dev="${esc(d.id)}" style="${vars}">
+        <span class="dname">${esc(name)}<span class="dsub" aria-live="polite">${esc(s.busy ? (s.on ? 'Switching on…' : 'Switching off…') : level)}</span></span>
+        ${step2}
+        <button type="button" class="hcbtn power sm${s.on ? ' on' : ''}" data-act="power" ${dead ? 'disabled' : ''}
+          aria-pressed="${s.on}" aria-label="${s.on ? 'Switch off' : 'Switch on'} ${esc(name)}">${ICON.power}</button>
+      </div>`;
+    }).join('')}</div>`;
   }
 
   /** What a group shows: what it reports, or what was just asked for while that lands. */
@@ -580,6 +703,8 @@ class HomeControlCard extends HTMLElement {
     const anyOn = all.some((g) => g.on);
     const modeText = a.paused ? 'Paused' : a.mode_text || 'Schedules';
     const step = Number(a.step) || 10;
+    // each light and socket under its group: the card's own choice, or the app's (Lighting → Settings)
+    const each = this._config.devices ?? !!a.show_devices;
     const rows = groups.map((g) => {
       const d = this._shown(g);
       const dead = g.available === false;
@@ -604,7 +729,7 @@ class HomeControlCard extends HTMLElement {
         ${stepper}
         <button type="button" class="hcbtn power${d.on ? ' on' : ''}" data-act="power" ${canSwitch ? '' : 'disabled'}
           aria-pressed="${d.on}" aria-label="${d.on ? 'Switch off' : 'Switch on'} ${esc(g.name)}">${ICON.power}</button>
-      </div>`;
+      </div>${each && canSwitch && g.devices.length > 1 && g.devices[0].name !== undefined ? this._devRows(g) : ''}`;
     }).join('');
     const err = this._error ? `<div class="note">${ICON.alert}<span>${esc(this._error)}</span></div>` : '';
     return `<div class="card lighting">

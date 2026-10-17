@@ -117,6 +117,18 @@ export function Settings({ state, run, go, old, arg }) {
         )}
       </section>}
 
+      {show('each') && (
+        <section className="card settings-section" aria-labelledby="set-each">
+          <h3 id="set-each">Each light and socket</h3>
+          <p className="fine">Off, a group is one control: one power button and one brightness for everything in it. On, each light and socket in a group is listed under it too, with its own switch and, where it dims, its own brightness, so you can turn one off without the rest. A change to one lasts until the group's next scheduled change, like any other change made here. Groups with just one light or socket stay as they are.</p>
+          <Toggle label="On the Lighting page" checked={!!form.showDevices?.page} onChange={(v) => set('showDevices', { ...form.showDevices, page: v })}
+            description="Under each group's card, on the Lights page." />
+          <Toggle label="On the dashboard card" checked={!!form.showDevices?.card} onChange={(v) => set('showDevices', { ...form.showDevices, card: v })}
+            description="Under each group on the Home Control card (show: lighting). A card can choose for itself with devices: true or devices: false." />
+          <p className="fine">Each light can also be switched from a group's details: tap its name on the Lights page.</p>
+        </section>
+      )}
+
       {show('scenes') && <ScenesSettings cfg={cfg} state={state} run={run} reload={load} form={form} set={set} />}
 
       {show('behaviour') && <section className="card settings-section" aria-labelledby="set-behave">

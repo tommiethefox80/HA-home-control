@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.11.0
+- **Each light and socket.** Settings → Lighting → Each light and socket lists every light and socket under its group, with its own switch and, where it dims, its own minus and plus, so one can be turned off without the rest. On or off separately for the Lighting page and the dashboard card (off to start with: a group is one control). A change to one lasts until the group's next scheduled change. A dashboard card can choose for itself with `devices: true` or `devices: false`.
+- `sensor.home_lighting`: each group's `devices` now have their name, kind, whether they're on and their brightness, and there's `show_devices`.
+
 ## 1.10.1
 - **Activity says when each room starts and stops heating, and why**, not just when the boiler switches. Before, a room starting while the boiler was already on for another room left no trace. Now: "Bathroom: heating, warming early to be 19° by 06:30: 18° now, and it warms about 1.8° an hour, so it started 50 min before. The boiler was already on for Main Bedroom", then "Bathroom: warm enough at 18.7°, ready for 19° by 06:30, after 12 min". Starts give the reason (warming early, below its start point, a schedule rise, a boost, a hold, a change on the radiator, Away, frost protection); stops say where it got to.
 - Activity can show **Heating on and off** (the boiler and each room) or **Changes** (everything else), as well as everything.
