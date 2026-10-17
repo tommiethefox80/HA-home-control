@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.1
+- **The heating comes on with everyone out: turn it off from the phone.** A new phone alert (Settings → Heating → Phone alerts) asks the phones you tick, with three buttons: **Off for 2 hours** (or 1 to 8 hours), **Off until we're back** (someone's home) and **Off until we're nearly home** (within the Away automatically distance). Off means Away; the schedules come back by themselves. Asked once while everyone's out, not when someone's on the way home or for a boost someone set, and with Away automatically on only if that's been overruled by hand.
+- The heating's mode says so on the Heating page and dashboard: "Away until someone's home" / "Away until someone's nearly home".
+
 ## 1.12.0
 - **Energy**, a fifth part (off to start with: Settings → General → What it looks after). From the Octopus Energy integration, or Home Assistant's Energy dashboard for any supplier.
   - **Today**: the electricity price now, cheap, standard or peak, and when it next changes; today's electricity and gas cost and use (live with an Octopus Home Mini), with the standing charge; the power being used now; and a chart of every half hour's price today and tomorrow, with the cheapest 3 hours ahead shaded (hover or tap for each, or see them as a list).

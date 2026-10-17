@@ -67,7 +67,7 @@ Heating's settings are saved with **Save settings**; if you leave Heating's sett
 
 Away is one switch for the heating and the lights:
 
-- **Away on the Heating page** (by hand, until a date, or automatically from phones) puts the lights on Away too. Coming back to Schedules brings both back.
+- **Away on the Heating page** (by hand, until a date, automatically from phones, or from the button on the "everyone's out" phone alert) puts the lights on Away too. Coming back to Schedules brings both back.
 - **Away on the Lighting page** puts the heating on Away too, and Schedules brings it back. Home Assistant scripts using `lighting_control_mode` do the same.
 - **Heating switched Off** (say for the summer) is left alone: Away on the Lighting page then only changes the lights. While the heating is off, the same people, wait and distance settings still switch the lights to Away when everyone's out and back when someone's on the way home.
 
@@ -300,6 +300,18 @@ Every half hour the app works out each room's heat loss for each day (from its s
 In **Settings → Heating → Phone alerts** you can have Home Assistant notify a device when the heating comes on, when it goes off, and when a window looks open. Each alert has its own switch and its own device, chosen from your `notify` services: a phone running the Home Assistant app (`notify.mobile_app_…`), or a notify group to reach several devices at once. **Send test** sends a sample straight away.
 
 The "on" alert names the rooms that fired the boiler and their temperatures. The "off" alert says how long the boiler ran. Alerts replace each other on the phone rather than stacking up. They follow the boiler's minimum run and rest times, so a boiler that cycles a lot will send a lot of alerts.
+
+### The heating comes on with everyone out
+
+**When the heating comes on with everyone out** asks the phones you tick (with the Home Assistant app) whether to turn it off, with three buttons:
+
+- **Off for 2 hours** (or the time you choose: 1 to 8 hours): Away until then, then back to the schedules.
+- **Off until we're back**: Away until someone's home.
+- **Off until we're nearly home**: Away until someone's within the distance set in Settings → General → Away automatically (2 miles to start with).
+
+Off means Away: every room at the Away temperature, so the house doesn't get too cold, and the lights on Away too, as with Away anywhere. The phones are told what was done, and the alert is replaced so it can't be pressed twice. Ignoring it leaves the heating as it is.
+
+"Everyone" is the people chosen in Away automatically (everyone with a person in Home Assistant if none are chosen). It asks once while everyone's out (again after someone's been home), and not when someone's on their way home (within that distance), nor when only boosts or holds someone set are heating. With **Away automatically** on, the heating goes to Away by itself once everyone's been out for its wait, so this only asks if that's been overruled (Schedules picked by hand while everyone's out). Pressing a button on an older alert, or on **Send test**, changes nothing.
 
 ## Child locks
 

@@ -365,7 +365,52 @@ function PhoneAlerts({ s, set, setNotify, targets, saveFirst, dirty, notify }) {
           </div>
         );
       })}
+      <EmptyHouseAlert s={s} setNotify={setNotify} targets={targets} test={test} testing={testing} />
     </section>
+  );
+}
+
+// the heating's come on with everyone out: ask the chosen phones (with buttons) whether to turn it off
+const OFF_FOR = [60, 90, 120, 180, 240, 360, 480];
+function EmptyHouseAlert({ s, setNotify, targets, test, testing }) {
+  const e = s.notify?.empty || { enabled: false, services: [], minutes: 120 };
+  const services = e.services || [];
+  const phones = targets.filter((t) => t.mobile);
+  const others = services.filter((x) => !phones.some((t) => t.service === x));
+  const flip = (svc) => setNotify('empty', { services: services.includes(svc) ? services.filter((x) => x !== svc) : [...services, svc] });
+  const hours = (m) => (m === 60 ? '1 hour' : `${m / 60} hours`);
+  return (
+    <div className="alert-row">
+      <label className="toggle">
+        <input type="checkbox" checked={!!e.enabled} onChange={(ev) => setNotify('empty', { enabled: ev.target.checked })} />
+        <span>When the heating comes on with everyone out
+          <small>Asks the phones below, with three buttons: <b>Off for {hours(e.minutes || 120)}</b>, <b>Off until we're back</b> (someone's home) or <b>Off until we're nearly home</b> (within the distance set in Away automatically). Off means Away, at the Away temperature. Asked once while everyone's out; not when someone's on their way home, nor for a boost or hold someone set. With Away automatically on, it switches to Away by itself, so this only asks if that's been overruled by hand. Needs the Home Assistant app on the phone.</small>
+        </span>
+      </label>
+      {e.enabled && (
+        <>
+          <div className="alert-phones" role="group" aria-label="Phones to ask">
+            {phones.map((t) => (
+              <label key={t.service} className="toggle small">
+                <input type="checkbox" checked={services.includes(t.service)} onChange={() => flip(t.service)} />
+                <span>{t.name}</span>
+              </label>
+            ))}
+            {others.map((x) => <label key={x} className="toggle small"><input type="checkbox" checked onChange={() => flip(x)} /><span>{x}</span></label>)}
+            {!phones.length && <small>No phones with the Home Assistant app found. Install it on a phone and sign in, and it appears here.</small>}
+          </div>
+          <div className="alert-device">
+            <label className="field" style={{ margin: 0 }}>
+              <span>Off for</span>
+              <select value={e.minutes || 120} onChange={(ev) => setNotify('empty', { minutes: Number(ev.target.value) })}>
+                {OFF_FOR.map((m) => <option key={m} value={m}>{hours(m)}</option>)}
+              </select>
+            </label>
+            <button className="btn" disabled={!services.length || testing === 'empty'} onClick={() => test('empty')}>{testing === 'empty' ? 'Sending…' : 'Send test'}</button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

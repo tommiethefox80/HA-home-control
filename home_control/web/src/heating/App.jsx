@@ -84,7 +84,7 @@ function ModeBar({ state, notify }) {
           <button className="btn link" onClick={stopBoost}>Stop boost</button>
         </p>
       )}
-      {m === 'away' && <p className="mode-note">Away at {deg(state.settings.awayTemp)}{state.presence?.auto ? ', switched on automatically because everyone is out. It switches back when someone is on their way home.' : state.awayUntil ? ` until ${fmtTime(state.awayUntil, state.timeZone, true)}.` : ' until you switch back.'}</p>}
+      {m === 'away' && <p className="mode-note">Away at {deg(state.settings.awayTemp)}{state.presence?.auto ? ', switched on automatically because everyone is out. It switches back when someone is on their way home.' : state.awayUntil ? ` until ${fmtTime(state.awayUntil, state.timeZone, true)}.` : state.awayBack === 'home' ? ' until someone\'s home (from the phone alert).' : state.awayBack === 'near' ? ' until someone\'s nearly home (from the phone alert).' : ' until you switch back.'}</p>}
       {m === 'off' && <p className="mode-note">Heating off. Rooms are kept above {deg(state.settings.frostTemp)} to stop pipes freezing.</p>}
       {boost && <BoostSheet state={state} onClose={() => setBoost(false)} notify={notify} />}
       {away && <AwaySheet lights={state.lighting?.groups > 0 && !state.lighting.paused} onClose={() => setAway(false)} onPick={(until) => { setAway(false); setMode('away', until); }} />}

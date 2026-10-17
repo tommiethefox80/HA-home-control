@@ -55,6 +55,7 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
       mode: runtime.mode,
       houseBoost: runtime.houseBoost && runtime.houseBoost.until > Date.now() && Object.values(runtime.overrides).some((o) => o?.group === 'house') ? runtime.houseBoost : null,
       awayUntil: runtime.awayUntil,
+      awayBack: runtime.mode === 'away' ? runtime.awayBack || null : null,
       boiler: engine.boilerView(),
       zones: engine.views,
       schedules: Object.fromEntries(zones.map((z) => [z.id, z.schedule])),

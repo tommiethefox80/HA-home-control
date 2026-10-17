@@ -108,6 +108,7 @@ export function heatingState(snap, today = null, panel = null) {
   const mode = snap.mode;
   let modeText = MODE_NAME[mode] || mode;
   if (mode === 'away' && snap.awayUntil) modeText = `Away until ${clock(snap.awayUntil, tz, true)}`;
+  else if (mode === 'away' && snap.awayBack) modeText = snap.awayBack === 'home' ? 'Away until someone\'s home' : 'Away until someone\'s nearly home';
   return {
     state: MODE_NAME[mode] || mode,
     attributes: {

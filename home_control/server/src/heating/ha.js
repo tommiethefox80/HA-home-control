@@ -26,6 +26,8 @@ export class HaClient extends EventEmitter {
       else this.states.delete(entity_id);
       this.emit('state', entity_id, new_state, old_state);
     });
+    // other Home Assistant events (a button pressed on a phone alert)
+    client.on('event', (type, data, context) => this.emit('event', type, data, context));
   }
 
   start() { this.client.start(); }
@@ -35,6 +37,8 @@ export class HaClient extends EventEmitter {
     const states = await this.client.getStates();
     this.states = new Map(states.map((s) => [s.entity_id, s]));
     await this.client.subscribeStateChanged();
+    // buttons on phone alerts (the Home Assistant app's actionable notifications)
+    await this.client.subscribeEvent('mobile_app_notification_action').catch(() => {});
     this.connected = true;
     this.refreshRegistry();
     clearInterval(this.regTimer);

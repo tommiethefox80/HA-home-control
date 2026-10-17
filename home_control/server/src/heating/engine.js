@@ -74,6 +74,7 @@ export class Engine extends EventEmitter {
   start() {
     this.ha.on('status', (ok) => { if (ok) this.requestTick(); this.emit('change'); });
     this.ha.on('state', (id, ns, os) => this.#onState(id, ns, os));
+    this.ha.on('event', (type, data) => { if (type === 'mobile_app_notification_action') this.phoneAction(data?.action); });
     setInterval(() => this.tick(), 30000);
     this.requestTick();
   }
@@ -441,6 +442,86 @@ export class Engine extends EventEmitter {
     }
   }
 
+  // ---- the heating's come on with everyone out: ask the phones ----
+  // Asked once while everyone's out (again after someone's been home), and only when nothing else
+  // is about to deal with it: not while Away automatically is waiting to switch to Away itself, nor
+  // when someone's on their way home, nor for a boost or hold someone asked for.
+  #emptyCfg() {
+    const c = this.s.notify?.empty || {};
+    return { enabled: !!c.enabled, services: Array.isArray(c.services) ? c.services : [], minutes: Number(c.minutes) || 120 };
+  }
+
+  #askIfEmpty(calling, now) {
+    const cfg = this.#emptyCfg();
+    if (!cfg.enabled || !cfg.services.length || this.rt.mode !== 'auto') return;
+    const p = this.s.presence || {};
+    const people = this.presenceView();
+    if (!people.length || people.some((x) => x.home)) return;
+    const near = Number(p.nearMiles) || 2;
+    if (people.some((x) => x.miles != null && x.miles <= near)) return; // someone's on the way home
+    if (p.enabled && !this.rt.presence?.suppress) return; // Away automatically will switch to Away itself
+    if (this.rt.emptyAsk) return; // asked already while everyone's been out
+    const asked = ['boost', 'hold', 'manual'];
+    if (calling.length && calling.every((v) => asked.includes(v.source))) return; // someone wanted this
+    const nonce = Math.random().toString(36).slice(2, 8);
+    this.rt.emptyAsk = { nonce, at: now };
+    this.store.save();
+    const list = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+    const rooms = calling.map((v) => v.name);
+    const hours = cfg.minutes === 60 ? '1 hour' : `${cfg.minutes / 60} hours`;
+    const message = `The boiler's come on${rooms.length ? ` for ${list(rooms)}` : ''}, but no one's home. Turn the heating off?`;
+    this.#sendEmpty('Heating on, everyone\'s out', message, [
+      { action: `HC_HEAT_FOR_${nonce}`, title: `Off for ${hours}` },
+      { action: `HC_HEAT_HOME_${nonce}`, title: 'Off until we\'re back' },
+      { action: `HC_HEAT_NEAR_${nonce}`, title: 'Off until we\'re nearly home' },
+    ]);
+    this.note(`Heating on with everyone out: asked ${cfg.services.join(', ')} whether to turn it off`);
+  }
+
+  #sendEmpty(title, message, actions = null) {
+    for (const svc of this.#emptyCfg().services) {
+      const [, service] = svc.split('.');
+      this.#call('notify', service, { title, message, data: { tag: 'home-control-empty', group: 'heating-control', ...(actions ? { actions } : {}) } });
+    }
+  }
+
+  /** A button pressed on the phone alert: Away for a while, until someone's home, or until someone's nearly home. */
+  phoneAction(action) {
+    const m = /^HC_HEAT_(FOR|HOME|NEAR)_(\w+)$/.exec(String(action || ''));
+    if (!m) return false;
+    const ask = this.rt.emptyAsk;
+    // only the latest question, and not one from long ago
+    if (!ask || ask.nonce !== m[2] || Date.now() - ask.at > 12 * 3600000) { this.note('An old "everyone\'s out" alert was answered: nothing changed'); return false; }
+    const near = Number(this.s.presence?.nearMiles) || 2;
+    if (m[1] === 'FOR') {
+      const until = Date.now() + this.#emptyCfg().minutes * 60000;
+      this.setMode('away', until, { by: 'phone', why: 'from the phone alert, everyone out' });
+      this.#sendEmpty('Heating off', `Away until ${this.#fmtTime(until)}, then back to the schedules.`);
+    } else {
+      this.setMode('away', null, { by: 'phone', why: `from the phone alert, until someone's ${m[1] === 'HOME' ? 'home' : 'nearly home'}` });
+      this.rt.awayBack = m[1] === 'HOME' ? 'home' : 'near';
+      this.store.save();
+      this.#sendEmpty('Heating off', m[1] === 'HOME' ? 'Away until someone\'s home, then back to the schedules.' : `Away until someone's within ${near} miles of home, then back to the schedules.`);
+    }
+    ask.answered = { action: m[1], at: Date.now() };
+    this.store.save();
+    this.emit('change');
+    return true;
+  }
+
+  /** Away "until we're back": back to the schedules when someone's home (or nearly). Also, once someone's
+   *  been home, the "everyone's out" question can be asked again. */
+  #awayBack(now) {
+    const people = this.presenceView();
+    if (!people.length) return;
+    const home = people.find((x) => x.home);
+    if (home && this.rt.emptyAsk) { this.rt.emptyAsk = null; this.store.save(); }
+    if (this.rt.mode !== 'away' || !this.rt.awayBack) return;
+    const near = Number(this.s.presence?.nearMiles) || 2;
+    const back = home || (this.rt.awayBack === 'near' ? people.find((x) => x.miles != null && x.miles <= near) : null);
+    if (back) this.setMode('auto', null, { by: 'presence', why: back.home ? `${back.name} is home` : `${back.name} is ${back.miles} miles away` });
+  }
+
   // ---- needs attention ----
   batteryFor(climateId) {
     const a = this.ha.get(climateId)?.attributes || {};
@@ -541,7 +622,7 @@ export class Engine extends EventEmitter {
     this.#expire(now);
     const next = Math.min(...Object.values(this.rt.overrides).map((o) => o.until), Infinity);
     if (next - now < 30000) { clearTimeout(this.expiryTimer); this.expiryTimer = setTimeout(() => this.tick(), Math.max(200, next - now + 50)); }
-    if (this.ha.connected) this.#presence(now);
+    if (this.ha.connected) { this.#presence(now); this.#awayBack(now); }
     const views = [];
     for (const zone of this.zones) views.push(this.#runZone(zone, now));
     this.#forecast(views, now);
@@ -788,6 +869,7 @@ export class Engine extends EventEmitter {
         this.store.save();
         this.note(want ? `Boiler ON — ${demand.join(', ')} calling for heat` : 'Boiler OFF — all rooms satisfied', 'boiler');
         this.#alert(want ? 'on' : 'off', views.filter((v) => v.enabled && v.calling), ranFor);
+        if (want) this.#askIfEmpty(views.filter((v) => v.enabled && v.calling), now);
       }
     }
     this.#assertBoiler(now);
@@ -906,6 +988,18 @@ export class Engine extends EventEmitter {
   }
 
   sendTestAlert(which) {
+    if (which === 'empty') {
+      const cfg = this.#emptyCfg();
+      if (!cfg.services.length) throw new Error('Pick a phone first');
+      // test buttons: pressing one changes nothing (it isn't the latest question)
+      this.#sendEmpty('Heating on, everyone\'s out (test)', 'This is how the question looks. Pressing a button on this test changes nothing.', [
+        { action: 'HC_HEAT_FOR_test', title: `Off for ${cfg.minutes === 60 ? '1 hour' : `${cfg.minutes / 60} hours`}` },
+        { action: 'HC_HEAT_HOME_test', title: 'Off until we\'re back' },
+        { action: 'HC_HEAT_NEAR_test', title: 'Off until we\'re nearly home' },
+      ]);
+      this.note(`Sent a test "Heating on, everyone's out" alert to ${cfg.services.join(', ')}`);
+      return;
+    }
     if (!['on', 'off', 'window', 'heatloss'].includes(which)) throw new Error('Unknown alert');
     const calling = this.views.filter((v) => v.enabled && v.calling);
     const sample = calling.length ? calling : this.views.filter((v) => v.enabled).slice(0, 1);
@@ -1110,6 +1204,7 @@ export class Engine extends EventEmitter {
     }
     this.rt.mode = mode;
     this.rt.awayUntil = mode === 'away' && until ? Number(until) : null;
+    this.rt.awayBack = null; // "until someone's back" is set after, by the phone alert's button
     // a mode change wipes room-level holds and boosts, but a snoozed room stays snoozed
     const kept = {};
     for (const z of this.zones) { const snz = this.#snoozeUnder(z.id); if (snz) kept[z.id] = snz; }
@@ -1117,7 +1212,7 @@ export class Engine extends EventEmitter {
     this.rt.houseBoost = null;
     this.store.save();
     const label = { auto: 'Schedules', away: 'Away', off: 'Heating off (frost protection)' }[mode];
-    this.note(`Mode: ${label}${this.rt.awayUntil ? ` until ${this.#fmtTime(this.rt.awayUntil)}` : ''}${by === 'presence' ? ` (automatic: ${why})` : ''}`);
+    this.note(`Mode: ${label}${this.rt.awayUntil ? ` until ${this.#fmtTime(this.rt.awayUntil)}` : ''}${by === 'presence' ? ` (automatic: ${why})` : by === 'phone' ? ` (${why})` : ''}`);
     this.requestTick(100);
   }
 
@@ -1192,7 +1287,13 @@ export class Engine extends EventEmitter {
         if (svc && !svc.includes('.')) svc = `notify.${svc}`;
         return { enabled: !!c?.enabled, service: /^notify\.\w+$/.test(svc) ? svc : '' };
       };
-      s.notify = { on: clean(input.notify.on), off: clean(input.notify.off), window: clean(input.notify.window), heatloss: clean(input.notify.heatloss) };
+      const e = input.notify.empty ?? s.notify?.empty ?? {};
+      const empty = {
+        enabled: !!e.enabled,
+        services: [...new Set((Array.isArray(e.services) ? e.services : []).map((x) => String(x).trim()).filter((x) => /^notify\.\w+$/.test(x)))],
+        minutes: Math.round(n(e.minutes, 30, 720, 120) / 30) * 30,
+      };
+      s.notify = { on: clean(input.notify.on), off: clean(input.notify.off), window: clean(input.notify.window), heatloss: clean(input.notify.heatloss), empty };
     }
     if (input.retention) {
       const r = input.retention;

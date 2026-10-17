@@ -408,6 +408,12 @@ a.chip { color: inherit; text-decoration: none; }
 .alert-row + .alert-row { border-top: 1px solid var(--line); padding-top: 12px; }
 .alert-row .toggle { padding-top: 0; }
 .alert-device { display: flex; gap: 8px; flex-wrap: wrap; margin-left: 32px; }
+.alert-device .field { flex: 1 1 220px; }
+.alert-device .field select { width: 100%; }
+.alert-device > .btn { align-self: flex-end; }
+.alert-phones { margin: 0 0 8px 32px; display: grid; }
+.alert-phones .toggle.small { padding: 6px 0; align-items: center; }
+.alert-phones .toggle.small + .toggle.small { border-top: 1px solid var(--line); }
 .alert-device select, .alert-device input { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-ctl); padding: 10px 12px; }
 
 /* ---------- house boost ---------- */
