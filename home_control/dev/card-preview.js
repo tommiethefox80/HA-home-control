@@ -35,7 +35,7 @@ for (const [name, vars] of Object.entries(THEMES)) {
       html{${style}} body{margin:0;padding:16px;background:var(--primary-background-color);font-family:Roboto,'Segoe UI',system-ui,sans-serif;font-size:14px}
       .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start}
       ha-card{display:block;background:var(--card-background-color);border-radius:var(--ha-card-border-radius);box-shadow:var(--ha-card-box-shadow);border:1px solid var(--divider-color)}
-    </style></head><body><div class="grid"><home-control-card id="h"></home-control-card><home-control-card id="l"></home-control-card><home-control-card id="m"></home-control-card><home-control-card id="c"></home-control-card><home-control-card id="w"></home-control-card></div></body></html>`);
+    </style></head><body><div class="grid"><home-control-card id="h"></home-control-card><home-control-card id="l"></home-control-card><home-control-card id="m"></home-control-card><home-control-card id="c"></home-control-card><home-control-card id="w"></home-control-card><home-control-card id="e"></home-control-card></div></body></html>`);
     await p.goto('http://ha.test/lovelace/home', { waitUntil: 'load' });
     // ha-card styles itself in its own shadow DOM in Home Assistant; do the same here
     await p.addScriptTag({ content: `customElements.define('ha-card', class extends HTMLElement { constructor() { super(); this.attachShadow({ mode: 'open' }).innerHTML = '<style>:host{display:block;background:var(--ha-card-background,var(--card-background-color));border-radius:var(--ha-card-border-radius,12px);box-shadow:var(--ha-card-box-shadow,none);border:var(--ha-card-border-width,1px) solid var(--ha-card-border-color,var(--divider-color));color:var(--primary-text-color)}</style><slot></slot>'; } });` });
@@ -59,6 +59,10 @@ for (const [name, vars] of Object.entries(THEMES)) {
       const w = document.getElementById('w');
       w.setConfig({ show: 'wifi' });
       w.hass = { states: { ...states, ...wifi }, callService: async () => {} };
+      const e = document.getElementById('e');
+      e.setConfig({ show: 'energy' });
+      const ev = states['sensor.home_energy']?.attributes?.ev;
+      e.hass = { states: { ...states, ...(ev?.bump_entity ? { [ev.bump_entity]: { state: 'off', attributes: {} } } : {}) }, callService: async () => {} };
     }, published.states, wifiStates);
     await new Promise((r) => setTimeout(r, 400));
     await p.screenshot({ path: `${OUT}card-${name}-${width}.png`, fullPage: true });
@@ -92,6 +96,20 @@ for (const [name, vars] of Object.entries(THEMES)) {
       if (!call) errors.push('no light or socket rows on the lighting card');
       else if (call.calls.length !== 1 || JSON.stringify(call.calls[0][2]) !== JSON.stringify({ entity_id: call.dev })) errors.push(`one light's button sent ${JSON.stringify(call.calls)}`);
     }
+    // energy: the car's bump charge button switches Octopus's bump charge switch
+    const en = published.states['sensor.home_energy']?.attributes;
+    if (en?.ev?.bump_entity) {
+      const call = await p.evaluate(async () => {
+        const el = document.getElementById('e');
+        const calls = [];
+        el.hass = { ...el._hass, callService: async (...a) => { calls.push(a); } };
+        await new Promise((r) => setTimeout(r, 50));
+        el.shadowRoot.querySelector('.wchip[data-ent]')?.click();
+        await new Promise((r) => setTimeout(r, 100));
+        return calls;
+      });
+      if (JSON.stringify(call) !== JSON.stringify([['switch', 'turn_on', { entity_id: en.ev.bump_entity }]])) errors.push(`bump charge sent ${JSON.stringify(call)}`);
+    } else if (en) errors.push('no car on the energy card');
     await p.close();
   }
 }

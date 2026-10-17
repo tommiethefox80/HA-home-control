@@ -38,7 +38,10 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
     const cv = c ? parseFloat(c.state) : NaN;
     return {
       outside: outsideId ? { entity: outsideId, auto: !s.outsideEntity, now: readOutside(ha, outsideId) } : null,
-      cost: costId ? { entity: costId, auto: !s.costEntity, today: Number.isFinite(cv) ? cv : null, unit: c?.attributes?.unit_of_measurement || 'GBP' } : null,
+      // Octopus's "previous" cost sensor (no Home Mini) is the last full day's, not today's
+      cost: costId ? (/previous_accumulative/.test(costId)
+        ? { entity: costId, auto: !s.costEntity, today: null, lastDay: Number.isFinite(cv) ? cv : null, unit: c?.attributes?.unit_of_measurement || 'GBP' }
+        : { entity: costId, auto: !s.costEntity, today: Number.isFinite(cv) ? cv : null, unit: c?.attributes?.unit_of_measurement || 'GBP' }) : null,
     };
   }
 

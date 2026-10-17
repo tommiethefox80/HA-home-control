@@ -4,6 +4,7 @@ import './heating/styles.css';
 import './lighting/styles.css';
 import './cameras/styles.css';
 import './wifi/styles.css';
+import './energy/styles.css';
 import './shell.css';
 import { Shell, startSection } from './Shell.jsx';
 
@@ -11,7 +12,7 @@ import { Shell, startSection } from './Shell.jsx';
 // (cameras and Wi-Fi are built on the lighting look, so those sections have both)
 const first = startSection();
 document.body.classList.add(`sec-${first}`);
-if (first === 'cameras' || first === 'wifi') document.body.classList.add('sec-lighting');
-if (first === 'wifi') document.body.classList.add('sec-cameras');
+if (['cameras', 'wifi', 'energy'].includes(first)) document.body.classList.add('sec-lighting');
+if (first === 'wifi' || first === 'energy') document.body.classList.add('sec-cameras');
 
 createRoot(document.getElementById('root')).render(<StrictMode><Shell /></StrictMode>);

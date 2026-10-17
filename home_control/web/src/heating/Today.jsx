@@ -79,7 +79,12 @@ export function SideCards({ state, today }) {
     <div className="side-cards">
       <section className="stat" aria-label="Gas cost">
         <h2>Gas today</h2>
-        {ex.cost ? (
+        {ex.cost && ex.cost.today == null && ex.cost.lastDay != null ? (
+          <>
+            <p className="stat-num num">{money(ex.cost.lastDay, ex.cost.unit)}</p>
+            <p className="stat-sub">The last full day from your smart meter (today's comes in tomorrow)</p>
+          </>
+        ) : ex.cost ? (
           <>
             <p className="stat-num num">{money(ex.cost.today, ex.cost.unit)}</p>
             <p className="stat-sub">{today?.cost?.yesterday != null ? `${money(today.cost.yesterday, ex.cost.unit)} yesterday` : 'So far today'}</p>

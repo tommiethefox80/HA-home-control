@@ -15,16 +15,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 
-export const MODULES = ['heating', 'lighting', 'cameras', 'wifi'];
+export const MODULES = ['heating', 'lighting', 'cameras', 'wifi', 'energy'];
 // new parts start off, so an update never starts doing something new by itself
-const DEFAULT_ON = { heating: true, lighting: true, cameras: false, wifi: false };
+const DEFAULT_ON = { heating: true, lighting: true, cameras: false, wifi: false, energy: false };
 
 class HouseError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
 
 export function createHouse({ log, dataDir = null }) {
-  let heating = null; let lighting = null; let cameras = null; let wifi = null;
+  let heating = null; let lighting = null; let cameras = null; let wifi = null; let energy = null;
   let lastHeatMode = null;
   const st = { emptySince: null, suppress: false, lightAway: false };
   const events = new EventEmitter();
@@ -177,6 +177,13 @@ export function createHouse({ log, dataDir = null }) {
       if (!quiet) e.addEvent(value ? 'Wi-Fi turned on in Home Control\'s settings.' : 'Wi-Fi turned off in Home Control\'s settings. No more scheduled changes; the network carries on as it is.');
       if (value) e.tick();
       e.changed();
+    } else if (m === 'energy' && energy) {
+      const e = energy.engine;
+      if (e.disabled === !value) return;
+      e.disabled = !value;
+      if (!quiet) e.addEvent(value ? 'Energy turned on in Home Control\'s settings.' : 'Energy turned off in Home Control\'s settings. Plans stop switching things; the car charges as Octopus plans.');
+      if (value) { e.loadPrefs().then(() => e.refreshUsage()).then(() => e.changed()).catch(() => {}); e.tick(); }
+      e.changed();
     }
   }
 
@@ -251,8 +258,8 @@ export function createHouse({ log, dataDir = null }) {
     };
   }
 
-  function attach(h, l, c = null, w = null) {
-    heating = h; lighting = l; cameras = c; wifi = w;
+  function attach(h, l, c = null, w = null, en = null) {
+    heating = h; lighting = l; cameras = c; wifi = w; energy = en;
     l.engine.modeRequest = (mode, reason) => setFromLighting(mode, reason); // lighting_control_mode events from Home Assistant
     lastHeatMode = hrt().mode;
     heating.engine.on('change', () => { onHeatingChange(); lighting.engine.changed(); });

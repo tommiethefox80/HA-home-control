@@ -23,7 +23,7 @@ async function step(name, fn) { process.stdout.write(`- ${name} ... `); await fn
 
 await step('heating and lighting are on to start with, cameras and Wi-Fi off', async () => {
   const h = await house('GET');
-  assert.deepEqual(h.modules, { heating: true, lighting: true, cameras: false, wifi: false });
+  assert.deepEqual(h.modules, { heating: true, lighting: true, cameras: false, wifi: false, energy: false });
   assert.equal(typeof h.dashboardPath, 'string');
   assert.ok(Array.isArray(h.people));
 });
@@ -53,7 +53,7 @@ await step('heating off: radiators handed back, sensors removed, nothing more se
 
 await step('both off is refused', async () => {
   await assert.rejects(house('PUT', { modules: { lighting: false } }), (e) => e.status === 400 && /at least one/.test(e.message));
-  assert.deepEqual((await house('GET')).modules, { heating: false, lighting: true, cameras: false, wifi: false });
+  assert.deepEqual((await house('GET')).modules, { heating: false, lighting: true, cameras: false, wifi: false, energy: false });
 });
 
 await step('with heating off, Away on the Lighting page leaves the heating alone', async () => {

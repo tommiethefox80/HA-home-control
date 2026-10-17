@@ -6,14 +6,15 @@
 // tap a group's name or the title to open the app.
 //
 //   type: custom:home-control-card
-//   show: heating            # or: lighting, cameras or wifi
+//   show: heating            # or: lighting, cameras, wifi or energy
 //   panel: /local_heating_control   # optional: where the Home app is (the app says, from 1.3)
 //   next: false              # heating: leave out each room's "Next heat about 22:05" line
 //   devices: true            # lighting: each light and socket under its group (or false; the app's setting otherwise)
+//   chart: false             # energy: leave out the prices chart (also ev: false, plans: false; the app's settings otherwise)
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.11.2';
+const VERSION = '1.12.0';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 
@@ -72,6 +73,9 @@ const ICON = {
   wifi: `<svg viewBox="0 0 24 24" ${P}><path d="M2 8.8a15 15 0 0 1 20 0M5.5 12.4a10 10 0 0 1 13 0M9 15.9a5 5 0 0 1 6 0M12 19.5h.01"/></svg>`,
   ap: `<svg viewBox="0 0 24 24" ${P}><path d="M4 9.5c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 9.5v2c0 1.7 3.6 3 8 3s8-1.3 8-3v-2M12 9.5h.01"/></svg>`,
   led: `<svg viewBox="0 0 24 24" ${P}><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 3v2M12 19v2M5.6 5.6 7 7M17 17l1.4 1.4M3 12h2M19 12h2M5.6 18.4 7 17M17 7l1.4-1.4"/></svg>`,
+  bolt: `<svg viewBox="0 0 24 24" ${P}><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z"/></svg>`,
+  car: `<svg viewBox="0 0 24 24" ${P}><path d="M5 16h14M5 16v2.5M19 16v2.5M3.5 12.5 5.6 7.4A2 2 0 0 1 7.4 6h9.2a2 2 0 0 1 1.8 1.4l2.1 5.1M3.5 12.5h17v3.5h-17zM7 14.2h.01M17 14.2h.01"/></svg>`,
+  plug: `<svg viewBox="0 0 24 24" ${P}><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5"/></svg>`,
   offline: `<svg viewBox="0 0 24 24" ${P}><path d="M3 3l18 18M8.5 8.6A6 6 0 0 0 6 13M2 9a15 15 0 0 1 4-2.7M12 18h.01M9.5 15a3.5 3.5 0 0 1 5 0M17.7 11.8a6 6 0 0 0-3-2.5M22 9a15 15 0 0 0-9.5-3.9"/></svg>`,
 };
 
@@ -185,6 +189,29 @@ const STYLE = `
   .csel { font: inherit; font-size: .78rem; font-weight: 600; padding: 5px 8px; border-radius: 999px; min-height: 30px;
     border: 0; color: var(--primary-text-color); background: var(--hc-tile-bg, rgb(127 127 127 / .1)); max-width: 100%; }
 
+  /* energy */
+  .energy { cursor: default; }
+  .eprice { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .eprice strong { font-size: 2.2rem; line-height: 1; font-weight: 700; letter-spacing: -0.03em; color: var(--primary-text-color); }
+  .eprice .per { color: var(--secondary-text-color); font-size: .85rem; }
+  .eband { align-self: center; display: inline-flex; align-items: center; gap: 5px; font-size: .75rem; font-weight: 650; padding: 3px 9px; border-radius: 999px;
+    background: var(--hc-tile-bg, rgb(127 127 127 / .1)); color: var(--primary-text-color); }
+  .eband i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .enext { font-size: .85rem; color: var(--secondary-text-color); margin-top: -6px; }
+  .enext b { color: var(--primary-text-color); }
+  .ecost { display: flex; gap: 16px; flex-wrap: wrap; font-size: .85rem; color: var(--secondary-text-color); }
+  .ecost b { color: var(--primary-text-color); font-size: 1rem; }
+  .echart { display: block; width: 100%; height: 56px; }
+  .echart .p { opacity: .4; }
+  .echart .now { stroke: var(--primary-text-color); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .eaxis { position: relative; height: 14px; font-size: .7rem; color: var(--secondary-text-color); margin-top: -8px; }
+  .eaxis span { position: absolute; top: 0; padding-left: 3px; white-space: nowrap; }
+  .erow.car .wname, .erow.car .wsub { white-space: normal; }
+  .erow { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+    padding: 6px 6px 6px 10px; border-radius: 14px; background: var(--hc-tile-bg, rgb(127 127 127 / .08)); }
+  .erow > svg { width: 20px; height: 20px; color: var(--secondary-text-color); }
+  .erow.on > svg { color: rgb(67 165 101); }
+
   /* wifi */
   .wifi { cursor: default; }
   .wlist { display: flex; flex-direction: column; gap: 6px; }
@@ -215,9 +242,9 @@ class HomeControlCard extends HTMLElement {
     this._pending ??= new Map();
     this._timers ??= {};
     const show = config?.show || 'heating';
-    if (!['heating', 'lighting', 'cameras', 'wifi'].includes(show)) throw new Error('show must be heating, lighting, cameras or wifi');
+    if (!['heating', 'lighting', 'cameras', 'wifi', 'energy'].includes(show)) throw new Error('show must be heating, lighting, cameras, wifi or energy');
     this._config = { ...config, show };
-    this._entity = config.entity || { heating: 'sensor.home_heating', lighting: 'sensor.home_lighting', cameras: 'sensor.home_cameras', wifi: 'sensor.home_wifi' }[show];
+    this._entity = config.entity || { heating: 'sensor.home_heating', lighting: 'sensor.home_lighting', cameras: 'sensor.home_cameras', wifi: 'sensor.home_wifi', energy: 'sensor.home_energy' }[show];
     this._last = undefined;
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     if (this._hass) this._render();
@@ -233,7 +260,9 @@ class HomeControlCard extends HTMLElement {
     }).join(';')
       // Wi-Fi: the lights and networks themselves, so a switch shows straight away
       : this._config?.show === 'wifi' && st ? [...(st.attributes.access_points || []).map((x) => x.led?.entity), ...(st.attributes.networks || []).map((n) => n.entity)]
-        .map((id) => (id ? hass.states[id]?.state : '')).join(',') : '';
+        .map((id) => (id ? hass.states[id]?.state : '')).join(',')
+        // Energy: the car's bump charge switch, so it shows straight away
+        : this._config?.show === 'energy' && st?.attributes?.ev?.bump_entity ? String(hass.states[st.attributes.ev.bump_entity]?.state) : '';
     if (st === this._last && key === this._key && this.shadowRoot?.childElementCount) return;
     this._last = st;
     this._key = key;
@@ -253,6 +282,7 @@ class HomeControlCard extends HTMLElement {
     if (!a) return 2;
     if (this._config.show === 'cameras') return 2 + Math.ceil((a.cameras?.length || 0) / 2) * 3;
     if (this._config.show === 'wifi') return 2 + Math.ceil(((a.access_points?.length || 0) + (a.networks?.length || 0)) * 0.8);
+    if (this._config.show === 'energy') return 4 + (a.ev ? 1 : 0) + Math.ceil((a.plans?.length || 0) * 0.7);
     return this._config.show === 'heating' ? 2 + Math.ceil((a.rooms?.length || 0) * 0.8) : 2 + Math.ceil(shownGroups(a).length / 3);
   }
 
@@ -272,12 +302,12 @@ class HomeControlCard extends HTMLElement {
     if (!this.shadowRoot || !this._config) return;
     if (this._pressing) { this._dirty = true; return; } // don't swap the tile out from under a finger
     const st = this._last;
-    const part = { heating: 'Heating', lighting: 'Lighting', cameras: 'Cameras', wifi: 'Wi-Fi' }[this._config.show];
+    const part = { heating: 'Heating', lighting: 'Lighting', cameras: 'Cameras', wifi: 'Wi-Fi', energy: 'Energy' }[this._config.show];
     const body = !st
       ? `<div class="card"><div class="head">${this._badge('quiet')}<div class="titles"><div class="title">${part}</div>
            <div class="sub">Nothing from Home Control yet (${esc(this._entity)} not found). Check it's running. If ${part} is turned off in its settings, remove this card.</div></div></div></div>`
       : this._config.show === 'heating' ? this._heating(st) : this._config.show === 'cameras' ? this._cameras(st)
-        : this._config.show === 'wifi' ? this._wifi(st) : this._lighting(st);
+        : this._config.show === 'wifi' ? this._wifi(st) : this._config.show === 'energy' ? this._energy(st) : this._lighting(st);
     this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card>${body}</ha-card>`;
     const root = this.shadowRoot;
     // the heating card opens the app; on the lighting card only the title does, and the groups switch
@@ -551,8 +581,10 @@ class HomeControlCard extends HTMLElement {
     }
   }
 
-  _badge(kind, icon = { heating: ICON.flame, cameras: ICON.cam, wifi: ICON.wifi }[this._config.show] || ICON.bulb) {
+  _badge(kind, icon = { heating: ICON.flame, cameras: ICON.cam, wifi: ICON.wifi, energy: ICON.bolt }[this._config.show] || ICON.bulb) {
     const styles = {
+      cheap: '--hc-badge-bg: rgb(67 165 101 / .16); --hc-badge-ink: rgb(48 140 82);',
+      peak: '--hc-badge-bg: rgb(221 127 42 / .16); --hc-badge-ink: rgb(205 112 30);',
       fire: '--hc-badge-bg: rgb(238 132 52 / .16); --hc-badge-ink: rgb(238 132 52);',
       lit: '--hc-badge-bg: rgb(255 182 98 / .22); --hc-badge-ink: rgb(214 128 38);',
       quiet: '',
@@ -695,6 +727,70 @@ class HomeControlCard extends HTMLElement {
     </div>`;
   }
 
+  _energy(st) {
+    const a = st.attributes || {};
+    const title = this._config.title || 'Energy';
+    const show = { chart: true, ev: true, plans: true, ...(a.show || {}) };
+    for (const k of ['chart', 'ev', 'plans']) if (typeof this._config[k] === 'boolean') show[k] = this._config[k];
+    const p = Number(st.state);
+    const has = st.state !== 'unknown' && Number.isFinite(p);
+    const BAND = { f: ['Paid to use', 'rgb(31 138 110)'], c: ['Cheap', 'rgb(67 165 101)'], s: ['Standard', 'rgb(127 127 127 / .5)'], p: ['Peak', 'rgb(221 127 42)'] };
+    const bandKey = { free: 'f', cheap: 'c', standard: 's', peak: 'p' }[a.band];
+    const pill = bandKey && bandKey !== 's' ? `<span class="eband"><i style="background:${BAND[bandKey][1]}"></i>${BAND[bandKey][0]}</span>` : '';
+    const money = (v) => (v == null ? null : Math.abs(v) < 1 ? `${Math.round(v * 100)}p` : `£${v.toFixed(2)}`);
+    // today's and tomorrow's prices: a bar for each half hour, coloured by band, with now marked
+    let chart = '';
+    const rates = Array.isArray(a.rates) ? a.rates : [];
+    if (show.chart && rates.length > 4) {
+      const W = 480; const H = 56;
+      const from = rates[0][0]; const to = rates[rates.length - 1][0] + 1800000;
+      const max = Math.max(5, ...rates.map((r) => r[1])); const min = Math.min(0, ...rates.map((r) => r[1]));
+      const x = (t) => ((t - from) / (to - from)) * W;
+      const y = (v) => 2 + (1 - (v - min) / (max - min)) * (H - 4);
+      const now = Date.now();
+      const bars = rates.map(([s0, v, b]) => {
+        const top = Math.min(y(v), y(0)); const h = Math.max(1.5, Math.abs(y(0) - y(v)));
+        return `<rect x="${(x(s0) + 0.4).toFixed(1)}" y="${top.toFixed(1)}" width="${Math.max(0.6, x(s0 + 1800000) - x(s0) - 0.8).toFixed(1)}" height="${h.toFixed(1)}" fill="${(BAND[b] || BAND.s)[1]}"${s0 + 1800000 <= now ? ' class="p"' : ''}/>`;
+      }).join('');
+      const nx = x(now);
+      // where tomorrow starts (a gap of a day from the first price, which is today's midnight)
+      const tmw = rates.find((r) => r[0] >= from + 23 * 3600000 && new Date(r[0]).getHours() === 0)?.[0];
+      const pc = (t) => `${((x(t) / W) * 100).toFixed(1)}%`;
+      chart = `<svg class="echart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Electricity prices for today${tmw ? ' and tomorrow' : ''}, up to ${max}p">${bars}${tmw ? `<line x1="${x(tmw)}" x2="${x(tmw)}" y1="0" y2="${H}" stroke="var(--divider-color)" vector-effect="non-scaling-stroke"/>` : ''}${nx > 0 && nx < W ? `<line class="now" x1="${nx}" x2="${nx}" y1="0" y2="${H}"/>` : ''}</svg>
+        <div class="eaxis" aria-hidden="true"><span style="left:0">Today</span>${tmw ? `<span style="left:${pc(tmw)}">Tomorrow</span>` : ''}</div>`;
+    }
+    const ev = a.ev;
+    let car = '';
+    if (show.ev && ev) {
+      const bs = ev.bump_entity ? this._hass?.states?.[ev.bump_entity] : null;
+      const bump = bs ? bs.state === 'on' : !!ev.bump;
+      const clockOf = (iso) => new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+      const what = bump ? 'Bump charging' : ev.dispatching ? `Smart charging${ev.until ? ` until ${clockOf(ev.until)}` : ''}` : ev.state || 'Car';
+      const sub = [ev.soc != null ? `Battery ${Math.round(ev.soc)}%` : null, ev.planned?.length ? `Planned ${ev.planned.slice(0, 3).join(', ')}` : null].filter(Boolean).join(' · ');
+      car = `<div class="erow car${ev.dispatching || bump ? ' on' : ''}">${ICON.car}<div style="min-width:0"><div class="wname">${esc(what)}</div>${sub ? `<div class="wsub">${esc(sub)}</div>` : ''}</div>
+        ${ev.bump_entity ? `<button type="button" class="wchip${bump ? ' on' : ''}" data-ent="${esc(ev.bump_entity)}" aria-pressed="${bump}" ${!bs || bs.state === 'unavailable' ? 'disabled' : ''}>${ICON.bolt}${bump ? 'Stop bump' : 'Bump charge'}</button>` : '<span></span>'}</div>`;
+    }
+    const plans = show.plans ? (a.plans || []).map((pl) => `<div class="erow${pl.running ? ' on' : ''}">${ICON.plug}<div style="min-width:0"><div class="wname">${esc(pl.name)}</div>
+        <div class="wsub">${esc(pl.running ? `Running now${pl.next ? `, ${pl.next}` : ''}` : pl.next || 'Waiting for the prices')}</div></div><span></span></div>`).join('') : '';
+    const cheapest = (a.cheapest || [])[0];
+    const err = this._error ? `<div class="note">${ICON.alert}<span>${esc(this._error)}</span></div>` : '';
+    const cost = [a.today_cost != null ? `<span><b>${esc(money(a.today_cost))}</b> electricity today${a.today_estimated ? ' (estimated)' : ''}</span>` : null,
+      a.gas_today_cost != null ? `<span><b>${esc(money(a.gas_today_cost))}</b> gas</span>` : null,
+      a.demand_w != null ? `<span><b>${a.demand_w >= 1000 ? `${(a.demand_w / 1000).toFixed(1)} kW` : `${a.demand_w} W`}</b> now</span>` : null].filter(Boolean).join('');
+    return `<div class="card energy">
+      <div class="head open" role="button" tabindex="0" aria-label="${esc(title)}: ${esc(a.summary)}. Open Energy in Home.">${this._badge(bandKey === 'c' || bandKey === 'f' ? 'cheap' : bandKey === 'p' ? 'peak' : 'quiet')}
+        <div class="titles"><div class="title">${esc(title)}</div><div class="sub">${esc(a.tariff || 'Electricity')}</div></div>${ICON.chev.replace('<svg', '<svg class="chev"')}
+      </div>
+      ${err}
+      ${has ? `<div class="eprice"><strong>${esc(String(Math.round(p * 10) / 10))}p</strong><span class="per">per kWh</span>${pill}</div>
+        ${a.next_text ? `<div class="enext">Then <b>${esc(a.next_text)}</b></div>` : ''}` : `<div class="empty">${esc(a.summary || 'No prices yet')}</div>`}
+      ${cost ? `<div class="ecost">${cost}</div>` : ''}
+      ${chart}
+      ${cheapest && a.limits?.peak != null ? `<div class="enext">Cheapest hour <b>${esc(cheapest.text)}</b></div>` : ''}
+      ${car || plans ? `<div class="wlist">${car}${plans}</div>` : ''}
+    </div>`;
+  }
+
   _lighting(st) {
     const a = st.attributes || {};
     const all = a.groups || [];
@@ -750,6 +846,6 @@ function shownGroups(a) { return (a.groups || []).filter((g) => g.shown !== fals
 if (!customElements.get('home-control-card')) {
   customElements.define('home-control-card', HomeControlCard);
   window.customCards = window.customCards || [];
-  window.customCards.push({ type: 'home-control-card', name: 'Home Control', description: 'Heating or lighting at a glance, from the Home Control app', preview: false });
+  window.customCards.push({ type: 'home-control-card', name: 'Home Control', description: 'Heating, lighting, cameras, Wi-Fi or energy at a glance, from the Home Control app', preview: false });
   console.info(`%c HOME-CONTROL-CARD %c ${VERSION} `, 'background:#ee8434;color:#fff;border-radius:3px 0 0 3px;padding:1px 4px', 'background:#1c252c;color:#fff;border-radius:0 3px 3px 0;padding:1px 4px');
 }

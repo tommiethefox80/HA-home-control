@@ -222,7 +222,7 @@ export function lightingState(snap, panel = null) {
   };
 }
 
-const ENTITIES = { heating: ['sensor.home_heating', 'binary_sensor.home_boiler', 'sensor.home_boiler_today', 'sensor.home_boiler_next'], lighting: ['sensor.home_lighting'], cameras: ['sensor.home_cameras'], wifi: ['sensor.home_wifi'] };
+const ENTITIES = { heating: ['sensor.home_heating', 'binary_sensor.home_boiler', 'sensor.home_boiler_today', 'sensor.home_boiler_next'], lighting: ['sensor.home_lighting'], cameras: ['sensor.home_cameras'], wifi: ['sensor.home_wifi'], energy: ['sensor.home_energy'] };
 
 /** sensor.home_cameras: how many cameras are online; every camera's state, for dashboards. */
 export function camerasState(snap, panel = null) {
@@ -293,13 +293,70 @@ export function wifiState(snap, panel = null) {
   };
 }
 
-export function createPublisher({ restBase, token, log, heating, lighting, cameras = null, wifi = null, client, panel = () => null, isEmpty = () => false, house = null }) {
+// just the time of day (the end of a span that started on the day already named)
+const timeOnly = (ms, tz) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
+const BAND_WORDS = { free: 'paid to use', cheap: 'cheap', standard: 'standard', peak: 'peak' };
+const money = (v) => (v == null ? null : v < 1 && v > -1 ? `${Math.round(v * 100)}p` : `£${v.toFixed(2)}`);
+
+/** sensor.home_energy: the electricity price now (pence per kWh); today's cost, the prices ahead,
+ *  the cheapest times, the car and the plans, for dashboards. */
+export function energyState(snap, panel = null) {
+  const tz = snap.timeZone;
+  const pr = snap.price;
+  const t = snap.elec?.today;
+  const next = pr?.next?.p != null ? `${pr.next.p}p from ${clock(pr.next.at, tz)}` : null;
+  const ahead = (snap.cheapest || []).map((c) => ({ hours: c.minutes / 60, start: new Date(c.start).toISOString(), end: new Date(c.end).toISOString(), avg: c.avg, text: `${clock(c.start, tz)}–${timeOnly(c.end, tz)} at ${c.avg}p` }));
+  const ev = snap.ev;
+  const summary = !pr ? (snap.found?.octopus ? 'Waiting for prices from Octopus' : 'No electricity prices found')
+    : [`${pr.p}p now${pr.band && pr.band !== 'standard' ? ` (${BAND_WORDS[pr.band]})` : ''}`, next, t?.cost != null ? `${money(t.cost)} today` : null].filter(Boolean).join(' · ');
+  return {
+    state: pr ? pr.p : 'unknown',
+    attributes: {
+      friendly_name: 'Electricity price',
+      icon: 'mdi:lightning-bolt',
+      unit_of_measurement: 'p/kWh',
+      summary,
+      band: pr?.band || null,
+      tariff: snap.tariff?.name || snap.tariff?.code || null,
+      next_price: pr?.next?.p ?? null,
+      next_at: pr?.next?.at ? new Date(pr.next.at).toISOString() : null,
+      next_text: next,
+      today_cost: t?.cost ?? null,
+      today_kwh: t?.kwh ?? null,
+      today_estimated: !!t?.est,
+      gas_today_cost: snap.gas?.today?.cost ?? null,
+      gas_price: snap.gas?.p ?? null,
+      last_day_cost: snap.elec?.last?.cost ?? null,
+      last_day: snap.elec?.last?.day ?? null,
+      demand_w: snap.elec?.demand?.w ?? null,
+      export_price: snap.exportP ?? null,
+      cheapest: ahead,
+      limits: snap.limits ? { cheap: snap.limits.cheap, peak: snap.limits.peak } : null,
+      // today's and tomorrow's prices for the card's chart: [start (ms), pence, band]
+      rates: (snap.rates || []).map((r) => [r.s, r.p, r.b ? r.b[0] : 's']),
+      ev: ev ? {
+        dispatching: ev.dispatching, until: ev.until ? new Date(ev.until).toISOString() : null, state: ev.stateText, soc: ev.soc,
+        bump: ev.bump, bump_entity: ev.bumpEntity || null, target: ev.target?.value ?? null, ready_by: ev.ready?.value ?? null,
+        planned: ev.planned.map((p) => `${clock(p.start, tz)}–${timeOnly(p.end, tz)}`),
+      } : null,
+      plans: (snap.plans || []).filter((p) => p.enabled || p.next?.running).map((p) => ({
+        name: p.name, entity: p.entity, on: p.on, running: !!p.next?.running,
+        next: p.next ? `${clock(p.next.start, tz)}–${timeOnly(p.next.end, tz)}${p.next.avg != null ? ` at ${p.next.avg}p` : ''}` : null,
+      })),
+      show: snap.settings?.card || null,
+      connected: !!snap.connected,
+      panel,
+    },
+  };
+}
+
+export function createPublisher({ restBase, token, log, heating, lighting, cameras = null, wifi = null, energy = null, client, panel = () => null, isEmpty = () => false, house = null }) {
   const last = new Map();      // entity -> JSON last written
   const lastAt = new Map();    // kind -> time of last write
   const timers = new Map();
   let failing = false;
   // heating changes (temperatures) are frequent and slow-moving; lights should show promptly
-  const GAP = { heating: 20000, lighting: 3000, cameras: 2000, wifi: 5000 };
+  const GAP = { heating: 20000, lighting: 3000, cameras: 2000, wifi: 5000, energy: 15000 };
 
   async function write(entity, { state, attributes }) {
     const body = JSON.stringify({ state, attributes });
@@ -351,6 +408,8 @@ export function createPublisher({ restBase, token, log, heating, lighting, camer
         if (cameras) await write('sensor.home_cameras', camerasState(cameras.snapshot(), panel()));
       } else if (kind === 'wifi') {
         if (wifi) await write('sensor.home_wifi', wifiState(wifi.snapshot(), panel()));
+      } else if (kind === 'energy') {
+        if (energy) await write('sensor.home_energy', energyState(energy.snapshot(), panel()));
       } else {
         await write('sensor.home_lighting', lightingState(lighting.snapshot(), panel()));
       }
@@ -378,11 +437,12 @@ export function createPublisher({ restBase, token, log, heating, lighting, camer
   lighting.engine.on('change', () => schedule('lighting'));
   cameras?.engine.on('change', () => schedule('cameras'));
   wifi?.engine.on('change', () => schedule('wifi'));
+  energy?.engine.on('change', () => schedule('energy'));
   // Home Assistant forgets these when it restarts: write them all again on every (re)connect
-  client.on('ready', () => { last.clear(); removed.clear(); setTimeout(() => { schedule('heating', true); schedule('lighting', true); if (cameras) schedule('cameras', true); if (wifi) schedule('wifi', true); }, 3000); });
+  client.on('ready', () => { last.clear(); removed.clear(); setTimeout(() => { schedule('heating', true); schedule('lighting', true); if (cameras) schedule('cameras', true); if (wifi) schedule('wifi', true); if (energy) schedule('energy', true); }, 3000); });
   house?.events.on('modules', (changed) => { for (const m of changed) schedule(m, true); });
   // a slow refresh, so "minutes left" and clock times stay right on a quiet day
-  setInterval(() => { schedule('heating'); schedule('lighting'); if (cameras) schedule('cameras'); if (wifi) schedule('wifi'); }, 5 * 60000);
+  setInterval(() => { schedule('heating'); schedule('lighting'); if (cameras) schedule('cameras'); if (wifi) schedule('wifi'); if (energy) schedule('energy'); }, 5 * 60000);
 
-  return { flushNow: async () => { await flush('heating'); await flush('lighting'); if (cameras) await flush('cameras'); if (wifi) await flush('wifi'); }, last };
+  return { flushNow: async () => { await flush('heating'); await flush('lighting'); if (cameras) await flush('cameras'); if (wifi) await flush('wifi'); if (energy) await flush('energy'); }, last };
 }

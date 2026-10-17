@@ -29,12 +29,14 @@ export const MODULES = [
   { id: 'lighting', name: 'Lighting', what: 'Lights and sockets' },
   { id: 'cameras', name: 'Cameras', what: 'Movement alerts, recording and camera settings', offWhat: 'Turn on to add your cameras: any make Home Assistant knows about' },
   { id: 'wifi', name: 'Wi-Fi', what: 'Access points, networks and who\'s connected', offWhat: 'Turn on to see and switch your UniFi access points and networks' },
+  { id: 'energy', name: 'Energy', what: 'Prices, today\'s cost, the car, and running things at the cheapest time', offWhat: 'Turn on to see your electricity prices and costs (Octopus, or Home Assistant\'s Energy dashboard)' },
 ];
 const OFF = {
   heating: 'Radiators and the boiler go back to their own schedules, and Home Control stops changing them. The Heating pages and settings are hidden, and its dashboard sensors are removed.',
   lighting: 'Lights and sockets stay as they are, and Home Control stops switching them. The Lighting pages and settings are hidden, and its dashboard sensor is removed.',
   cameras: 'No more movement alerts or recordings from Home Control. The cameras keep working as they do in their own apps. The Cameras pages and settings are hidden, and its dashboard sensor is removed.',
   wifi: 'No more scheduled changes to the access points, their lights or the networks: everything stays as it is now. The Wi-Fi pages and settings are hidden, and its dashboard sensor is removed.',
+  energy: 'Plans stop switching things on at the cheapest time, and the phones aren\'t told about prices. The car charges as Octopus plans. The Energy pages and settings are hidden, and its dashboard sensor is removed.',
 };
 
 const P = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -43,6 +45,7 @@ export const ICON = {
   cameras: <svg viewBox="0 0 24 24" {...P}><path d="M3 7h12a2 2 0 0 1 2 2v1.5L21 8v8l-4-2.5V15a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" /></svg>,
   lighting: <svg viewBox="0 0 24 24" {...P}><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3Z" /></svg>,
   wifi: <svg viewBox="0 0 24 24" {...P}><path d="M2 8.8a15 15 0 0 1 20 0M5.5 12.4a10 10 0 0 1 13 0M9 15.9a5 5 0 0 1 6 0M12 19.5h.01" /></svg>,
+  energy: <svg viewBox="0 0 24 24" {...P}><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z" /></svg>,
 };
 
 const num = (v) => (v === '' || v == null ? null : Number(v));

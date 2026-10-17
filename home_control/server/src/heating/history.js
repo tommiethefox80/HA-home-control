@@ -109,7 +109,8 @@ export function detectCostEntity(ha) {
     const a = s.attributes || {};
     const money = a.device_class === 'monetary' || /^(GBP|£)$/.test(a.unit_of_measurement || '');
     if (!money || !/gas/i.test(id + (a.friendly_name || ''))) continue;
-    const score = (/accumulative_cost|cost_today|daily_cost/i.test(id) ? 2 : 0) + (/current/i.test(id) ? 1 : 0);
+    // (Octopus's "previous" cost is the last full day's, not today's: only if there's nothing else)
+    const score = (/accumulative_cost|cost_today|daily_cost/i.test(id) ? 2 : 0) + (/current/i.test(id) ? 1 : 0) - (/previous/i.test(id) ? 5 : 0);
     if (!best || score > best.score) best = { id, score };
   }
   return best?.id || null;

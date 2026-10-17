@@ -1,11 +1,12 @@
 # Home Control
 
-Heating, lighting, cameras and Wi-Fi for the whole house in one panel. **Home** in the sidebar opens on Heating; the switch at the top (**Heating / Lighting**, and **Cameras** and **Wi-Fi** once they're turned on) flips between them. A small dot on another part of the switch means something's on over there (the boiler firing, or lights on).
+Heating, lighting, cameras, Wi-Fi and energy for the whole house in one panel. **Home** in the sidebar opens on Heating; the switch at the top (**Heating / Lighting**, and **Cameras**, **Wi-Fi** and **Energy** once they're turned on) flips between them. A small dot on another part of the switch means something's on over there (the boiler firing, or lights on).
 
 - **Heating**: room-by-room schedules for Hive and Zigbee TRVs, with the boiler fired whenever a room needs heat. Works with Hive TRVs (through the Hive integration) and Zigbee TRVs (ZHA or Zigbee2MQTT), side by side. The boiler can be a Hive thermostat (`climate.*`) or a relay (`switch.*` / `input_boolean.*`).
 - **Lighting**: lights and smart sockets in groups, with on/off, dimming and warmth schedules, scenes, and a lived-in Away pattern.
 - **Cameras**: any camera Home Assistant knows about, with movement alerts and recording on schedules (off to start with; see Cameras below).
 - **Wi-Fi**: UniFi access points, networks and who's connected, with the access points' lights off at night and networks on schedules (off to start with; see Wi-Fi below).
+- **Energy**: electricity prices, today's cost, the car's charging and plans that run things at the cheapest time, from the Octopus Energy integration or Home Assistant's Energy dashboard (off to start with; see Energy below).
 - **One Away** for everything, switched by hand or by people's phones.
 
 The parts share one connection to Home Assistant and run independently, so a problem in one can't stop the others.
@@ -334,6 +335,7 @@ Two places (for heating; lighting keeps everything in `lighting.json`):
 | `targets.json` | What each room was aiming for, for the 24-hour chart | Room detail: 7 days (1–90) |
 | `calls.json` | When each room called for heat, for the room cards | Room detail, as above |
 | `lighting.json` | Lighting: groups, schedules, scenes, settings and the lighting Activity log (last 300 entries) | Always |
+| `energy.json` | Energy: plans, settings and the energy Activity log (last 400 entries) | Always |
 | `entity-ids.json` | For each device the app uses, its permanent Home Assistant ID and last name, so a renamed one can be followed | While it's in use |
 
 **Settings → Heating → History** shows how much each uses. Lowering a number deletes the older records when you save. The Activity tab shows the latest 60 entries; **Show older** pages back through the rest. Home Assistant's own history isn't changed by these settings: set `purge_keep_days` under `recorder:` in Home Assistant's configuration for that.
@@ -520,3 +522,57 @@ show: wifi
 Each access point with how many devices are on it and a button for its status light, and each network with a button to turn it off and on (turning one off takes a second tap, so it can't happen by accident). With **List them on the dashboard card too** on (Wi-Fi → Settings → Connected devices), the names of the devices on each are under it. Tap the title to open the Wi-Fi pages.
 
 `sensor.home_wifi` has how many devices are connected, a `summary` ("3 access points online · 24 devices connected"), `leds_schedule`, `access_points` (each one's `name`, `model`, `online`, `switched_off`, `clients` and `led`) and `networks` (each one's `name`, `entity`, `on` and `clients`), and each one's `devices` (names) when they're listed on the card.
+
+# Energy
+
+Energy starts off. Turn it on in **Settings → General → What it looks after**. It reads from two places, and uses whichever you have:
+
+- The **Octopus Energy** integration (from HACS: "Octopus Energy" by BottlecapDave, added in Settings → Devices & services with your Octopus API key): every half hour's price for today and tomorrow, the price now, today's cost and use (with an Octopus Home Mini; without one, the last full day's from your smart meter), the gas price and cost, and, on Intelligent Octopus, the car.
+- Home Assistant's own **Energy dashboard** (Settings → Dashboards → Energy): each day's use and cost for the History page, and the devices it measures for "What used the most". It works with any supplier; without Octopus, the price now comes from the price you gave it.
+
+Settings → Energy → **Where the figures come from** says what it found.
+
+## Today
+
+- **Electricity now**: the price per kWh, whether it's **cheap**, **standard** or **peak** (or, on Agile, **paid to use** when it's below zero), when it next changes and to what. On Intelligent Octopus Go: the off-peak night, and any **extra cheap** times while the car is charging, when the whole house gets the off-peak price. With a Home Mini, the power you're using now.
+- **Today so far**: electricity and gas cost and use, with the standing charge, a bar for each half hour (or hour) used, and the last full day's cost.
+- **Prices today and tomorrow**: a bar for each half hour, coloured by band, with now marked and the cheapest 3 hours ahead shaded. Hover over or tap a bar (or use the arrow keys) for its time and price. **Show as a list** lists every price from now on. With prices that change through the day (Agile), the cheapest 1, 2 and 3 hours from now are underneath.
+- **The car** (Intelligent Octopus): what it's doing (smart charging until 04:30, bump charging, ready to smart charge), when Octopus plans to charge it, and how much it's charged today. **Bump charge now**, the **charge to** percentage, the **ready by** time and **smart charging** can be changed here, as in the Octopus app. With a charger rather than the car itself linked to Octopus (a Projekt EV or Ohme charger, say), there's no battery level.
+
+## Plans
+
+A plan switches a socket (or any switch) on at the cheapest time before a deadline, and off again after: say the dishwasher, for 2 hours, done by 07:00, every day. Set the appliance going with its socket off; when the socket comes on, it runs.
+
+- **In one go** finds the cheapest unbroken stretch, for things that can't stop part way (a dishwasher, a washing machine). **Can be split up** takes the cheapest half hours wherever they are, for things that can stop and start (a hot water tank, a storage heater).
+- **Only if it's this cheap**: if there's no time at that price or less before the deadline, it doesn't run that day, and Activity says so.
+- **Every day** or **just once** (a once-only plan turns itself off after it runs).
+
+Each plan shows when it'll run, at what average price, and how that compares with the average between now and its deadline. Until all the prices up to the deadline are known (Agile's for tomorrow come in at about 4pm), the time shown may change; it doesn't start on a guess unless the deadline is close. On Intelligent Octopus Go it uses the off-peak night, or an earlier cheap stretch while the car charges if one's long enough. If the socket was already on when its time came, it's left on at the end. **Skip next** skips the next run, and **Stop now** stops one that's running (switching the socket off).
+
+## History
+
+Each day's electricity and gas cost (or use, if the Energy dashboard has no costs) for the last 7, 30 or 90 days, with the totals and the average a day. Hover over or tap a day for its figures, or **Show as a table**. **What used the most** lists the devices in the Energy dashboard by how much they used, and their share of the total.
+
+## Phone alerts
+
+In Settings → Energy → **Phone alerts**, choose the phones, then any of:
+
+- **When electricity gets cheap**: when the price falls to the level you set or below, once each time it does.
+- **Tomorrow's prices when they come in**: for prices that change each day (Agile, Tracker), the cheapest 3 hours and the dearest time. Not sent for two-rate tariffs like Go, where every day's the same.
+- **When a plan switches something on**.
+
+## Cheap and peak
+
+The bands are worked out from the prices: with two rates (Go, Intelligent Octopus Go) the lower is cheap and the other standard; with Flux or Cosy, the lowest cheap and the highest peak; with Agile, the cheapest quarter of the day cheap and the dearest seventh peak. Or set them by hand in Settings → Energy → **Cheap and peak prices**.
+
+## Energy on a dashboard
+
+```yaml
+type: custom:home-control-card
+show: energy
+```
+
+The price now and its band, when it next changes, today's cost and the power being used, a small chart of today's and tomorrow's prices, the car with a **Bump charge** button, and when each plan runs next. Settings → Energy → **Dashboard card** chooses which of the chart, the car and the plans to show (or `chart: false`, `ev: false`, `plans: false` in the card's YAML). Tap the title to open the Energy pages.
+
+`sensor.home_energy` is the electricity price now in pence per kWh, with `band`, `tariff`, `next_price`, `next_at` and `next_text`, `today_cost`, `today_kwh`, `gas_today_cost`, `gas_price`, `last_day_cost`, `demand_w`, `export_price`, `cheapest` (the cheapest 1, 2 and 3 hours from now), `limits` (where cheap and peak start), `rates` (today's and tomorrow's: start time, pence, band), `ev` and `plans`, for your own dashboards and automations.
+

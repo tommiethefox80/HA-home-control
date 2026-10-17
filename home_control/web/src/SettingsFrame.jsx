@@ -50,9 +50,17 @@ export const SETTINGS_MENU = {
       { id: 'kinds', label: 'What each device is' },
     ],
   },
+  energy: {
+    name: 'Energy', base: '#/energy/settings', items: [
+      { id: 'prices', label: 'Cheap and peak prices' },
+      { id: 'alerts', label: 'Phone alerts' },
+      { id: 'sources', label: 'Where the figures come from' },
+      { id: 'card', label: 'Dashboard card' },
+    ],
+  },
 };
-const PARTS = ['heating', 'lighting', 'cameras', 'wifi'];
-const STARTS_ON = { heating: true, lighting: true, cameras: false, wifi: false };
+const PARTS = ['heating', 'lighting', 'cameras', 'wifi', 'energy'];
+const STARTS_ON = { heating: true, lighting: true, cameras: false, wifi: false, energy: false };
 const isGeneral = (id) => GENERAL.some((g) => g.id === id);
 
 /**

@@ -11,6 +11,7 @@ import { createHeating } from './heating/http.js';
 import { createLighting } from './lighting/http.js';
 import { createCameras } from './cameras/http.js';
 import { createWifi } from './wifi/http.js';
+import { createEnergy } from './energy/http.js';
 import { watchRenames } from './renames.js';
 import { createHouse } from './house.js';
 import { createPublisher } from './publish.js';
@@ -66,15 +67,16 @@ const heating = createHeating({ client, dataDir: DATA_DIR, log: plain, lightingS
 lighting = createLighting({ client, dataDir: DATA_DIR, log: logObj, house });
 const cameras = createCameras({ client, dataDir: DATA_DIR, log: logObj, house, restBase: REST_BASE, token: HA_TOKEN, mediaDir: MEDIA_DIR, haMediaDir: HA_MEDIA_DIR, panel: panelPath });
 const wifi = createWifi({ client, dataDir: DATA_DIR, log: logObj, house, restBase: REST_BASE, token: HA_TOKEN });
-house.attach(heating, lighting, cameras, wifi);
+const energy = createEnergy({ client, dataDir: DATA_DIR, log: logObj, house });
+house.attach(heating, lighting, cameras, wifi, energy);
 house.panel = panelPath;
 lighting.engine.on('change', () => heating.push());
 // an entity's ID renamed in Home Assistant: rooms, groups, cameras and access points follow it
 // follow renamed entity IDs (and keep each device's last name), see renames.js
-watchRenames(client, () => [heating.engine, lighting.engine, cameras.engine, wifi.engine], { dataDir: DATA_DIR, log: logObj });
+watchRenames(client, () => [heating.engine, lighting.engine, cameras.engine, wifi.engine, energy.engine], { dataDir: DATA_DIR, log: logObj });
 /** Nothing set up yet (a fresh install): no rooms, no boiler and no lighting groups. */
-const isEmpty = () => !heating.store.data.zones.length && !heating.store.data.settings.boiler?.entity && !lighting.store.data.groups.length && !cameras.store.data.cameras.length && !house.on('wifi');
-createPublisher({ restBase: REST_BASE, token: HA_TOKEN, log: logObj, heating, lighting, cameras, wifi, client, panel: panelPath, isEmpty, house });
+const isEmpty = () => !heating.store.data.zones.length && !heating.store.data.settings.boiler?.entity && !lighting.store.data.groups.length && !cameras.store.data.cameras.length && !house.on('wifi') && !house.on('energy');
+createPublisher({ restBase: REST_BASE, token: HA_TOKEN, log: logObj, heating, lighting, cameras, wifi, energy, client, panel: panelPath, isEmpty, house });
 const card = createCardInstaller({ client, log: logObj, version: VERSION, source: CARD_FILE, configDir: HA_CONFIG_DIR });
 const move = createMove({ dataDir: DATA_DIR, backupDir: BACKUP_DIR, log: logObj, isEmpty, panel: panelPath, slug: selfSlug, card });
 
@@ -103,6 +105,7 @@ const server = http.createServer(async (req, res) => {
   else if (p.startsWith('/api/lighting/')) { if (await lighting.handle(req, res, url, p)) return; }
   else if (p.startsWith('/api/cameras/')) { if (await cameras.handle(req, res, url, p)) return; }
   else if (p.startsWith('/api/wifi/')) { if (await wifi.handle(req, res, url, p)) return; }
+  else if (p.startsWith('/api/energy/')) { if (await energy.handle(req, res, url, p)) return; }
   else if (await heating.handle(req, res, url, p)) return;
   res.writeHead(404, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ error: 'Not found' }));
@@ -113,6 +116,7 @@ heating.start();
 lighting.start();
 cameras.start();
 wifi.start();
+energy.start();
 card.start();
 server.listen(PORT, () => plain(`Home Control ${VERSION} listening on :${PORT}, Home Assistant at ${HA_URL}`));
 
@@ -124,6 +128,7 @@ const shutdown = async () => {
   lighting.shutdown();
   cameras.shutdown();
   wifi.shutdown();
+  energy.shutdown();
   await heating.shutdown();
   client.stop();
   process.exit(0);

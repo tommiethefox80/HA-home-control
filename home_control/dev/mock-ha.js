@@ -9,6 +9,7 @@ import { WebSocketServer } from 'ws';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { sunTimes, localDate } from '../server/src/lighting/schedule.js';
+import { createOctopus } from './mock-octopus.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -314,6 +315,9 @@ function fireEvent(type, data, context = { id: randomUUID(), parent_id: null, us
   }
 }
 
+// the Octopus Energy integration and the Energy dashboard, off until POST /octopus { on: true }
+const octopus = createOctopus({ states, fireEvent, publicState, nowIso, TZ });
+
 // ---------- a week of a physical house ----------
 // Outside temperature with day/night swings and colder and milder days; two rooms that each hour
 // lose a share (k) of the gap to outside (Newton's law), warm while heating (more slowly on cold
@@ -598,6 +602,7 @@ wss.on('connection', (ws) => {
         const context = { id: randomUUID(), parent_id: null, user_id: 'supervisor' };
         reply({ context });
         for (const id of ids) simulateDevice(id, service, d, context);
+        if (ids.some((id) => id.includes('octopus_energy_'))) octopus.afterCall();
         return;
       }
       case 'history/history_during_period': {
@@ -613,6 +618,7 @@ wss.on('connection', (ws) => {
         return reply(out);
       }
       default:
+        if (octopus.handle(m, reply)) return;
         return reply(null, false, { code: 'unknown_command', message: `Unknown command ${m.type}` });
     }
   });
@@ -637,6 +643,7 @@ createServer(async (req, res) => {
   if (req.url === '/freeze') { frozen = true; return done({ ok: true }); }
   if (req.url === '/unfreeze') { frozen = false; return done({ ok: true }); }
   if (req.url === '/fire') { fireEvent(body.event_type, body.data || {}); return done({ ok: true }); }
+  if (req.url === '/octopus') return done(octopus.control(body));
   // an entity's ID changed in Settings → Entities (or with its device, "rename entity IDs" ticked)
   if (req.url === '/rename') {
     const { from, to, name } = body;

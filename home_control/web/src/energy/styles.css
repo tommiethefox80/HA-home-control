@@ -1,0 +1,207 @@
+/* Energy. Built on the lighting look, with the cameras' chips and lists (the section has
+   body.sec-lighting and body.sec-cameras too); this adds the price, cost, chart, car and plan cards.
+   Price bands run cheap (green) through a neutral standard to peak (amber); checked for colour-blind
+   separation in both themes, and always named in the legend, the tooltip and the list view. */
+
+:root {
+  --en-free: #0b5e4a;
+  --en-cheap: #3d9e5f;
+  --en-standard: #a9b5bd;
+  --en-peak: #d5731f;
+  --en-best: rgba(61, 158, 95, 0.12);
+  --en-elec: #2f6fb0;
+  --en-gas: #d3772f;
+  --en-cheap-bg: #e6f3ea;
+  --en-cheap-ink: #1f6b3c;
+  --en-peak-bg: #fbeee2;
+  --en-peak-ink: #8a4410;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --en-free: #2a9a7e;
+    --en-cheap: #7ccf96;
+    --en-standard: #5d6c77;
+    --en-peak: #e38a3f;
+    --en-best: rgba(124, 207, 150, 0.12);
+    --en-elec: #5b95d6;
+    --en-gas: #e38a3f;
+    --en-cheap-bg: #1d3327;
+    --en-cheap-ink: #8fdca6;
+    --en-peak-bg: #3a2717;
+    --en-peak-ink: #f2b27a;
+  }
+}
+
+.en-today { display: grid; gap: 16px; padding-bottom: 16px; }
+.en-top { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.energy-app h2 { letter-spacing: -0.01em; }
+.en-lead { margin: 0; max-width: 72ch; }
+.en-empty { padding: 24px; display: grid; gap: 8px; justify-items: start; }
+.en-empty h2 { margin: 0; font-size: 1.15rem; }
+
+/* the price now */
+.en-price, .en-cost, .en-chart, .en-car, .en-plans-sum, .en-days, .en-devices { padding: 16px; display: grid; gap: 10px; align-content: start; }
+.en-price-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.en-price h2, .en-cost h2, .en-chart h2, .en-car h2, .en-plans-sum h2, .en-days h2, .en-devices h2 { margin: 0; font-size: 1rem; font-weight: 680; }
+.en-price-num { margin: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.en-price-num strong { font-size: 3rem; line-height: 1; font-weight: 720; letter-spacing: -0.03em; }
+.en-price-num > span:not(.en-band) { color: var(--ink-2); }
+.en-price-line { margin: 0; color: var(--ink-2); }
+.en-price-line strong { color: var(--ink); }
+
+.en-band {
+  align-self: center; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  font-size: .82rem; font-weight: 650; background: var(--panel-2); color: var(--ink);
+}
+.en-band-cheap, .en-band-free { background: var(--en-cheap-bg); color: var(--en-cheap-ink); }
+.en-band-peak { background: var(--en-peak-bg); color: var(--en-peak-ink); }
+.en-band-free .en-swatch { background: var(--en-free); }
+.en-band-cheap .en-swatch { background: var(--en-cheap); }
+.en-band-peak .en-swatch { background: var(--en-peak); }
+
+.en-swatch { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--en-standard); margin-right: 6px; vertical-align: -1px; }
+.en-band .en-swatch { margin-right: 0; }
+.en-sw-free { background: var(--en-free); }
+.en-sw-cheap { background: var(--en-cheap); }
+.en-sw-standard { background: var(--en-standard); }
+.en-sw-peak { background: var(--en-peak); }
+.en-sw-best { background: var(--en-best); outline: 1px solid var(--en-cheap); outline-offset: -1px; }
+.en-sw-elec { background: var(--en-elec); }
+.en-sw-gas { background: var(--en-gas); }
+
+.en-facts { list-style: none; margin: 4px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); display: grid; gap: 6px; font-size: .93rem; }
+.en-facts li { display: flex; align-items: center; gap: 8px; color: var(--ink-2); }
+.en-facts li .en-swatch { margin: 0 2px; }
+.en-facts strong { color: var(--ink); }
+
+/* today's cost */
+.en-cost-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.en-cost-grid p { margin: 0; }
+.en-cost-label { display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: .9rem; font-weight: 600; }
+.en-cost-num { font-size: 2rem; font-weight: 720; letter-spacing: -0.02em; line-height: 1.15; }
+.en-use { display: flex; align-items: flex-end; gap: 2px; height: 44px; margin-top: 4px; }
+.en-use span { flex: 1; min-width: 2px; max-width: 14px; background: var(--en-elec); border-radius: 2px 2px 0 0; opacity: .8; }
+.en-last { margin: 0; }
+
+/* the prices chart */
+.en-chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.en-tip { margin: 0; min-height: 1.4em; font-size: .93rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.en-tip strong { color: var(--ink); }
+.en-plot { position: relative; }
+.en-svg { width: 100%; height: 170px; display: block; touch-action: pan-y; cursor: crosshair; border-radius: 8px; }
+.en-ymax { position: absolute; right: 0; top: -14px; font-size: .75rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.en-xaxis { position: relative; height: 18px; margin-top: 4px; font-size: .75rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.en-xaxis span { position: absolute; top: 0; white-space: nowrap; }
+.en-xaxis .en-axis-day { color: var(--ink); font-weight: 650; }
+.en-svg:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.en-grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.en-zero { stroke: var(--line-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.en-bar { fill: var(--en-standard); }
+.en-b-free { fill: var(--en-free); }
+.en-b-cheap { fill: var(--en-cheap); }
+.en-b-peak { fill: var(--en-peak); }
+.en-past { opacity: .38; }
+.en-bar.en-on { opacity: 1; filter: brightness(.82); }
+.en-best { fill: var(--en-best); }
+.en-now { stroke: var(--ink); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.en-daymark { stroke: var(--line-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.en-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .86rem; color: var(--ink-2); }
+.en-legend li { display: inline-flex; align-items: center; }
+
+.en-table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+.en-table th { text-align: left; font-weight: 650; color: var(--ink-2); font-size: .82rem; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.en-table td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
+.en-table td.num { font-variant-numeric: tabular-nums; }
+.en-row-now td { font-weight: 650; }
+.en-table-wrap { overflow-x: auto; }
+
+.en-cheapest { border-top: 1px solid var(--line); padding-top: 10px; }
+.en-cheapest h3 { margin: 0 0 6px; font-size: .9rem; font-weight: 650; color: var(--ink-2); }
+.en-cheapest ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.en-cheapest li { display: grid; grid-template-columns: 7.5em 1fr auto; gap: 8px; align-items: baseline; font-size: .95rem; }
+.en-ch-len { color: var(--ink-2); }
+
+/* the car */
+.en-car-head { display: flex; align-items: center; gap: 12px; }
+.en-car-head h2 { font-size: 1.1rem !important; }
+.en-car-head p { margin: 2px 0 0; }
+.en-car-icon { flex: none; width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--panel-2); color: var(--ink-2); }
+.en-car-on { background: var(--en-cheap-bg); color: var(--en-cheap-ink); }
+.en-slots h3 { margin: 0 0 4px; font-size: .9rem; font-weight: 650; color: var(--ink-2); }
+.en-slots ul { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.en-slots li { display: inline-flex; align-items: center; font-variant-numeric: tabular-nums; }
+.en-slots p { margin: 0; }
+.en-car-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding-top: 10px; border-top: 1px solid var(--line); }
+.en-car-controls .btn { display: inline-flex; align-items: center; gap: 6px; }
+.en-car-controls .toggle-row { flex: 1 1 200px; }
+.en-inline { display: inline-flex; align-items: center; gap: 8px; font-size: .95rem; }
+.en-inline span { color: var(--ink-2); white-space: nowrap; }
+.en-inline select, .en-inline input { min-height: 40px; }
+
+/* plans */
+.en-plan-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.en-plan-list li { display: flex; gap: 10px; align-items: flex-start; }
+.en-plan-list li > .icon { margin-top: 2px; color: var(--ink-2); flex: none; }
+.en-plan-list li div { display: grid; }
+.en-plan-running > .icon { color: var(--en-cheap-ink) !important; }
+.en-plan-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); padding: 12px 0 16px; }
+.en-plan { padding: 16px; display: grid; gap: 8px; align-content: start; }
+.en-plan p { margin: 0; }
+.en-plan-off { opacity: .75; }
+.en-plan-head { display: flex; align-items: center; gap: 12px; }
+.en-plan-head .toggle-row { flex: none; gap: 0; }
+.en-plan-head .toggle-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.en-plan-title { display: grid; flex: 1; min-width: 0; }
+.en-plan-title h3 { margin: 0; font-size: 1.08rem; font-weight: 680; overflow-wrap: anywhere; }
+.en-plan-rule { color: var(--ink-2); }
+.en-plan-next { display: flex; align-items: center; gap: 6px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.en-plan-next-on { color: var(--en-cheap-ink); }
+.en-plan-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.en-plan-add {
+  display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 120px; padding: 16px;
+  border: 2px dashed var(--line-strong); background: transparent; box-shadow: none; color: var(--ink-2); font: inherit; font-weight: 600; cursor: pointer;
+}
+.en-plan-add:hover { color: var(--ink); border-color: var(--ink-2); }
+
+/* history */
+.en-stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin: 12px 0 16px; }
+.en-stat { padding: 14px 16px; }
+.en-stat h3 { margin: 0; display: flex; align-items: center; gap: 6px; font-size: .9rem; font-weight: 650; color: var(--ink-2); }
+.en-stat .num { margin: 4px 0 2px; font-size: 1.9rem; font-weight: 720; letter-spacing: -0.02em; }
+.en-stat .fine { margin: 0; }
+.en-days { margin-bottom: 16px; }
+.en-daybars { display: flex; align-items: stretch; gap: 2px; height: 170px; }
+.en-daybar {
+  flex: 1; min-width: 0; padding: 0; border: 0; background: none; cursor: pointer;
+  display: flex; flex-direction: column-reverse; justify-content: flex-start; gap: 2px; border-radius: 4px 4px 0 0;
+}
+.en-daybar:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.en-daybar.en-on .en-seg, .en-daybar:hover .en-seg { filter: brightness(.85); }
+.en-seg { display: block; width: 100%; max-width: 24px; margin: 0 auto; border-radius: 0; }
+.en-seg-elec { background: var(--en-elec); }
+.en-seg-gas { background: var(--en-gas); }
+.en-daybar .en-seg:last-child { border-radius: 4px 4px 0 0; }
+.en-devices { margin-bottom: 16px; }
+.en-devices ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.en-devices li { display: grid; grid-template-columns: minmax(0, 11em) 1fr auto; gap: 10px; align-items: center; font-size: .95rem; }
+.en-dev-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.en-dev-bar { height: 10px; background: var(--panel-2); border-radius: 0 4px 4px 0; }
+.en-dev-bar span { display: block; height: 100%; background: var(--en-elec); border-radius: 0 4px 4px 0; }
+.en-devices small { color: var(--ink-2); }
+
+/* settings */
+.en-h4 { margin: 6px 0 0; font-size: .95rem; }
+.en-src-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.en-src-list li { display: flex; align-items: center; gap: 8px; }
+.en-code { margin: 0; padding: 10px 12px; background: var(--panel-2); border-radius: 10px; font-size: .88rem; overflow-x: auto; }
+.en-inline-save { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.en-band-inputs { display: grid; gap: 10px; justify-items: start; }
+.en-cheap-below { display: grid; gap: 8px; }
+
+@media (max-width: 560px) {
+  .en-price-num strong { font-size: 2.6rem; }
+  .en-svg { height: 150px; }
+  .en-xaxis .en-axis-minor { display: none; }
+  .en-cheapest li { grid-template-columns: 6.5em 1fr auto; }
+  .en-devices li { grid-template-columns: minmax(0, 8em) 1fr auto; }
+}

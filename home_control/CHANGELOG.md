@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.12.0
+- **Energy**, a fifth part (off to start with: Settings → General → What it looks after). From the Octopus Energy integration, or Home Assistant's Energy dashboard for any supplier.
+  - **Today**: the electricity price now, cheap, standard or peak, and when it next changes; today's electricity and gas cost and use (live with an Octopus Home Mini), with the standing charge; the power being used now; and a chart of every half hour's price today and tomorrow, with the cheapest 3 hours ahead shaded (hover or tap for each, or see them as a list).
+  - **Intelligent Octopus Go**: the off-peak night and the extra cheap times Octopus adds while the car charges (the whole house gets the cheap price then). The car's charging, when it's planned to charge, and bump charge, charge target, ready-by time and smart charging from here.
+  - **Plans**: switch a socket on at the cheapest time before a deadline (the dishwasher, 2 hours, done by 07:00), in one go or split up, every day or once, optionally only below a price. Skip or stop one from here.
+  - **History**: each day's electricity and gas cost for 7, 30 or 90 days, and what used the most, from the Energy dashboard.
+  - **Phone alerts**: when electricity gets cheap, tomorrow's prices (Agile), and when a plan switches something on.
+  - **Dashboard card**: `show: energy`, and `sensor.home_energy` with the price now, today's and tomorrow's prices, the car and the plans.
+- **Heating**: without a Home Mini, Octopus's gas cost sensor is the last full day's; Today now says so instead of showing it as today's.
+- Losing heat faster than usual: the wind in Insights is in mph.
+
 ## 1.11.2
 - **"Losing heat faster than usual" allows for the weather.** A mild or windy spell could make a room look far leakier than it is (197% faster, say), because heat loss is measured against the gap to outside, and on a mild day a weather service's reading being a degree or two out is a big share of that gap.
   - Only cool-downs at least 5° above outside count, and the last two days must be faster even if the outside reading was 2° out. The figure shown is the least it could be ("at least 45% faster").

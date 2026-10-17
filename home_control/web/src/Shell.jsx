@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import HeatingApp from './heating/App.jsx';
 import { App as CamerasApp } from './cameras/App.jsx';
 import { App as WifiApp } from './wifi/App.jsx';
+import { App as EnergyApp } from './energy/App.jsx';
 import { App as LightingApp } from './lighting/App.jsx';
 import { ErrorBoundary as HeatingBoundary } from './heating/ui.jsx';
 import { ErrorBoundary as LightingBoundary } from './lighting/ui.jsx';
@@ -13,13 +14,13 @@ import { GENERAL, useHome } from './HomeSettings.jsx';
 import { SETTINGS_MENU } from './SettingsFrame.jsx';
 
 export const sectionOf = (hash) => {
-  const m = /^#\/?(lighting|cameras|wifi)(\/|$)/.exec(hash || '');
+  const m = /^#\/?(lighting|cameras|wifi|energy)(\/|$)/.exec(hash || '');
   return m ? m[1] : 'heating';
 };
-const HOME = { heating: '#/', lighting: '#/lighting/lights', cameras: '#/cameras/', wifi: '#/wifi/' };
-const SECTIONS = ['heating', 'lighting', 'cameras', 'wifi'];
+const HOME = { heating: '#/', lighting: '#/lighting/lights', cameras: '#/cameras/', wifi: '#/wifi/', energy: '#/energy/' };
+const SECTIONS = ['heating', 'lighting', 'cameras', 'wifi', 'energy'];
 // new parts start off (as in the app's house settings)
-const STARTS_ON = { heating: true, lighting: true, cameras: false, wifi: false };
+const STARTS_ON = { heating: true, lighting: true, cameras: false, wifi: false, energy: false };
 
 /** ?section=lighting on the panel's address (e.g. a dashboard button) opens straight onto lighting. */
 function askedFor() {
@@ -39,9 +40,10 @@ const P = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLineca
 const Flame = () => <svg viewBox="0 0 24 24" {...P}><path d="M12 3c1 3.5 5 5.6 5 10a5 5 0 0 1-10 0c0-2.3 1-3.7 2.2-4.8.3 1.6 1.1 2.6 2.1 3C11 8.7 11.4 5.6 12 3Z" /></svg>;
 const Bulb = () => <svg viewBox="0 0 24 24" {...P}><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3Z" /></svg>;
 const Cam = () => <svg viewBox="0 0 24 24" {...P}><path d="M3 7h12a2 2 0 0 1 2 2v1.5L21 8v8l-4-2.5V15a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" /></svg>;
+const Bolt = () => <svg viewBox="0 0 24 24" {...P}><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z" /></svg>;
 const Wifi = () => <svg viewBox="0 0 24 24" {...P}><path d="M2 8.8a15 15 0 0 1 20 0M5.5 12.4a10 10 0 0 1 13 0M9 15.9a5 5 0 0 1 6 0M12 19.5h.01" /></svg>;
 
-const PARTS = { heating: { name: 'Heating', Icon: Flame }, lighting: { name: 'Lighting', Icon: Bulb }, cameras: { name: 'Cameras', Icon: Cam }, wifi: { name: 'Wi-Fi', Icon: Wifi } };
+const PARTS = { heating: { name: 'Heating', Icon: Flame }, lighting: { name: 'Lighting', Icon: Bulb }, cameras: { name: 'Cameras', Icon: Cam }, wifi: { name: 'Wi-Fi', Icon: Wifi }, energy: { name: 'Energy', Icon: Bolt } };
 
 function SectionSwitch({ section, links, heatOn, lightOn, parts }) {
   // only one part looked after here: its name, no switch
@@ -110,10 +112,11 @@ export function Shell() {
 
   useLayoutEffect(() => {
     document.body.classList.toggle('sec-heating', section === 'heating');
-    // cameras are built on the lighting look, and Wi-Fi on the cameras' (chips, lists)
-    document.body.classList.toggle('sec-lighting', ['lighting', 'cameras', 'wifi'].includes(section));
-    document.body.classList.toggle('sec-cameras', section === 'cameras' || section === 'wifi');
+    // cameras are built on the lighting look, and Wi-Fi and Energy on the cameras' (chips, lists)
+    document.body.classList.toggle('sec-lighting', ['lighting', 'cameras', 'wifi', 'energy'].includes(section));
+    document.body.classList.toggle('sec-cameras', ['cameras', 'wifi', 'energy'].includes(section));
     document.body.classList.toggle('sec-wifi', section === 'wifi');
+    document.body.classList.toggle('sec-energy', section === 'energy');
     document.title = PARTS[section]?.name || 'Home';
   }, [section]);
 
@@ -141,6 +144,11 @@ export function Shell() {
       {parts.includes('wifi') && (
         <div hidden={section !== 'wifi'}>
           <LightingBoundary><WifiApp active={section === 'wifi'} switcher={switcher} /></LightingBoundary>
+        </div>
+      )}
+      {parts.includes('energy') && (
+        <div hidden={section !== 'energy'}>
+          <LightingBoundary><EnergyApp active={section === 'energy'} switcher={switcher} /></LightingBoundary>
         </div>
       )}
     </>

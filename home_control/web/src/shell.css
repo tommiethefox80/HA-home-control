@@ -33,6 +33,17 @@ body .hs-dot { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px
 body .hs-heat { background: rgb(238 132 52); box-shadow: 0 0 0 2px rgb(238 132 52 / .25); }
 body .hs-light { background: rgb(255 182 98); box-shadow: 0 0 0 2px rgb(255 182 98 / .3); }
 
+/* five parts on a narrow screen: the others shrink to their icons */
+@media (max-width: 1000px) {
+  body .home-switch-5 a:not([aria-current]) { flex: none !important; padding: 6px 10px !important; }
+  body .home-switch-5 a:not([aria-current]) .hs-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}
+@media (max-width: 400px) {
+  body .home-switch-5 a:not([aria-current]) { padding: 6px 8px !important; }
+}
+
 /* three or more parts on a phone: the others shrink to their icons */
 @media (max-width: 560px) {
   body .home-switch-3 a:not([aria-current]), body .home-switch-4 a:not([aria-current]) { flex: none !important; padding: 6px 12px !important; }
