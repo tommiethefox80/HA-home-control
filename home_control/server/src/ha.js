@@ -31,6 +31,7 @@ export class HAClient extends EventEmitter {
     this.gen = 0;        // which socket is current; events from older sockets are ignored
     this.dropped = 0;
     this.subs = new Map(); // event type -> subscription promise, for the current connection
+    this.streams = new Map(); // message id -> handler, for subscriptions with their own messages (mqtt/subscribe)
   }
 
   start() { if (!this.started) { this.started = true; this._connect(); } }
@@ -81,6 +82,7 @@ export class HAClient extends EventEmitter {
     const was = this.connected;
     this.connected = false;
     this.subs.clear();
+    this.streams.clear();
     for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer);
       reject(new Error('Connection to Home Assistant closed'));
@@ -140,6 +142,7 @@ export class HAClient extends EventEmitter {
         this._drop(this.gen);
         return;
       case 'event':
+        if (this.streams.has(m.id)) { try { this.streams.get(m.id)(m.event); } catch (err) { this.log.warn?.(`Subscription handler: ${err.message}`); } return; }
         if (m.event?.event_type === 'state_changed') this.emit('state_changed', m.event.data, m.event.context);
         else if (m.event?.event_type) this.emit('event', m.event.event_type, m.event.data || {}, m.event.context || {});
         return;
@@ -181,6 +184,14 @@ export class HAClient extends EventEmitter {
       this.subs.set(type, p);
     }
     return this.subs.get(type);
+  }
+
+  /** A subscription whose messages come back under its own id (e.g. mqtt/subscribe); for this connection only. */
+  subscribeMessage(type, data, onEvent) {
+    if (!this.connected) return Promise.reject(new Error('Not connected to Home Assistant'));
+    const id = this.nextId; // the id send() is about to use
+    this.streams.set(id, onEvent);
+    return this.send(type, data).catch((err) => { this.streams.delete(id); throw err; });
   }
 
   callService(domain, service, serviceData = {}, target = undefined) {

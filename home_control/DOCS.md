@@ -62,6 +62,7 @@ Heating's settings are saved with **Save settings**; if you leave Heating's sett
   At least one part has to stay on. With only one on, the Heating / Lighting switch at the top shows just that part's name.
 - **Away automatically.** The people, wait and distance for switching the house to Away from phone locations (below).
 - **Dashboard button.** Where the Dashboard button at the top of every page goes.
+- **Home Assistant entities.** Groups, rooms, scenes and Away as real Home Assistant entities, for Alexa, Google, automations and other dashboards (below).
 
 ## Away for the whole house
 
@@ -74,6 +75,26 @@ Away is one switch for the heating and the lights:
 The people, wait and distance are set once, in **Settings → General → Away automatically**. If the heating is turned off there, they still switch the lights.
 
 In Away, every room drops to the away temperature, and lights stay off except groups set to look lived in.
+
+## Home Assistant entities (Alexa, Google, automations)
+
+Settings → General → **Home Assistant entities** makes your lighting groups, heating rooms, scenes and Away into real entities in Home Assistant, so Alexa or Google ("Alexa, turn off the lounge lights", "Alexa, set the bedroom heating to 20"), automations, scripts and any dashboard can use them. Each does exactly what the same button in Home Control does.
+
+| Entity | What it does |
+|---|---|
+| `light.home_control_<group>` (one for each lighting group) | On (at the level its schedule uses at this time of day), off, brightness and warmth, until the group's next scheduled change. Shows the group's state. |
+| `climate.home_control_<room>` (one for each heating room) | A temperature holds until the room's next scheduled change. **Off** snoozes the room (at the frost temperature) until it's turned back on; **Heat** puts it back on its schedule. Shows the room's temperature, what it's aiming for and whether it's heating. |
+| `scene.home_control_<scene>` | Runs a lighting scene. |
+| `switch.home_control_away` | Away for the whole house; off goes back to the schedules. |
+| `select.home_control_heating_mode` | Schedules, Away or Heating off. |
+
+Each group and each room is a device in Home Assistant, named in full ("Lounge lights", "Lounge heating") and put in the area with the same name if there is one, so a room's lights and heating sit together there. A group whose name already says it's lights ("Christmas lights", "Bed lamp") keeps its name. Scenes are named just as they are here ("Film night"); Away and the heating mode are on a "Home Control" device ("Home Control Away"). Renaming a group or room here renames it in Home Assistant too. Choose which of these to make on the same page.
+
+**It needs MQTT in Home Assistant**, which is how they're made (MQTT discovery): install the **Mosquitto broker** add-on (Settings → Add-ons → Add-on store), start it, and add the **MQTT** integration Home Assistant then offers under Settings → Devices & services. Home Control publishes through Home Assistant's own MQTT connection, so there's no broker address or password to enter here. The page says if MQTT isn't set up.
+
+For **Alexa or Google** through Home Assistant Cloud: Settings → Voice assistants → **Expose**, tick the ones you want (new entities may already be exposed), then "Alexa, discover devices". With your own Alexa skill, add them to its filter. Your real lights and thermostats are still there too, so it's worth hiding the ones Alexa shouldn't use, or naming things so they can't be confused.
+
+Deleting a group, room or scene removes its entity; turning the setting off removes them all. If Home Control is stopped, they show as unavailable. Renaming an entity, its ID or its device in Home Assistant is fine: it keeps working, and the page shows the IDs Home Assistant uses.
 
 ## Your dashboard
 
@@ -348,6 +369,7 @@ Two places (for heating; lighting keeps everything in `lighting.json`):
 | `calls.json` | When each room called for heat, for the room cards | Room detail, as above |
 | `lighting.json` | Lighting: groups, schedules, scenes, settings and the lighting Activity log (last 300 entries) | Always |
 | `energy.json` | Energy: plans, settings and the energy Activity log (last 400 entries) | Always |
+| `entities.json` | Which Home Assistant entities to make, and which it made (to remove them when they go) | Always |
 | `entity-ids.json` | For each device the app uses, its permanent Home Assistant ID and last name, so a renamed one can be followed | While it's in use |
 
 **Settings → Heating → History** shows how much each uses. Lowering a number deletes the older records when you save. The Activity tab shows the latest 60 entries; **Show older** pages back through the rest. Home Assistant's own history isn't changed by these settings: set `purge_keep_days` under `recorder:` in Home Assistant's configuration for that.

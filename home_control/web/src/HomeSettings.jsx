@@ -54,6 +54,7 @@ export const GENERAL = [
   { id: 'parts', label: 'What it looks after' },
   { id: 'presence', label: 'Away automatically' },
   { id: 'dashboard', label: 'Dashboard button' },
+  { id: 'entities', label: 'Home Assistant entities' },
 ];
 
 /** One of the General settings pages: 'parts', 'presence' or 'dashboard'. */
@@ -106,6 +107,7 @@ export function HomeSettings({ item = 'parts' }) {
     savePresence({ people: next.length === all.length ? [] : next });
   };
   const label = GENERAL.find((g) => g.id === item)?.label || GENERAL[0].label;
+  if (item === 'entities') return <EntitySettings label={label} mods={mods} />;
 
   return (
     <section className="home-set" aria-labelledby={item === 'presence' ? 'home-away' : 'home-set-h'}>
@@ -206,6 +208,100 @@ export function HomeSettings({ item = 'parts' }) {
                   </label>
                 </div>
               )}
+            </>
+          )}
+        </>
+      )}
+      {error && <p className="home-set-error" role="alert">{error}</p>}
+    </section>
+  );
+}
+
+
+// ---------- groups, rooms, scenes and Away as Home Assistant entities (MQTT discovery) ----------
+
+const KINDS = [
+  { id: 'lights', label: 'Each lighting group, as a light', part: 'lighting', eg: 'light.home_control_lounge: on, off, brightness and warmth, as from the Lighting page' },
+  { id: 'rooms', label: 'Each heating room, as a thermostat', part: 'heating', eg: 'climate.home_control_lounge: a temperature holds until the room\'s next scheduled change; Off snoozes it until turned back on; Heat puts it back on its schedule' },
+  { id: 'scenes', label: 'Each lighting scene', part: 'lighting', eg: 'scene.home_control_film_night' },
+  { id: 'away', label: 'Away, for the whole house', part: null, eg: 'switch.home_control_away: on is Away, off is back to the schedules' },
+  { id: 'mode', label: 'The heating mode', part: 'heating', eg: 'select.home_control_heating_mode: Schedules, Away or Heating off' },
+];
+
+function EntitySettings({ label, mods }) {
+  const [v, setV] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const call = useCallback(async (method = 'GET', body) => {
+    const r = await fetch('api/ha-entities', { method, cache: 'no-store', headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `Home Control answered ${r.status}`);
+    return data;
+  }, []);
+  useEffect(() => { call().then(setV).catch((e) => setError(e.message)); }, [call]);
+  const put = async (body) => {
+    setBusy(true); setError(null);
+    try { setV(await call('PUT', body)); setSaved(true); setTimeout(() => setSaved(false), 2500); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+  const s = v?.settings;
+  const kinds = KINDS.filter((k) => !k.part || mods[k.part]);
+  return (
+    <section className="home-set" aria-labelledby="home-ent-h">
+      <div className="home-set-head">
+        <h2 id="home-ent-h">{label}</h2>
+        <span className="home-set-saved" role="status">{saved ? 'Saved' : ''}</span>
+      </div>
+      <p className="home-set-fine">Your lighting groups, heating rooms, scenes and Away as real Home Assistant entities, so Alexa or Google ("Alexa, turn off the lounge lights"), Home Assistant automations and any dashboard can use them. Switching one does just what the same button here does, so groups come on at their scheduled level and rooms go back to their schedules.</p>
+      {!v && !error && <p className="home-set-fine">Loading…</p>}
+      {s && (
+        <>
+          <label className="home-toggle">
+            <span className="home-sw">
+              <input type="checkbox" role="switch" checked={!!s.enabled} disabled={busy} onChange={(e) => put({ enabled: e.target.checked })} />
+              <span className="home-sw-track" aria-hidden="true" />
+            </span>
+            <span>
+              <strong>Make Home Assistant entities</strong>
+              <small>Made with MQTT discovery, through Home Assistant's own MQTT connection: no passwords needed here. Turning this off removes them from Home Assistant.</small>
+            </span>
+          </label>
+          {v.mqtt === false && (
+            <div className="home-ent-note" role="note">
+              <strong>MQTT isn't set up in Home Assistant yet.</strong>
+              <ol>
+                <li>Settings → Add-ons → Add-on store → <b>Mosquitto broker</b> → Install, then Start.</li>
+                <li>Settings → Devices &amp; services: Home Assistant finds it. Under Discovered, <b>MQTT</b> → Configure → Submit.</li>
+                <li>Come back here: the entities are made straight away.</li>
+              </ol>
+            </div>
+          )}
+          {s.enabled && (
+            <>
+              <h3>What to make</h3>
+              <ul className="home-mods home-ent-kinds">
+                {kinds.map((k) => (
+                  <li key={k.id} className={s[k.id] ? 'on' : ''}>
+                    <label htmlFor={`ent-${k.id}`} className="home-mod-text"><strong>{k.label}</strong><small>{k.eg}</small></label>
+                    <span className="home-sw">
+                      <input id={`ent-${k.id}`} type="checkbox" role="switch" checked={!!s[k.id]} disabled={busy} onChange={(e) => put({ [k.id]: e.target.checked })} />
+                      <span className="home-sw-track" aria-hidden="true" />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {v.mqtt && v.entities.length > 0 && (
+                <>
+                  <h3>In Home Assistant now ({v.entities.length})</h3>
+                  <ul className="home-ent-list">
+                    {v.entities.map((e) => <li key={e.id}><span>{e.name}</span><code>{e.id}</code></li>)}
+                  </ul>
+                  <small>Each group and room is a device of its own, in the Home Assistant area with the same name if there is one. Renaming one here renames it there. Rename the entities or their IDs in Home Assistant if you like: they keep working, and the IDs shown here follow.</small>
+                  <h3>Alexa and Google</h3>
+                  <small>With Home Assistant Cloud: Settings → Voice assistants → Expose, and tick the ones to use (they may be exposed already if new entities are). Then "Alexa, discover devices". With your own Alexa skill, add them to its filter. Your real lights stay as they were, so name things so Alexa can tell them apart.</small>
+                </>
+              )}
+              {v.error && <p className="home-set-error" role="alert">Home Assistant said: {v.error}</p>}
             </>
           )}
         </>

@@ -126,6 +126,13 @@ body .home-mods li.on .home-mod-icon { background: rgb(238 132 52 / .14); color:
 body .home-mod-icon svg { width: 20px; height: 20px; }
 body .home-mod-text { flex: 1; min-width: 0; cursor: pointer; }
 body .home-mod-text strong { display: block; font-weight: 620; }
+body .home-ent-note { margin: 12px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); font-size: .9rem; }
+body .home-ent-note ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+body .home-ent-kinds li { padding: 12px; }
+body .home-ent-list { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--line); border-radius: 12px; font-size: .9rem; }
+body .home-ent-list li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; flex-wrap: wrap; }
+body .home-ent-list li + li { border-top: 1px solid var(--line); }
+body .home-ent-list code { color: var(--ink-2); overflow-wrap: anywhere; }
 
 /* switch */
 body .home-sw { position: relative; flex: none; width: 46px; height: 28px; display: inline-block; }

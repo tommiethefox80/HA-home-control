@@ -12,6 +12,7 @@ import { createLighting } from './lighting/http.js';
 import { createCameras } from './cameras/http.js';
 import { createWifi } from './wifi/http.js';
 import { createEnergy } from './energy/http.js';
+import { createEntities } from './entities.js';
 import { watchRenames } from './renames.js';
 import { createHouse } from './house.js';
 import { createPublisher } from './publish.js';
@@ -69,6 +70,8 @@ const cameras = createCameras({ client, dataDir: DATA_DIR, log: logObj, house, r
 const wifi = createWifi({ client, dataDir: DATA_DIR, log: logObj, house, restBase: REST_BASE, token: HA_TOKEN });
 const energy = createEnergy({ client, dataDir: DATA_DIR, log: logObj, house });
 house.attach(heating, lighting, cameras, wifi, energy);
+// groups, rooms, scenes and Away as Home Assistant entities (MQTT discovery), when turned on in General
+const entities = createEntities({ client, house, heating, lighting, dataDir: DATA_DIR, log: logObj, version: VERSION });
 house.panel = panelPath;
 lighting.engine.on('change', () => heating.push());
 // an entity's ID renamed in Home Assistant: rooms, groups, cameras and access points follow it
@@ -101,6 +104,7 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname.replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/';
   if (!p.startsWith('/api/')) return serveStatic(req, res, p === '/' ? '/index.html' : p);
   if (p === '/api/house') { if (await house.handle(req, res, p)) return; }
+  else if (p === '/api/ha-entities') { if (await entities.handle(req, res, p)) return; }
   else if (p.startsWith('/api/move') || p === '/api/card') { if (await move.handle(req, res, p)) return; }
   else if (p.startsWith('/api/lighting/')) { if (await lighting.handle(req, res, url, p)) return; }
   else if (p.startsWith('/api/cameras/')) { if (await cameras.handle(req, res, url, p)) return; }
@@ -117,6 +121,7 @@ lighting.start();
 cameras.start();
 wifi.start();
 energy.start();
+entities.start();
 card.start();
 server.listen(PORT, () => plain(`Home Control ${VERSION} listening on :${PORT}, Home Assistant at ${HA_URL}`));
 
@@ -129,6 +134,7 @@ const shutdown = async () => {
   cameras.shutdown();
   wifi.shutdown();
   energy.shutdown();
+  await entities.shutdown();
   await heating.shutdown();
   client.stop();
   process.exit(0);

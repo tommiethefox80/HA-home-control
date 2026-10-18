@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.13.0
+- **Groups, rooms, scenes and Away as Home Assistant entities** (Settings → General → Home Assistant entities, off to start with), for Alexa and Google ("Alexa, turn off the lounge lights"), automations and other dashboards:
+  - a **light** for each lighting group (on at its scheduled level, off, brightness and warmth), a **thermostat** for each heating room (a temperature holds until its next change; Off snoozes it; Heat puts it back on its schedule), each **scene**, an **Away** switch for the whole house and the **heating mode**.
+  - Each group and room is a Home Assistant device ("Lounge lights", "Lounge heating"), in the area with the same name; renaming one here renames it there. Scenes are named as they are ("Film night"). They do exactly what the same buttons in Home Control do, and show the same state.
+  - Made with MQTT discovery through Home Assistant's own MQTT connection: it needs the Mosquitto broker add-on and the MQTT integration, and no password here. Deleting a group or room removes its entity; turning it off removes them all.
+
 ## 1.12.1
 - **The heating comes on with everyone out: turn it off from the phone.** A new phone alert (Settings → Heating → Phone alerts) asks the phones you tick, with three buttons: **Off for 2 hours** (or 1 to 8 hours), **Off until we're back** (someone's home) and **Off until we're nearly home** (within the Away automatically distance). Off means Away; the schedules come back by themselves. Asked once while everyone's out, not when someone's on the way home or for a boost someone set, and with Away automatically on only if that's been overruled by hand.
 - The heating's mode says so on the Heating page and dashboard: "Away until someone's home" / "Away until someone's nearly home".

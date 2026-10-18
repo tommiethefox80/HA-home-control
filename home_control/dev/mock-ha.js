@@ -318,6 +318,30 @@ function fireEvent(type, data, context = { id: randomUUID(), parent_id: null, us
 // the Octopus Energy integration and the Energy dashboard, off until POST /octopus { on: true }
 const octopus = createOctopus({ states, fireEvent, publicState, nowIso, TZ });
 
+// MQTT, as Home Assistant's MQTT integration with a broker: retained messages, the mqtt.publish
+// action and mqtt/subscribe (POST /mqtt { on: false } as if the integration weren't set up)
+const MQTT = { on: true, retained: new Map(), log: [], subs: [] };
+const topicMatch = (pattern, topic) => {
+  const p = pattern.split('/'); const t = topic.split('/');
+  for (let i = 0; i < p.length; i++) {
+    if (p[i] === '#') return true;
+    if (i >= t.length || (p[i] !== '+' && p[i] !== t[i])) return false;
+  }
+  return p.length === t.length;
+};
+function mqttDeliver(topic, payload, retain = false) {
+  for (const s of MQTT.subs) {
+    if (s.ws.readyState !== 1 || !topicMatch(s.topic, topic)) continue;
+    s.ws.send(JSON.stringify({ id: s.id, type: 'event', event: { topic, payload, qos: 0, retain } }));
+  }
+}
+function mqttPublish(topic, payload, retain) {
+  MQTT.log.push({ at: Date.now(), topic, payload, retain });
+  if (MQTT.log.length > 2000) MQTT.log.shift();
+  if (retain) { if (payload === '') MQTT.retained.delete(topic); else MQTT.retained.set(topic, payload); }
+  mqttDeliver(topic, payload, false);
+}
+
 // ---------- a week of a physical house ----------
 // Outside temperature with day/night swings and colder and milder days; two rooms that each hour
 // lose a share (k) of the gap to outside (Newton's law), warm while heating (more slowly on cold
@@ -487,6 +511,14 @@ wss.on('connection', (ws) => {
         return reply({ time_zone: TZ, latitude: LAT, longitude: LON, location_name: 'Mock home', unit_system: { length: 'mi' }, version: '2026.10.0' });
       case 'get_states':
         return reply([...states.values()].map(publicState));
+      case 'mqtt/subscribe': {
+        if (!MQTT.on) return reply(null, false, { code: 'unknown_command', message: 'Unknown command.' });
+        MQTT.subs.push({ ws, id: m.id, topic: m.topic });
+        reply(null);
+        // as a broker: what's retained under it straight away
+        for (const [t, pl] of MQTT.retained) if (topicMatch(m.topic, t)) ws.send(JSON.stringify({ id: m.id, type: 'event', event: { topic: t, payload: pl, qos: 0, retain: true } }));
+        return;
+      }
       case 'subscribe_events':
         (ws.subs ||= new Map()).set(m.id, m.event_type || '*');
         return reply(null);
@@ -525,6 +557,7 @@ wss.on('connection', (ws) => {
           notify: Object.fromEntries(NOTIFY.map((n) => [n, { name: n }])),
           camera: { snapshot: {}, record: {}, turn_on: {}, turn_off: {} },
           light: { turn_on: {}, turn_off: {}, toggle: {} },
+          ...(MQTT.on ? { mqtt: { publish: {}, dump: {}, reload: {} } } : {}),
         });
       case 'config/auth/list': return reply([{ id: 'u1', name: 'Tom' }, { id: 'u2', name: 'Home Assistant Cloud' }]);
       case 'call_service': {
@@ -585,6 +618,12 @@ wss.on('connection', (ws) => {
           setTimeout(() => setState(id, { state: next }, context), 150);
           return;
         }
+        if (domain === 'mqtt' && service === 'publish') {
+          if (!MQTT.on) return reply(null, false, { code: 'not_found', message: 'Service mqtt.publish not found.' });
+          if (typeof d.topic !== 'string' || /[+#]/.test(d.topic)) return reply(null, false, { code: 'invalid_format', message: 'Invalid topic' });
+          mqttPublish(d.topic, d.payload == null ? '' : String(d.payload), !!d.retain);
+          return reply({ context: { id: randomUUID() } });
+        }
         if (domain === 'homeassistant' && service === 'update_entity') {
           const context = { id: randomUUID(), parent_id: null, user_id: 'supervisor' };
           calls.push({ at: Date.now(), domain, service, data: d });
@@ -644,6 +683,13 @@ createServer(async (req, res) => {
   if (req.url === '/unfreeze') { frozen = false; return done({ ok: true }); }
   if (req.url === '/fire') { fireEvent(body.event_type, body.data || {}); return done({ ok: true }); }
   if (req.url === '/octopus') return done(octopus.control(body));
+  if (req.url === '/mqtt') {
+    if (typeof body.on === 'boolean') MQTT.on = body.on;
+    if (body.clearLog) MQTT.log.length = 0;
+    return done({ on: MQTT.on, retained: Object.fromEntries(MQTT.retained), log: MQTT.log, subs: MQTT.subs.filter((s) => s.ws.readyState === 1).map((s) => s.topic) });
+  }
+  // a command from Home Assistant (a light switched in its UI, Alexa, an automation)
+  if (req.url === '/mqtt-send') { MQTT.log.push({ at: Date.now(), topic: body.topic, payload: body.payload, retain: false, from: 'ha' }); mqttDeliver(body.topic, String(body.payload), false); return done({ ok: true }); }
   // an entity's ID changed in Settings → Entities (or with its device, "rename entity IDs" ticked)
   if (req.url === '/rename') {
     const { from, to, name } = body;
