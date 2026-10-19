@@ -45,7 +45,7 @@ await step('heating off: radiators handed back, sensors removed, nothing more se
   await mock('POST', '/knob', { entity: 'climate.lounge_trv', temperature: 25 });
   await sleep(3000);
   assert.deepEqual((await calls()).filter((x) => x.domain === 'climate'), []);
-  assert.ok(!(await j('GET', `${APP}/api/state`)).log.some((l) => /changed by hand to 25/.test(l.msg)), 'took the knob for a hold');
+  assert.ok(!(await j('GET', `${APP}/api/state`)).log.some((l) => /changed to 25°/.test(l.msg)), 'took the knob for a hold');
   await assert.rejects(j('POST', `${APP}/api/boost`, { temp: 22, minutes: 30 }), (e) => e.status === 409 && /turned off/.test(e.message));
   const log = await j('GET', `${APP}/api/log`);
   assert.ok(JSON.stringify(log).includes('Heating turned off in Home Control'), 'Activity says so');

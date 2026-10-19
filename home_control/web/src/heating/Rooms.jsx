@@ -38,7 +38,7 @@ const list = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(',
 export function waitLine(z) {
   if (!z.waiting || z.startAt == null) return null;
   return z.coasting
-    ? <>Leftover heat should carry it to {deg(z.target)}. Heats again below <b>{deg(z.startAt)}</b></>
+    ? <>Still warming from leftover heat. Heats again below <b>{deg(z.startAt)}</b> once that's done</>
     : <>Not heating yet: heats again below <b>{deg(z.startAt)}</b></>;
 }
 
@@ -60,7 +60,7 @@ export function nextLine(z, tz) {
   if (z.waiting && (!at || n.reason === 'cooling')) {
     const when = at ? <>, about <b>{at}</b></> : null;
     return z.coasting
-      ? <>Leftover heat should carry it to {deg(z.target)}. Heats again below <b>{deg(z.startAt)}</b>{when}</>
+      ? <>Still warming from leftover heat. Heats again below <b>{deg(z.startAt)}</b> once that's done{when}</>
       : <>Not heating yet: heats again below <b>{deg(z.startAt)}</b>{when}</>;
   }
   if (!at) return null;
@@ -103,12 +103,8 @@ function nextWhy(z, tz, out) {
 /** The same, in full, for the room's own page. */
 function waitWhy(z) {
   if (!z.waiting || z.startAt == null) return null;
-  const early = Math.round((z.target - z.stopAt) * 10) / 10; // as shown: target and stop point both rounded
-  const coast = z.coasting && early > 0 ? `Heat stopped at ${deg(z.stopAt)} and the radiators' leftover heat should carry it to ${deg(z.target)}. ` : '';
-  const why = z.gapFromStop
-    ? `it stops heating ${deg(early)} early${z.stopMode === 'auto' ? ' (learned, because it keeps warming after the heat goes off)' : ''} and starts again a little below that, so the boiler doesn't flick on and off.`
-    : `once it's ${deg(z.startGap)} under its target (Settings → Start heating when a room is this far below target), so the boiler doesn't flick on and off.`;
-  return `${coast}It heats again below ${deg(z.startAt)}${z.gapFromStop ? ': ' : ' '}${why}`;
+  const coast = z.coasting ? `Heat stopped at ${deg(z.stopAt)} and it's still warming from the radiators' leftover heat, so it waits while that lasts (until it stops rising). ` : '';
+  return `${coast}It heats again below ${deg(z.startAt)}, once it's ${deg(z.startGap)} under its target (Settings → Start heating when a room is this far below target), so the boiler doesn't flick on and off.`;
 }
 
 // a boost, a hold, or a change made on the radiator: anything "Back to schedule" undoes
@@ -259,7 +255,7 @@ function RoomSheet({ z, state, onClose, notify }) {
   return (
     <Sheet onClose={onClose} label={z.name}>
       <h2>{z.name}</h2>
-      <p className="lede">{deg(z.current)} now. {statusLine(z, tz)}.{waitWhy(z) ? ` ${waitWhy(z)}` : z.coasting ? ` Heat stopped at ${deg(z.stopAt)}; the radiators' leftover heat should carry it to ${deg(z.target)}.` : ''}</p>
+      <p className="lede">{deg(z.current)} now. {statusLine(z, tz)}{z.source === 'manual' && z.via ? ` (${z.via})` : ''}.{waitWhy(z) ? ` ${waitWhy(z)}` : z.coasting ? ` Heat stopped at ${deg(z.stopAt)}; it's still warming from the radiators' leftover heat.` : ''}</p>
       {nextWhy(z, tz, state.extras?.outside?.now) && <p className="lede next-why"><Icon.clock />{nextWhy(z, tz, state.extras?.outside?.now)}</p>}
       {overridden && !blocked && (
         <div className="actions back-row">

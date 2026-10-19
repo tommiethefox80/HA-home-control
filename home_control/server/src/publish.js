@@ -42,7 +42,8 @@ export function roomStatus(z, tz) {
   const base = baseStatus(z, tz);
   // below its target but not heating: say when it will
   if (!z.enabled || !z.waiting || z.startAt == null || ['off', 'window'].includes(z.source)) return base;
-  return z.source === 'schedule' || !z.source ? `Heats again below ${deg(z.startAt)} · ${base.replace(/^On schedule, /, '')}` : `${base} · heats again below ${deg(z.startAt)}`;
+  const wait = z.coasting ? 'Warming from leftover heat' : `Heats again below ${deg(z.startAt)}`;
+  return z.source === 'schedule' || !z.source ? `${wait} · ${base.replace(/^On schedule, /, '')}` : `${base} · ${wait.toLowerCase()}`;
 }
 
 function baseStatus(z, tz) {

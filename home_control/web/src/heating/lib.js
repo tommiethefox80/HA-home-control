@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { hcFetch } from '../net.js';
 
 // ---------- API (relative URLs so it works behind HA ingress) ----------
 const base = () => new URL('./api/', window.location.href.split('#')[0]);
@@ -9,7 +10,7 @@ let liveSink = null;
 const asSnapshot = (d) => (d && Array.isArray(d.zones) && d.mode ? d : d?.state && Array.isArray(d.state.zones) ? d.state : null);
 
 export async function api(path, method = 'GET', body) {
-  const res = await fetch(new URL(path, base()), {
+  const res = await hcFetch(new URL(path, base()), {
     method,
     headers: body ? { 'content-type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,

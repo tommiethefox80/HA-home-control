@@ -1,11 +1,12 @@
 // Energy: API, live state, and words for prices, money and times.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { zonedParts, minutesToTime } from '../../../server/src/lighting/schedule.js';
+import { hcFetch } from '../net.js';
 
 export async function api(method, path, body) {
   let res;
   try {
-    res = await fetch(`api/energy/${path}`, {
+    res = await hcFetch(`api/energy/${path}`, {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,

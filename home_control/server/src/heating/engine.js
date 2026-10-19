@@ -68,11 +68,80 @@ export class Engine extends EventEmitter {
     if (zone.openRadiator === true || zone.openRadiator === false) return zone.openRadiator;
     return !(zone.trvs || []).some((e) => e !== this.s.boiler.entity);
   }
-  // The start gap widens if needed so there's always 0.2° between start and stop (no flicking on/off).
-  startGapFor(stop) { return Math.max(Number(this.s.hysteresis) || 0, stop + 0.2); }
+  // How far below target a room must fall before it heats again (at least 0.2°, so the boiler
+  // can't flick on and off). Not pushed lower by stopping early: a room that isn't still warming
+  // from its own leftover heat only cools, so waiting longer would just leave it cold.
+  startGap() { return Math.max(0.2, Number(this.s.hysteresis) || 0); }
+  /**
+   * How far below target this heat-up stops: the room's stop-early margin, but less for a smaller
+   * heat-up (a radiator that's only been on a little while has less heat left in it to give), and
+   * always at least 0.2° above where it started, so it heats for a while rather than flicking on
+   * and off. `from`: the temperature the heat-up started at (null if not known: the full margin).
+   */
+  heatMarginFor(zone, target, from) {
+    const m = this.stopMarginFor(zone, target);
+    if (from == null || !Number.isFinite(from)) return m;
+    const rise = target - from;
+    return Math.round(Math.max(0, Math.min(m, rise / 2, rise - 0.2)) * 100) / 100;
+  }
+  /**
+   * Stopped early a moment ago and still warming from the radiators' leftover heat: it doesn't heat
+   * again while that lasts. Only while it's actually rising: no new high for 20 minutes, or falling
+   * back from it, and the leftover heat is spent (it won't rise again on its own).
+   */
+  coastingUp(zone, target, current, now) {
+    const c = this.rt.coast?.[zone.id];
+    if (!c || c.done || current == null || c.target !== target || !(c.margin > 0.05)) return false;
+    if (current >= target || now - c.at > 90 * 60000 * TS) return false;
+    return now - c.peakAt <= 20 * 60000 * TS && current > c.peak - 0.05;
+  }
+
+  /**
+   * Once (1.13.1): forget the stop-early margins learned before, which counted any warming after the
+   * heat went off (a shower, people, the sun) as leftover radiator heat. Rooms relearn from their
+   * next few heat-ups.
+   */
+  forgetOldLearning() {
+    if (this.rt.learnRules >= 2) return;
+    const learned = Object.entries(this.rt.learn || {})
+      .map(([id, l]) => ({ zone: this.zones.find((z) => z.id === id), margin: l?.margin }))
+      .filter((x) => x.zone && x.margin > 0.05 && this.stopModeFor(x.zone) === 'auto');
+    this.rt.learn = {};
+    this.rt.coast = {};
+    this.rt.learnRules = 2;
+    this.store.save();
+    if (learned.length) {
+      const list = learned.map((x) => `${x.zone.name} (${Math.round(x.margin * 10) / 10}°)`).join(', ');
+      this.note(`Stop early: forgot what was learned (${list}), as it counted any warming after the heat went off, such as a shower or people in the room. Rooms relearn from their next few heat-ups.`);
+    }
+  }
+
+  /** Home Assistant's users, to say who changed a radiator. */
+  async #loadUsers() {
+    const users = new Map();
+    try {
+      for (const u of (await this.ha.send({ type: 'config/auth/list' })) || []) users.set(u.id, u.name);
+    } catch { /* not allowed: people's names only */ }
+    for (const s of this.ha.states?.values?.() || []) {
+      if (s.entity_id.startsWith('person.') && s.attributes?.user_id && !users.has(s.attributes.user_id)) users.set(s.attributes.user_id, s.attributes.friendly_name);
+    }
+    this.users = users;
+  }
+
+  /** Who changed a radiator, from the change's context in Home Assistant. */
+  whoChanged(context) {
+    if (context?.user_id) {
+      const name = this.users?.get(context.user_id);
+      if (name === 'Home Assistant Cloud') return 'through Home Assistant Cloud (Alexa or Google)';
+      return name ? `by ${name} in Home Assistant` : 'in Home Assistant';
+    }
+    if (context?.parent_id) return 'by an automation, script or voice assistant';
+    return 'on the radiator itself, or in its own app (Hive)';
+  }
 
   start() {
-    this.ha.on('status', (ok) => { if (ok) this.requestTick(); this.emit('change'); });
+    this.forgetOldLearning();
+    this.ha.on('status', (ok) => { if (ok) { this.requestTick(); this.#loadUsers(); } this.emit('change'); });
     this.ha.on('state', (id, ns, os) => this.#onState(id, ns, os));
     this.ha.on('event', (type, data) => { if (type === 'mobile_app_notification_action') this.phoneAction(data?.action); });
     setInterval(() => this.tick(), 30000);
@@ -121,7 +190,7 @@ export class Engine extends EventEmitter {
     if (this.rt.mode === 'off') return { temp: this.s.frostTemp, source: 'off', sched };
     const win = this.rt.windowPause?.[zone.id];
     if (win && win.until > now) return { temp: this.s.frostTemp, source: 'window', until: win.until, sched };
-    if (ov && ov.until > now) return { temp: ov.temp, source: ov.kind, until: ov.until, by: ov.by, forever: !!ov.forever, sched };
+    if (ov && ov.until > now) return { temp: ov.temp, source: ov.kind, until: ov.until, by: ov.by, via: ov.via, forever: !!ov.forever, sched };
     if (this.rt.mode === 'away' && !(this.rt.awayUntil && this.rt.awayUntil <= now)) return { temp: this.s.awayTemp, source: 'away', until: this.rt.awayUntil, sched };
     if (!sched) return { temp: this.s.frostTemp, source: 'no-schedule', sched };
     const pre = preheat ? this.#preheat(zone, sched, now) : null;
@@ -172,7 +241,7 @@ export class Engine extends EventEmitter {
     if (t.source === 'off') return `${zone.name}: stopped heating, the heating is off${took}`;
     // warming early, and warm already: ready for the scheduled time
     const was = (this.views || []).find((v) => v.id === zone.id);
-    if (was?.source === 'preheat' && current >= was.target - this.stopMarginFor(zone, was.target) - 0.05) {
+    if (was?.source === 'preheat' && current >= was.target - (was.stopMargin ?? 0) - 0.05) {
       return `${zone.name}: warm enough at ${d(current)}, ready for ${d(was.target)} by ${was.readyBy}${took}`;
     }
     if (before != null && t.temp < before - 0.05) return `${zone.name}: stopped heating, its target went down to ${d(t.temp)}${took}`;
@@ -256,7 +325,7 @@ export class Engine extends EventEmitter {
       // its stop point as time goes on: the schedule (or a boost ending) can lower it
       const stopAt = (t) => {
         const target = v.source === 'preheat' && t < (v.until || 0) ? v.target : this.targetFor(zone, t, { preheat: false }).temp;
-        return target - this.stopMarginFor(zone, target);
+        return target - this.heatMarginFor(zone, target, this.callSince[zone.id]?.temp ?? v.current);
       };
       const h = heatingUntil({ now, current: v.current, stopAt, rate: v.warmRate });
       return { heating: true, until: h ? toFive(h.at) : null, warm: h ? h.warm : null, temp: h?.temp ?? null, path: h?.path || null };
@@ -266,13 +335,13 @@ export class Engine extends EventEmitter {
     const own = this.model?.k?.[zone.id];
     const k = this.lossRate(zone);
     const c = this.rt.coast?.[zone.id];
-    // just after a heat-up the radiators' leftover heat holds it up for a while
-    const settleUntil = c && !c.done && c.at ? c.at + 45 * 60000 : 0;
+    // still warming from its leftover heat: held up while that lasts (20 minutes after its last rise)
+    const settleUntil = v.coasting && c?.peakAt ? c.peakAt + 20 * 60000 * TS : 0;
     const r = nextHeat({
       now, current: v.current, k, settleUntil,
       outsideAt: outsideCurve(this.outsideForecast, this.outsideNow(), now),
       targetAt: (t) => this.targetFor(zone, t, { preheat: false }),
-      startGapFor: (target) => this.startGapFor(this.stopMarginFor(zone, target)),
+      startGapFor: () => this.startGap(),
       leadFor: (to, from, out) => this.preheatLead(zone, to, from, out),
     });
     return {
@@ -293,11 +362,11 @@ export class Engine extends EventEmitter {
     let added = false;
     for (const v of views) {
       const n = v.next;
-      if (!v.enabled || v.calling || this.joined[v.id] || !n?.at || v.current == null) continue;
+      if (!v.enabled || v.calling || v.coasting || this.joined[v.id] || !n?.at || v.current == null) continue;
       if (!['cooling', 'preheat'].includes(n.reason) || n.at - now > (Number(set.minutes) || 30) * 60000) continue;
       const zone = this.zones.find((z) => z.id === v.id);
       const target = n.reason === 'preheat' ? n.target : v.target;
-      if (v.current >= target - this.stopMarginFor(zone, target) - 0.05) continue; // nothing to gain: it's above where it stops
+      if (v.current >= target - this.heatMarginFor(zone, target, v.current) - 0.05) continue; // nothing to gain: it's above where it would stop
       this.joined[v.id] = { at: now, with: names, reason: n.reason, target, readyBy: n.readyBy, until: n.riseAt, due: n.at };
       const due = new Intl.DateTimeFormat('en-GB', { timeZone: this.ha.timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(n.at));
       this.note(`${v.name}: heating now with ${names.join(' and ')}, as it would have needed heat at about ${due}, so the boiler runs once`, 'room');
@@ -647,18 +716,24 @@ export class Engine extends EventEmitter {
     if (j?.reason === 'preheat' && t.source === 'schedule' && j.until > now && j.target > t.temp) {
       t = { temp: j.target, source: 'preheat', until: j.until, readyBy: j.readyBy, sched: t.sched };
     }
-    const stop = this.stopMarginFor(zone, t.temp);
-    const start = this.startGapFor(stop);
+    // the room's stop-early margin (learned, a fixed % or the house's), and this heat-up's share of it
+    const margin = this.stopMarginFor(zone, t.temp);
+    const from = wasCalling ? (this.callSince[zone.id]?.temp ?? current) : current;
+    const stop = current == null ? margin : this.heatMarginFor(zone, t.temp, from);
+    const gap = this.startGap();
+    // just stopped early and still rising on leftover heat: not again until that's done
+    const coasting = !!zone.enabled && !wasCalling && this.coastingUp(zone, t.temp, current, now);
+    const start = coasting ? Infinity : gap;
     if (!zone.enabled) {
       calling = false;
     } else if (current == null) {
       calling = false;
       warnings.push('No temperature reading');
+    } else if (wasCalling) {
+      calling = current < t.temp - stop; // heating: until this heat-up's stop point
     } else if (current < t.temp - start) {
-      calling = true;
-    } else if (current >= t.temp - stop) {
-      calling = false;
-    } else if (j && !wasCalling) {
+      calling = true; // (a heat-up starting here always stops at least 0.2° higher)
+    } else if (j && current < t.temp - stop) {
       calling = true; // below its stop point and due soon: starting now, with the room the boiler's on for
     }
     if (!calling && j) { delete this.joined[zone.id]; j = null; }
@@ -677,7 +752,7 @@ export class Engine extends EventEmitter {
     }
     this.calling.set(zone.id, calling);
     if (zone.enabled) {
-      this.#trackCoast(zone, wasCalling, calling, current, t.temp, now);
+      this.#trackCoast(zone, wasCalling, calling, current, t.temp, now, { stop, margin });
       if (t.source !== 'window') this.#trackWarm(zone, wasCalling, calling, current, t.temp, now);
       this.#trackWindow(zone, current, now);
       if (calling && !wasCalling) this.callSince[zone.id] = { at: now, temp: current };
@@ -692,8 +767,8 @@ export class Engine extends EventEmitter {
       const isBoiler = e === this.s.boiler.entity;
       // While the room isn't calling, turn the valve down to the stop point so it closes
       // too (otherwise it stays open whenever the boiler fires for another room).
-      const lowered = !calling && stop > 0 && !['off', 'window'].includes(t.source) && t.temp > this.s.frostTemp;
-      const valveTarget = lowered ? t.temp - stop : t.temp;
+      const lowered = !calling && margin > 0 && !['off', 'window'].includes(t.source) && t.temp > this.s.frostTemp;
+      const valveTarget = lowered ? t.temp - Math.max(margin, gap) : t.temp;
       if (zone.enabled && available && this.ha.connected && !isBoiler) this.#driveTrv(e, st, valveTarget, now);
       return {
         entity_id: e,
@@ -708,42 +783,51 @@ export class Engine extends EventEmitter {
       };
     });
 
+    // where it stops: this heat-up's point, where it stopped (warming from leftover heat), or where
+    // the next heat-up would stop (from its start point)
+    const c = this.rt.coast?.[zone.id];
+    const stopShown = calling ? stop : coasting && c ? t.temp - c.stoppedAt : this.heatMarginFor(zone, t.temp, t.temp - gap);
     return {
-      stopAt: Math.round((t.temp - stop) * 10) / 10,
+      stopAt: Math.round((t.temp - stopShown) * 10) / 10,
       readyBy: t.readyBy || null,
       warm: this.rt.warm?.[zone.id] || null,
       warmRate: this.warmRateFor(zone, t.temp),
       windowPause: t.source === 'window' ? this.rt.windowPause[zone.id] : null,
-      stopMargin: Math.round(stop * 100) / 100,
+      stopMargin: Math.round(stopShown * 100) / 100,
+      margin: Math.round(margin * 100) / 100, // its stop-early margin for a full heat-up
       stopMode: this.stopModeFor(zone),
       coast: this.rt.coast?.[zone.id] || null,
       learn: this.rt.learn?.[zone.id] || null,
-      coasting: !calling && stop > 0 && current != null && current < t.temp && current >= t.temp - stop - 0.05,
+      coasting,
       openRadiator: this.openRadiator(zone),
       openRadiatorSet: zone.openRadiator === true || zone.openRadiator === false,
       // below its target but not heating: it starts again under startAt (so the boiler doesn't flick on and off)
       waiting: !!zone.enabled && !calling && current != null && current < t.temp && !['off', 'window'].includes(t.source),
-      startAt: Math.round((t.temp - start) * 10) / 10,
-      startGap: Math.round(start * 100) / 100,
-      gapFromStop: stop + 0.2 > (Number(this.s.hysteresis) || 0), // the start point is set by stopping early, not the house gap
+      startAt: Math.round((t.temp - gap) * 10) / 10,
+      startGap: Math.round(gap * 100) / 100,
       joined: j && calling ? { with: j.with, due: j.due, at: j.at } : null,
       early: t.early ?? null, // easing off: minutes before the drop it stopped
       // for Settings: how early it would stop before its next drop, on or off
       easeOffMinutes: t.sched?.next && t.sched.next.temp < t.sched.temp ? this.easeOffMinutes(zone, t.sched.temp, { always: true }) : null,
       id: zone.id, name: zone.name, icon: zone.icon || 'room', enabled: zone.enabled,
-      current, target: t.temp, source: t.source, until: t.until || null, by: t.by || null, forever: !!t.forever,
+      current, target: t.temp, source: t.source, until: t.until || null, by: t.by || null, via: t.via || null, forever: !!t.forever,
       snoozedUnder: this.#snoozeUnder(zone.id, now) ? true : false,
       scheduled: t.sched, calling, trvs, sensor: zone.sensor || null, warnings,
     };
   }
 
-  // After heating stops, watch how far the room keeps rising (leftover radiator heat)
-  // for up to 90 min. The result is shown in the room's settings to help pick a % to stop early.
-  #trackCoast(zone, wasCalling, calling, current, target, now) {
+  // After heating stops, watch how far the room keeps rising (leftover radiator heat), for up to
+  // an hour (a rise after that isn't the radiators). The result teaches it how early to stop.
+  #trackCoast(zone, wasCalling, calling, current, target, now, { stop = 0, margin = stop } = {}) {
     const rt = (this.rt.coast ||= {});
     const c = rt[zone.id];
     if (wasCalling && !calling && current != null) {
-      rt[zone.id] = { target, stoppedAt: current, margin: this.stopMarginFor(zone, target), peak: current, peakAt: now, at: now, heatedFor: this.heatStart?.[zone.id] ? Math.round((now - this.heatStart[zone.id]) / 60000) : null, done: false };
+      const since = this.callSince[zone.id];
+      rt[zone.id] = {
+        target, stoppedAt: current, margin: stop, full: margin, from: since?.temp ?? null,
+        peak: current, peakAt: now, at: now,
+        heatedFor: this.heatStart?.[zone.id] ? Math.round((now - this.heatStart[zone.id]) / 60000 / TS) : null, done: false,
+      };
       this.store.save();
       return;
     }
@@ -755,28 +839,45 @@ export class Engine extends EventEmitter {
     if (!calling && this.openRadiator(zone) && (this.views || []).some((v) => v.id !== zone.id && v.enabled && v.calling)) {
       c.done = true; c.discard = 'heated with other rooms'; this.store.save(); return;
     }
-    if (!calling && current != null && current > c.peak) { c.peak = current; c.peakAt = now; this.store.save(); }
+    if (!calling && current != null && current > c.peak && now - c.at <= 60 * 60000 * TS) { c.peak = current; c.peakAt = now; this.store.save(); }
     const pastPeak = current != null && current <= c.peak - 0.2 && now - c.peakAt > 10 * 60000 * TS;
     const timedOut = now - c.at > 90 * 60000 * TS;
     if (pastPeak || timedOut || calling) {
       c.done = true;
       if (calling && !pastPeak && c.peak <= c.stoppedAt + 0.05 && now - c.at < 20 * 60000 * TS) c.discard = 'heating restarted too soon';
+      if (!c.discard) { const why = this.#notLeftoverHeat(c); if (why) c.discard = why; }
       if (!c.discard) this.#learn(zone, c, now);
       this.store.save();
     }
   }
 
+  /**
+   * A rise after the heat went off that can't be the radiators' leftover heat (a shower, people,
+   * the sun, another heater): more than it rose while heating, or faster. Not learned from.
+   */
+  #notLeftoverHeat(c) {
+    const rise = c.peak - c.stoppedAt;
+    if (c.from == null || rise < 0.3) return null;
+    const heated = c.stoppedAt - c.from;
+    if (rise > Math.max(0.5, heated)) return 'it rose more after the heat went off than while heating, so something else warmed it (a shower, people, the sun)';
+    const mins = (c.peakAt - c.at) / 60000 / TS;
+    if (c.heatedFor >= 10 && heated > 0 && mins > 0 && rise / mins > 1.5 * (heated / c.heatedFor)) return 'it warmed faster after the heat went off than while heating, so something else warmed it (a shower, people, the sun)';
+    return null;
+  }
+
   // One step of learning per heat-up: nudge the margin by half the overshoot (or undershoot),
-  // at most 0.3° per cycle, kept between 0 and 1.5°.
+  // at most 0.3° per cycle, kept between 0 and 1.5°. A small heat-up (stopped less early than the
+  // full margin) only teaches it to stop less early: if even that much leftover heat didn't come.
   #learn(zone, c, now) {
     const L = (this.rt.learn ||= {});
     const cur = L[zone.id] || { margin: Math.max(0, Number(this.s.stopEarly) || 0), cycles: 0, history: [] };
     const err = Math.round((c.peak - c.target) * 100) / 100;
+    const small = c.full != null && c.margin < c.full - 0.01;
     let step = 0.5 * err;
-    if (Math.abs(err) < 0.1) step = 0; // close enough: leave it alone
+    if (Math.abs(err) < 0.1 || (small && err > 0)) step = 0; // close enough, or a small heat-up's overshoot: leave it
     step = Math.max(-0.3, Math.min(0.3, step));
-    const margin = Math.round(Math.max(0, Math.min(1.5, (c.margin ?? cur.margin) + step)) * 20) / 20;
-    cur.history = [...(cur.history || []), { at: now, target: c.target, stoppedAt: c.stoppedAt, peak: c.peak, err, margin }].slice(-12);
+    const margin = Math.round(Math.max(0, Math.min(1.5, (c.full ?? c.margin ?? cur.margin) + step)) * 20) / 20;
+    cur.history = [...(cur.history || []), { at: now, target: c.target, from: c.from ?? null, stoppedAt: c.stoppedAt, peak: c.peak, err, margin }].slice(-12);
     cur.cycles = (cur.cycles || 0) + 1;
     const changed = Math.abs(margin - cur.margin) >= 0.05;
     cur.margin = margin;
@@ -1044,10 +1145,11 @@ export class Engine extends EventEmitter {
     if (Math.abs(t.temp - nt) < 0.05) return;
     const until = this.#nextChangeAt(zone, now) || now + 2 * 3600000;
     const snz = this.#snoozeUnder(zone.id, now);
-    this.rt.overrides[zone.id] = { temp: nt, until, kind: 'manual', by: this.#name(id), ...(snz ? { prev: snz } : {}) };
+    const via = this.whoChanged(ns.context);
+    this.rt.overrides[zone.id] = { temp: nt, until, kind: 'manual', by: this.#name(id), via, ...(snz ? { prev: snz } : {}) };
     this.lastCmd.set(id, { temp: nt, at: now });
     this.store.save();
-    this.note(`${zone.name}: ${this.#name(id)} changed by hand to ${nt}° — holding until ${this.#fmtTime(until)}`);
+    this.note(`${zone.name}: ${this.#name(id)} changed to ${nt}° ${via} (it was ${ot}°, and Home Control wanted ${t.temp}°) — holding until ${this.#fmtTime(until)}`);
   }
 
   #nextChangeAt(zone, now) {

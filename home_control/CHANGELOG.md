@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.1
+- **Fixed: a room that stops early waited too long to heat again.** A room that had learned to stop heating early (say 1.5° early, to let the radiators' leftover heat finish the job) only started again 0.2° below that point, even when it hadn't heated and so had no leftover heat: Heidi & Annie Room sat at 18.6° for 19°, waiting for 17.3°. Now a room only waits while it's actually still warming from its own leftover heat; as soon as it stops rising, or if it wasn't heated at all, it heats again at the usual 0.3° below target.
+- **How early a room stops depends on the heat-up**: the full amount after a heat-up from cold, less for a short top-up (whose radiator has less heat left in it), and always at least 0.2° above where it started.
+- **Stop early learns only from leftover radiator heat.** A rise of more than the room rose while heating, faster than it warmed while heating, or over an hour after the heat went off (a shower, people in the room, the sun) is no longer counted, and a short top-up only teaches a room to stop less early. What the rooms had learned before is forgotten once (Activity lists it) and relearned from the next few heat-ups.
+- **Who changed a radiator**: a change Home Control didn't make now says who made it, in Activity and on the room's page: on the radiator itself or in its own app (Hive), by a named person in Home Assistant, through Home Assistant Cloud (Alexa or Google), or by an automation, script or voice assistant, with what it was and what Home Control wanted.
+- **Fixed: "Request failed (401)"** when pressing a button, usually just after opening the phone app from the background, before Home Assistant had renewed the page's session (the press never reached Home Control). It now tries again for a few seconds, and if it still can't get through, says to reload the page.
+
 ## 1.13.0
 - **Groups, rooms, scenes and Away as Home Assistant entities** (Settings → General → Home Assistant entities, off to start with), for Alexa and Google ("Alexa, turn off the lounge lights"), automations and other dashboards:
   - a **light** for each lighting group (on at its scheduled level, off, brightness and warmth), a **thermostat** for each heating room (a temperature holds until its next change; Off snoozes it; Heat puts it back on its schedule), each **scene**, an **Away** switch for the whole house and the **heating mode**.

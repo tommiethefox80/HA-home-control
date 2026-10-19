@@ -5,6 +5,7 @@
 // that backup, so everything comes across exactly: rooms, schedules, boiler and settings,
 // lighting groups, scenes and schedules, Activity and history.
 import { useCallback, useEffect, useState } from 'react';
+import { hcFetch } from './net.js';
 
 export function hass() {
   try {
@@ -18,7 +19,7 @@ const plainError = (e) => String(e?.message || e?.error || (typeof e === 'string
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function local(path, method = 'GET', body) {
-  const r = await fetch(path, { method, cache: 'no-store', headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const r = await hcFetch(path, { method, cache: 'no-store', headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.error || `Home Control answered ${r.status}`);
   return data;

@@ -2,9 +2,10 @@
 // every section: which parts it looks after (heating, lighting…), Away automatically, and the
 // Dashboard button. Each is its own page in the menu. Changes save as they're made.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { hcFetch } from './net.js';
 
 async function homeApi(method = 'GET', body) {
-  const r = await fetch('api/house', { method, cache: 'no-store', headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const r = await hcFetch('api/house', { method, cache: 'no-store', headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.error || `Home Control answered ${r.status}`);
   return data;
@@ -234,7 +235,7 @@ function EntitySettings({ label, mods }) {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const call = useCallback(async (method = 'GET', body) => {
-    const r = await fetch('api/ha-entities', { method, cache: 'no-store', headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+    const r = await hcFetch('api/ha-entities', { method, cache: 'no-store', headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || `Home Control answered ${r.status}`);
     return data;

@@ -85,7 +85,7 @@ await step('a radiator knob turned by hand is still respected', async () => {
   await sleep(2500);
   const st = await heat('GET', 'state');
   const log = st.log.map((l) => l.msg).join(' | ');
-  assert.match(log, /changed by hand to 23°/, log);
+  assert.match(log, /changed to 23° on the radiator itself, or in its own app \(Hive\) \(it was \d+(\.\d)?°, and Home Control wanted [\d.]+°\)/, log);
 });
 
 await step('heating Away puts the lights in Away too, and back', async () => {

@@ -1,13 +1,14 @@
 // API, live state, time formatting and the "light as colour" scale.
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { zonedParts, minutesToTime } from '../../../server/src/lighting/schedule.js';
+import { hcFetch } from '../net.js';
 
 // ---------- API (relative URLs: ingress serves us under a random prefix) ----------
 
 export async function api(method, path, body) {
   let res;
   try {
-    res = await fetch(`api/lighting/${path}`, {
+    res = await hcFetch(`api/lighting/${path}`, {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,

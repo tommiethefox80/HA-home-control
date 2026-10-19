@@ -1,11 +1,12 @@
 // Cameras: API, live state, and opening Home Assistant's own live view.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { zonedParts, minutesToTime } from '../../../server/src/lighting/schedule.js';
+import { hcFetch } from '../net.js';
 
 export async function api(method, path, body) {
   let res;
   try {
-    res = await fetch(`api/cameras/${path}`, {
+    res = await hcFetch(`api/cameras/${path}`, {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,

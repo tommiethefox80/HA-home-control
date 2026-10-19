@@ -23,7 +23,7 @@ function StopEarlyField({ room, form, setForm, live, houseStop, notify }) {
   return (
     <div className="field">
       <span>Stop heating early</span>
-      <small>Radiators keep giving off heat after they shut off, so a room can carry on warming past its target. Stopping a little early lets it coast up to the target instead. While the room isn't calling for heat, its valves are turned down to the stop point so they close too.</small>
+      <small>Radiators keep giving off heat after they shut off, so a room can carry on warming past its target. Stopping a little early lets it coast up to the target instead. This is the most it stops early, after a heat-up from cold: a short top-up stops less early, and as soon as the room stops rising it heats again at the usual point. While the room isn't calling for heat, its valves are turned down so they close too.</small>
       <div className="choice-row" role="group" aria-label="How to stop early">
         <button type="button" className="chip" aria-pressed={mode === 'auto'} onClick={() => setForm({ ...form, stopEarlyMode: 'auto' })}>Learn automatically</button>
         <button type="button" className="chip" aria-pressed={mode === 'fixed'} onClick={() => setForm({ ...form, stopEarlyMode: 'fixed', stopEarlyPct: form.stopEarlyPct === '' ? '2' : form.stopEarlyPct })}>Fixed %</button>
@@ -40,6 +40,7 @@ function StopEarlyField({ room, form, setForm, live, houseStop, notify }) {
                   <li key={h.at}>{new Date(h.at).toLocaleDateString('en-GB', { weekday: 'short' })} {new Date(h.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}: stopped at {deg(h.stoppedAt)}, peaked at {deg(h.peak)} {h.err > 0.05 ? `(${h.err}° over)` : h.err < -0.05 ? `(${Math.abs(h.err)}° short)` : '(on target)'}</li>
                 ))}
               </ul>
+              {c?.done && c.discard && /something else/.test(c.discard) && <p>Last heat-up not counted: {c.discard}.</p>}
               <button type="button" className="btn link" onClick={relearn}>Forget and relearn</button>
             </>
           ) : (
