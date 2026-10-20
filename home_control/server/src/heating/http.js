@@ -63,6 +63,8 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
       settings,
       extras: extras(),
       attention: engine.attention,
+      // schedule changes suggested from changes made by hand (patterns.js), and ones made recently
+      learn: engine.learnView ? engine.learnView() : null,
       presence: store.data.settings.presence?.enabled ? { people: engine.presenceView(), auto: !!runtime.presenceAway } : null,
       lighting: lightingSummary(),
       log: entries.slice(0, 60),

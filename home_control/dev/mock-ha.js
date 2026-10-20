@@ -674,7 +674,8 @@ createServer(async (req, res) => {
     return done({ ok: true, state: publicState(states.get(body.entity)) });
   }
   if (req.url === '/sensor') { setState(body.entity, { state: body.state, attrs: body.attrs }); return done({ ok: true }); }
-  if (req.url === '/knob') { setState(body.entity, { attrs: { temperature: body.temperature } }); return done({ ok: true }); }
+  // a radiator's setpoint changed outside Home Control ({ context: { parent_id } }: by an automation)
+  if (req.url === '/knob') { setState(body.entity, { attrs: { temperature: body.temperature } }, body.context ? { id: randomUUID(), parent_id: null, user_id: null, ...body.context } : undefined); return done({ ok: true }); }
   if (req.url === '/bounce') { const st = states.get(body.entity); st._bounces = body.times; st._silent = !!body.silent; st._bounceDelay = body.delay ?? 600; return done({ ok: true }); }
   if (req.url === '/lag') { const st = states.get(body.entity); st._lag = { at: body.at, value: body.value }; return done({ ok: true }); }
   if (req.url === '/sim-log') return done(SIM);

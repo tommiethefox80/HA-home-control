@@ -1,7 +1,8 @@
 // The heating brain: works out each room's target, drives the TRVs, and fires
 // the boiler when any room is calling for heat.
 import { EventEmitter } from 'node:events';
-import { scheduledAt, localWeekPosition, normaliseSchedule, defaultSchedule } from './schedule.js';
+import { scheduledAt, localWeekPosition, normaliseSchedule, defaultSchedule, DAYS } from './schedule.js';
+import { scheduledTemp } from './learn.js';
 import { detectOutsideEntity, readOutside } from './history.js';
 import { nextHeat, heatingUntil, outsideCurve, toFive } from './forecast.js';
 
@@ -1149,6 +1150,9 @@ export class Engine extends EventEmitter {
     this.rt.overrides[zone.id] = { temp: nt, until, kind: 'manual', by: this.#name(id), via, ...(snz ? { prev: snz } : {}) };
     this.lastCmd.set(id, { temp: nt, at: now });
     this.store.save();
+    // what people do, not what an automation does at the same time every day
+    const byAutomation = !!ns.context?.parent_id && !ns.context?.user_id;
+    if (this.rt.mode === 'auto' && !byAutomation) this.emit('learn', { item: zone.id, at: now, value: nt, base: scheduledTemp(zone, now, this.ha.timeZone), until, src: ns.context?.user_id ? 'ha' : 'radiator' });
     this.note(`${zone.name}: ${this.#name(id)} changed to ${nt}° ${via} (it was ${ot}°, and Home Control wanted ${t.temp}°) — holding until ${this.#fmtTime(until)}`);
   }
 
@@ -1204,6 +1208,7 @@ export class Engine extends EventEmitter {
     const snz = this.#snoozeUnder(zone.id, now); // a hold or boost on a snoozed room goes back to the snooze after
     this.rt.overrides[zone.id] = { temp: t, until, kind: kind || (minutes ? 'boost' : 'hold'), ...(snz ? { prev: snz } : {}) };
     this.store.save();
+    if (this.rt.mode === 'auto') this.emit('learn', { item: zone.id, at: now, value: t, base: scheduledTemp(zone, now, this.ha.timeZone), until, src: 'app' });
     this.note(`${zone.name}: set to ${t}° until ${this.#fmtTime(until)}`);
     this.requestTick(100);
   }
@@ -1220,6 +1225,7 @@ export class Engine extends EventEmitter {
     }
     this.rt.overrides[zone.id] = { temp: t, until, kind: 'snooze', ...(forever ? { forever: true } : {}) };
     this.store.save();
+    this.emit('learn-end', { item: zone.id });
     this.note(`${zone.name}: snoozed at ${t}° ${forever ? 'until turned back on' : `until ${this.#fmtTime(until)}`}`);
     this.requestTick(100);
   }
@@ -1248,6 +1254,7 @@ export class Engine extends EventEmitter {
       const cur = this.rt.overrides[id];
       const prev = cur && cur.until > now ? cur : null;
       this.rt.overrides[id] = { temp: t, until, kind: 'boost', by: 'House boost', group: 'house', prev };
+      this.emit('learn-end', { item: id });
     }
     this.rt.houseBoost = { temp: t, until, zones: ids, started: now };
     this.store.save();
@@ -1283,6 +1290,7 @@ export class Engine extends EventEmitter {
     const ov = this.rt.overrides[zoneId];
     if (ov) {
       delete this.rt.overrides[zoneId];
+      this.emit('learn-end', { item: zoneId });
       const hb = this.rt.houseBoost;
       if (ov.group === 'house' && hb) {
         hb.zones = hb.zones.filter((id) => id !== zoneId);
@@ -1313,6 +1321,7 @@ export class Engine extends EventEmitter {
     this.rt.overrides = kept;
     this.rt.houseBoost = null;
     this.store.save();
+    this.emit('learn-end', { item: null });
     const label = { auto: 'Schedules', away: 'Away', off: 'Heating off (frost protection)' }[mode];
     this.note(`Mode: ${label}${this.rt.awayUntil ? ` until ${this.#fmtTime(this.rt.awayUntil)}` : ''}${by === 'presence' ? ` (automatic: ${why})` : by === 'phone' ? ` (${why})` : ''}`);
     this.requestTick(100);
@@ -1331,6 +1340,9 @@ export class Engine extends EventEmitter {
       // null: worked out (no TRV of its own); true/false: set by hand
       openRadiator: input.openRadiator === true || input.openRadiator === false ? input.openRadiator : null,
     };
+    // what to do with changes made by hand that keep happening: suggest a schedule change (the
+    // default), make it automatically, or nothing (left as it was if not sent)
+    if (['off', 'suggest', 'auto'].includes(input.learn)) clean.learn = input.learn;
     let zone = this.zones.find((z) => z.id === input.id);
     if (zone) Object.assign(zone, clean);
     else {
@@ -1351,6 +1363,18 @@ export class Engine extends EventEmitter {
     this.calling.delete(id);
     if (z) this.note(`Removed room ${z.name}`);
     this.store.save();
+    this.requestTick(100);
+  }
+
+  /** Some days of a room's schedule, from a suggestion (or undoing one). days: { 0..6: [{ time, temp }] } */
+  setScheduleDays(id, days, note) {
+    const z = this.zones.find((x) => x.id === id);
+    if (!z) throw new Error('Unknown room');
+    const next = { ...z.schedule };
+    for (const [d, pts] of Object.entries(days)) next[DAYS[Number(d)]] = pts;
+    z.schedule = normaliseSchedule(next);
+    this.store.save();
+    if (note) this.note(note);
     this.requestTick(100);
   }
 

@@ -7,6 +7,7 @@ import {
   inSeason, normalizeSeason, describeMonthDay, inTimeWindow, morningChange, nextLocalTime,
 } from './schedule.js';
 import { DEFAULT_SETTINGS } from './store.js';
+import { levelOf as learnLevel } from './learn.js';
 
 const TICK_MS = 15000;
 // "All off" is a one-press action, not a mode: everything off until each group's next scheduled change.
@@ -242,6 +243,19 @@ export class Engine extends EventEmitter {
     const n = g.motion?.night;
     if (n && inTimeWindow(zonedParts(ms, this.ctx().tz).minutes, n.from, n.to)) return n.brightness;
     return g.motion?.brightness ?? 100;
+  }
+
+  /** What the group's schedule wants at an instant ({ on, brightness, kelvin }), or null without one. */
+  scheduledLevel(g, ms = this.now()) {
+    const w = this.activeSchedule(g, ms);
+    const st = w ? stateAt(w, ms, this.ctx()) : null;
+    return st ? learnLevel(st.point) : null;
+  }
+
+  /** A change made by hand, for patterns.js (only on schedules: Away and all off aren't the schedule). */
+  _learn(g, value, until, src) {
+    if (this.data.mode !== 'schedule') return;
+    this.emit('learn', { item: g.id, at: this.now(), value: learnLevel(value), base: this.scheduledLevel(g), until: until ?? null, src });
   }
 
   /** When an override made now should end: the next change in the current mode, or null (until the mode changes). */
@@ -652,6 +666,8 @@ export class Engine extends EventEmitter {
     this._trace(id, `${what} ${who}${s ? ` (${Math.round((this.now() - s.at) / 1000)} s after the app last changed it)` : ''}: leaving it alone`);
     this.data.overrides[g.id] = { type: 'manual', since: this.now(), until, by: who, device: id };
     this.sent.delete(id); // a person has it now
+    // what people do, not what an automation does at the same time every day
+    if (context.user_id || !context.parent_id) this._learn(g, this._currentLevel(g), until, context.user_id ? 'ha' : 'switch');
     this.addActivity(`${g.name}: ${info.short} ${what} ${who}. Leaving it ${this._untilText(until)}.`, g.id);
     this.store.save();
     this.changed();
@@ -724,6 +740,7 @@ export class Engine extends EventEmitter {
     if (mode === this.data.mode) return;
     this.data.mode = mode;
     this.data.overrides = {};
+    this.emit('learn-end', { item: null });
     this._retarget([...this.sent.keys()]);
     // Changed by hand while everyone is out: don't flip straight back to Away; wait for someone to come home first.
     if (!auto) this.presenceHold = this.settings.autoAway && mode !== 'away' && this._presence().allOut;
@@ -775,6 +792,9 @@ export class Engine extends EventEmitter {
       if (!opts.quiet) this.addActivity(`${g.name}: ${this._levelText(ov.level, g.devices.some((id) => this.deviceInfo(id).dimmable))} here, ${this._untilText(until)}.`, g.id);
     }
     this.data.overrides[g.id] = ov;
+    if (opts.scene) this.emit('learn-end', { item: g.id });
+    else if (body.device) this._learn(g, this._levelFrom(g.devices.map((id) => ({ ...this.deviceInfo(id, g.name), ...(ov.devices[id] || {}), available: true }))), until, 'app');
+    else this._learn(g, ov.level, until, opts.quiet ? 'ha' : 'app');
     this._retarget(g.devices);
     this.store.save();
     this.tick();
@@ -842,6 +862,7 @@ export class Engine extends EventEmitter {
     if (!g) throw new UserError('That group no longer exists');
     if (this.data.overrides[g.id]) {
       delete this.data.overrides[g.id];
+      this.emit('learn-end', { item: g.id });
       this._retarget(g.devices);
       this.addActivity(`${g.name}: ${this._backTo()}.`, g.id);
       this.store.save();
@@ -890,6 +911,8 @@ export class Engine extends EventEmitter {
       ? { entity: input.lux.entity, threshold: clamp(Math.round(Number(input.lux.threshold) || 0), 0, 100000) }
       : null;
     g.livedIn = !!input.livedIn;
+    // changes made by hand that keep happening: suggest a schedule change (the default), make it, or nothing
+    if (['off', 'suggest', 'auto'].includes(input.learn)) g.learn = input.learn;
     // the Home Control dashboard card: show, show only while in season, or hide (left as it was if not sent)
     if (input.card !== undefined) g.card = input.card === 'hide' ? 'hide' : input.card === 'season' && g.season ? 'season' : 'show';
     else if (g.card === 'season' && !g.season) g.card = 'show';
@@ -922,6 +945,15 @@ export class Engine extends EventEmitter {
     this.data.groups = ordered;
     this.store.save();
     this.changed();
+  }
+
+  /** Some days of a group's schedule, from a suggestion (or undoing one). days: { 0..6: [points] } */
+  setScheduleDays(groupId, days, note) {
+    const g = this.data.groups.find((x) => x.id === groupId);
+    if (!g) throw new UserError('That group no longer exists');
+    this.data.schedules[groupId] = normalizeWeek({ ...(this.data.schedules[groupId] || {}), ...days });
+    if (note) this.addActivity(note, g.id);
+    this._afterScheduleEdit(g);
   }
 
   setSchedule(groupId, week) {
@@ -1292,6 +1324,8 @@ export class Engine extends EventEmitter {
       settings: { dashboardPath: this.settings.dashboardPath, stepSize: this.settings.stepSize, detectManual: this.settings.detectManual, showDevices: this.settings.showDevices || { page: false, card: false } },
       groups,
       scenes: (this.data.scenes || []).map((sc) => ({ id: sc.id, name: sc.name })),
+      // schedule changes suggested from changes made by hand (patterns.js), and ones made recently
+      learn: this.learnView ? this.learnView() : null,
       presence: this.settings.autoAway ? (() => {
         const p = this._presence();
         return { enabled: true, people: p.people.length, home: p.home.map((id) => this.friendly(id)), allOut: p.allOut, awaySince: this.awaySince || null, delay: this.settings.autoAwayDelay, waiting: !!this.presenceHold };

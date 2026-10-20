@@ -13,6 +13,9 @@ import { createCameras } from './cameras/http.js';
 import { createWifi } from './wifi/http.js';
 import { createEnergy } from './energy/http.js';
 import { createEntities } from './entities.js';
+import { Patterns } from './patterns.js';
+import { heatingAdapter } from './heating/learn.js';
+import { lightingAdapter } from './lighting/learn.js';
 import { watchRenames } from './renames.js';
 import { createHouse } from './house.js';
 import { createPublisher } from './publish.js';
@@ -74,6 +77,20 @@ house.attach(heating, lighting, cameras, wifi, energy);
 const entities = createEntities({ client, house, heating, lighting, dataDir: DATA_DIR, log: logObj, version: VERSION });
 house.panel = panelPath;
 lighting.engine.on('change', () => heating.push());
+// changes made by hand that keep happening, turned into schedule changes (suggested, or made)
+const patterns = new Patterns({ dataDir: DATA_DIR, tz: () => heating.engine.ha.timeZone || lighting.engine.ctx().tz || 'UTC', log: logObj });
+for (const [name, part] of [['heating', heating], ['lighting', lighting]]) {
+  part.engine.on('learn', (e) => { if (house.on(name)) patterns.record(name, e); });
+  part.engine.on('learn-end', (e) => patterns.ended(name, e.item));
+  part.engine.learnView = () => patterns.view(name);
+}
+const onlyIfOn = (name, a) => ({ ...a, items: () => (house.on(name) ? a.items() : []) });
+// once Home Assistant has said its time zone (Activity's times are read in it)
+client.once('ready', () => setTimeout(() => {
+  patterns.register('heating', onlyIfOn('heating', heatingAdapter(heating.engine, { push: () => heating.push() })));
+  patterns.register('lighting', onlyIfOn('lighting', lightingAdapter(lighting.engine)));
+  patterns.start();
+}, 10000));
 // an entity's ID renamed in Home Assistant: rooms, groups, cameras and access points follow it
 // follow renamed entity IDs (and keep each device's last name), see renames.js
 watchRenames(client, () => [heating.engine, lighting.engine, cameras.engine, wifi.engine, energy.engine], { dataDir: DATA_DIR, log: logObj });
@@ -105,6 +122,7 @@ const server = http.createServer(async (req, res) => {
   if (!p.startsWith('/api/')) return serveStatic(req, res, p === '/' ? '/index.html' : p);
   if (p === '/api/house') { if (await house.handle(req, res, p)) return; }
   else if (p === '/api/ha-entities') { if (await entities.handle(req, res, p)) return; }
+  else if (p === '/api/patterns' || p.startsWith('/api/patterns/')) return patterns.handle(req, res, url);
   else if (p.startsWith('/api/move') || p === '/api/card') { if (await move.handle(req, res, p)) return; }
   else if (p.startsWith('/api/lighting/')) { if (await lighting.handle(req, res, url, p)) return; }
   else if (p.startsWith('/api/cameras/')) { if (await cameras.handle(req, res, url, p)) return; }
@@ -135,6 +153,7 @@ const shutdown = async () => {
   wifi.shutdown();
   energy.shutdown();
   await entities.shutdown();
+  patterns.stop();
   await heating.shutdown();
   client.stop();
   process.exit(0);

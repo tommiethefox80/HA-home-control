@@ -5,6 +5,7 @@ import { ScenesSettings } from './Scenes.jsx';
 import { OldAppSettings } from './Import.jsx';
 import { describeMonthDay } from '../../../server/src/lighting/schedule.js';
 import { SettingsFrame, settingsPage } from '../SettingsFrame.jsx';
+import { LEARN_OPTIONS, learnHelp } from '../Learn.jsx';
 
 export function Settings({ state, run, go, old, arg }) {
   const [cfg, setCfg] = useState(null);
@@ -89,7 +90,7 @@ export function Settings({ state, run, go, old, arg }) {
                   <strong>{g.name}</strong>
                   <span className="fine">
                     {[lights && plural(lights, 'light'), sockets && plural(sockets, 'socket')].filter(Boolean).join(' and ') || 'Nothing in it yet'}
-                    {g.motion ? ', movement sensor' : ''}{g.lux ? ', light sensor' : ''}{g.livedIn ? ', looks lived in when away' : ''}
+                    {g.motion ? ', movement sensor' : ''}{g.lux ? ', light sensor' : ''}{g.livedIn ? ', looks lived in when away' : ''}{g.learn === 'auto' ? ', changes its schedule to match changes made by hand' : g.learn === 'off' ? ', no schedule suggestions' : ''}
                     {g.card === 'hide' ? ', hidden from the dashboard' : g.card === 'season' && g.season ? `, on the dashboard ${describeMonthDay(g.season.from)} to ${describeMonthDay(g.season.to)}` : ''}
                   </span>
                   {missing > 0 && <span className="warn-text"><Icon name="warn" size={14} /> {plural(missing, 'device')} no longer in Home Assistant</span>}
@@ -211,6 +212,7 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
   const [lux, setLux] = useState(existing?.lux || { entity: '', threshold: 50 });
   const [livedIn, setLivedIn] = useState(!!existing?.livedIn);
   const [card, setCard] = useState(existing?.card || 'show');
+  const [learn, setLearn] = useState(existing?.learn || 'suggest');
   const [onBrightness, setOnBrightness] = useState(existing?.onBrightness ?? 100);
   const [query, setQuery] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -245,7 +247,7 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
   const save = async () => {
     setBusy(true); setErr(null);
     try {
-      const body = { name, devices, motion: motion.entity ? { ...motion, night } : null, lux: lux.entity ? lux : null, livedIn, onBrightness, season, card: card === 'season' && !season ? 'show' : card };
+      const body = { name, devices, motion: motion.entity ? { ...motion, night } : null, lux: lux.entity ? lux : null, livedIn, onBrightness, season, card: card === 'season' && !season ? 'show' : card, learn };
       await run(() => (existing ? api('PUT', `groups/${existing.id}`, body) : api('POST', 'groups', body)));
       onSaved();
     } catch (e) { setErr(e.message); setBusy(false); }
@@ -403,6 +405,15 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
             <input id="luxt" type="number" min="0" max="100000" inputMode="numeric" value={lux.threshold} onChange={(e) => setLux({ ...lux, threshold: e.target.value })} />
           </Field>
         )}
+      </section>
+
+      <section className="sheet-section">
+        <h3>Changes made by hand</h3>
+        <Field label="When the same change keeps being made" htmlFor="glearn" help={learnHelp(learn, 'group')}>
+          <select id="glearn" value={learn} onChange={(e) => setLearn(e.target.value)}>
+            {LEARN_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </Field>
       </section>
 
       <section className="sheet-section">

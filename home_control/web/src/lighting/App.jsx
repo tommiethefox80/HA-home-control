@@ -7,6 +7,7 @@ import { Activity } from './Activity.jsx';
 import { Settings } from './Settings.jsx';
 import { SceneRow } from './Scenes.jsx';
 import { useOldApp, PausedPanel } from './Import.jsx';
+import { Suggestions } from '../Learn.jsx';
 
 const TABS = [
   { id: 'lights', label: 'Lights', icon: 'bulb' },
@@ -136,6 +137,7 @@ export function App({ active = true, switcher }) {
               </p>
             </div>
             {state && <SceneRow state={state} run={run} />}
+            {state && <Suggestions part="lighting" learn={state.learn} notify={(msg, bad) => { if (bad) setError(msg); }} settingsHref="#/lighting/settings/groups" />}
             <Lights state={state} run={run} go={go} old={old} />
           </>
         )}

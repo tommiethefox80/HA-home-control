@@ -7,6 +7,7 @@ import Settings from './Settings.jsx';
 import { useToday, SideCards, TodayChart } from './Today.jsx';
 import { BoostSheet } from './Boost.jsx';
 import Insights from './Insights.jsx';
+import { Suggestions } from '../Learn.jsx';
 
 function useHashRoute() {
   const read = () => window.location.hash.replace(/^#\/?/, '').split('/');
@@ -216,6 +217,7 @@ export default function App({ active = true, switcher }) {
           <>
             <ModeBar state={state} notify={notify} />
             <Attention items={state.attention} notify={notify} />
+            <Suggestions part="heating" learn={state.learn} notify={notify} settingsHref="#/settings/rooms" />
             <div className="home-layout">
               <div className="home-main"><Rooms state={state} notify={notify} today={today} /></div>
               {state.zones.length > 0 && <aside className="home-side"><SideCards state={state} today={today} /></aside>}

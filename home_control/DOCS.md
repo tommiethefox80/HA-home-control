@@ -76,6 +76,16 @@ The people, wait and distance are set once, in **Settings → General → Away a
 
 In Away, every room drops to the away temperature, and lights stay off except groups set to look lived in.
 
+## Schedules that learn from changes made by hand
+
+When the same change keeps being made by hand at about the same time, Home Control suggests changing the schedule to match: the lounge turned up most evenings, the bedroom turned down on weekdays, the lounge lights switched off early every Friday. It watches every change it didn't make itself: a radiator turned on its knob or in the Hive app, a hold or boost here, a light switched at the wall, from Home Assistant or by Alexa or Google. Changes made by Home Assistant automations don't count: they already happen on a schedule of their own.
+
+- **What counts as a pattern:** the same kind of change (up, down, on, off, dimmer, brighter), in the same room or group, within about half an hour, on 3 of the last 4 of a weekday ("Fridays"), 4 of the last 5 weekdays, 3 of the last 4 weekend days, or 6 of the last 7 days. Changes put back within 10 minutes, and anything during Away or with the heating off, don't count. Changes within two minutes of each other are one change (three presses of +).
+- **What it suggests:** a concrete change to the schedule, on just those days. It moves a scheduled change earlier ("Start 21° at 17:00 instead of 17:30 on weekdays", "Turn off at 22:15 instead of 23:30 on Fridays"), puts right a scheduled change people keep undoing straight after ("Make the 17:00 change 20° instead of 18°"), or adds one ("Make it 18° from 21:30 until 22:00 on weekdays", with an end if the change was usually ended early or was a boost). It says why: "Lounge was turned up to 22° at about 20:00 on each of the last 4 Fridays."
+- **Where:** at the top of the Heating page and the Lights page, with **Change the schedule**, **Not now** (asked again in a week if it keeps happening) and **Don't suggest this**. A change made shows there for two days, with **Undo**, and is written in Activity.
+- **Each room and group decides** (Settings → Rooms → Edit, Settings → Lighting → Groups → Edit, **Changes made by hand**): **Suggest a schedule change** (the default), **Change the schedule automatically** (made straight away, said on the page and in Activity, with Undo), or **Leave the schedule alone**.
+- It looks every night at 03:30, and a few minutes after each change. Heating starts from the last 30 days of Activity and lighting from its recent Activity, so suggestions can come straight away. Undoing a change stops it being suggested again for 30 days.
+
 ## Home Assistant entities (Alexa, Google, automations)
 
 Settings → General → **Home Assistant entities** makes your lighting groups, heating rooms, scenes and Away into real entities in Home Assistant, so Alexa or Google ("Alexa, turn off the lounge lights", "Alexa, set the bedroom heating to 20"), automations, scripts and any dashboard can use them. Each does exactly what the same button in Home Control does.
@@ -370,6 +380,7 @@ Two places (for heating; lighting keeps everything in `lighting.json`):
 | `lighting.json` | Lighting: groups, schedules, scenes, settings and the lighting Activity log (last 300 entries) | Always |
 | `energy.json` | Energy: plans, settings and the energy Activity log (last 400 entries) | Always |
 | `entities.json` | Which Home Assistant entities to make, and which it made (to remove them when they go) | Always |
+| `patterns.json` | Changes made by hand over the last five weeks, the schedule changes suggested from them, and those made (for Undo) | Always |
 | `entity-ids.json` | For each device the app uses, its permanent Home Assistant ID and last name, so a renamed one can be followed | While it's in use |
 
 **Settings → Heating → History** shows how much each uses. Lowering a number deletes the older records when you save. The Activity tab shows the latest 60 entries; **Show older** pages back through the rest. Home Assistant's own history isn't changed by these settings: set `purge_keep_days` under `recorder:` in Home Assistant's configuration for that.

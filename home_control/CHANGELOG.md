@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.14.0
+- **Schedules that learn from changes made by hand.** When the same change keeps being made at about the same time, in the same room or group (3 of the last 4 Fridays, 4 of the last 5 weekdays, 6 of the last 7 days), Home Control suggests the schedule change that would have done it: "Lounge: start 21° at 17:00 instead of 17:30 on weekdays", "Lounge lights: turn off at 22:15 instead of 23:30 on Fridays". It counts radiators turned on the knob or in the Hive app, holds and boosts here, lights switched at the wall, from Home Assistant or by voice, but not Home Assistant automations.
+  - Suggestions show at the top of the Heating and Lights pages: **Change the schedule**, **Not now** or **Don't suggest this**, and a change made can be undone.
+  - Each room and lighting group has a new setting, **Changes made by hand**: suggest a schedule change (the default), change the schedule automatically (with Undo, and noted in Activity), or leave the schedule alone.
+  - Heating starts from the last 30 days of Activity, so suggestions can come straight away.
+
 ## 1.13.1
 - **Fixed: a room that stops early waited too long to heat again.** A room that had learned to stop heating early (say 1.5° early, to let the radiators' leftover heat finish the job) only started again 0.2° below that point, even when it hadn't heated and so had no leftover heat: Heidi & Annie Room sat at 18.6° for 19°, waiting for 17.3°. Now a room only waits while it's actually still warming from its own leftover heat; as soon as it stops rising, or if it wasn't heated at all, it heats again at the usual 0.3° below target.
 - **How early a room stops depends on the heat-up**: the full amount after a heat-up from cold, less for a short top-up (whose radiator has less heat left in it), and always at least 0.2° above where it started.

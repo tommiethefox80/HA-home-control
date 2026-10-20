@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, thermal, deg } from './lib.js';
 import { Sheet } from './ui.jsx';
 import { SettingsFrame, settingsPage } from '../SettingsFrame.jsx';
+import { LEARN_OPTIONS, learnHelp } from '../Learn.jsx';
 
 // Per-room "stop early": learned automatically, a fixed % of the target, or the house setting.
 function StopEarlyField({ room, form, setForm, live, houseStop, notify }) {
@@ -75,6 +76,7 @@ function RoomEditor({ room, entities, state, onClose, notify }) {
     stopEarlyPct: room.stopEarlyPct ?? '',
     stopEarlyMode: room.stopEarlyMode || (room.stopEarlyPct != null ? 'fixed' : 'auto'),
     openRadiator: room.openRadiator ?? null,
+    learn: room.learn || 'suggest',
   });
   const live = state.zones.find((z) => z.id === room.id);
   const [busy, setBusy] = useState(false);
@@ -141,6 +143,14 @@ function RoomEditor({ room, entities, state, onClose, notify }) {
       </label>
 
       <StopEarlyField room={room} form={form} setForm={setForm} live={live} houseStop={Number(state.settings.stopEarly) || 0} notify={notify} />
+
+      <label className="field">
+        <span>Changes made by hand</span>
+        <small>{learnHelp(form.learn, 'room')}</small>
+        <select value={form.learn} onChange={(e) => setForm({ ...form, learn: e.target.value })}>
+          {LEARN_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </label>
       {!isNew && (
         <div className="field">
           <span>Warm-up speed</span>
