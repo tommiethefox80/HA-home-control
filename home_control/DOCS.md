@@ -243,7 +243,20 @@ A card above the rooms appears only when something needs looking at:
 
 - a room that has been calling for heat for over an hour without warming (a cold radiator, an airlock, or a stuck valve);
 - a radiator valve that's offline, or whose battery is at 20% or less;
-- the boiler control being offline, or the boiler not reporting that it's heating 10 minutes after being asked.
+- the boiler control being offline, or the boiler not reporting that it's heating 10 minutes after being asked;
+- **Hive (or whichever integration your radiators and boiler use) not working in Home Assistant** (see below), first, with a button to open it in Home Assistant.
+
+### When Hive stops working in Home Assistant
+
+Home Control changes your radiators and boiler through their integration in Home Assistant (Hive, say). If that stops working, Home Control can't see or change them, and they stay as they were. So it checks every 30 seconds and says when the integration:
+
+- **failed to set up** (as when Hive changed its login page in October 2026, until Home Assistant 2026.10.3), within about a minute;
+- **needs signing in again**, within about a minute;
+- **can't connect and keeps retrying** for 10 minutes (it does that briefly while Home Assistant starts);
+- **is turned off**, or isn't running, in Home Assistant;
+- **is running, but every one of its devices has been unavailable for 15 minutes** (its servers or its hub down).
+
+It's shown first under Needs attention, here and on the dashboard card, instead of each device's own "offline" notice, saying what to do (for Hive: put the thermostat and radiators back on Schedule in the Hive app meanwhile) with a button to open the integration in Home Assistant. It's also shown in **Home Assistant's notifications** (the bell, on unless you turn it off), and sent to a phone if you choose one (**Settings → Heating → Phone alerts → When Hive stops working in Home Assistant**). When it's working again, the notice and the notification clear themselves, the phone is told, and Home Control takes the radiators and boiler back over. Each step is in Activity.
 
 ### Changes made on a radiator
 
@@ -328,7 +341,7 @@ Every half hour the app works out each room's heat loss for each day (from its s
 
 ## Phone alerts
 
-In **Settings → Heating → Phone alerts** you can have Home Assistant notify a device when the heating comes on, when it goes off, and when a window looks open. Each alert has its own switch and its own device, chosen from your `notify` services: a phone running the Home Assistant app (`notify.mobile_app_…`), or a notify group to reach several devices at once. **Send test** sends a sample straight away.
+In **Settings → Heating → Phone alerts** you can have Home Assistant notify a device when the heating comes on, when it goes off, when a window looks open, when a room loses heat faster than usual, and when Hive stops working in Home Assistant (and again when it's working). Each alert has its own switch and its own device, chosen from your `notify` services: a phone running the Home Assistant app (`notify.mobile_app_…`), or a notify group to reach several devices at once. **Send test** sends a sample straight away.
 
 The "on" alert names the rooms that fired the boiler and their temperatures. The "off" alert says how long the boiler ran. Alerts replace each other on the phone rather than stacking up. They follow the boiler's minimum run and rest times, so a boiler that cycles a lot will send a lot of alerts.
 

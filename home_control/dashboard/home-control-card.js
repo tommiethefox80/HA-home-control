@@ -14,7 +14,7 @@
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.14.0';
+const VERSION = '1.14.1';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 

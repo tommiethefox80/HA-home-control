@@ -110,6 +110,9 @@ function Attention({ items, notify }) {
         {items.map((a) => (
           <li key={a.key}>
             {a.text}
+            {a.href && (
+              <button type="button" className="btn link att-dismiss" onClick={() => goToHA(a.href)}>{a.hrefText || 'Open in Home Assistant'}</button>
+            )}
             {a.dismiss && (
               <button type="button" className="btn link att-dismiss" disabled={busy === a.key} onClick={() => dismiss(a)}
                 title="Hide this until the room is back to its usual. It shows again if it starts losing heat faster after that.">Dismiss</button>

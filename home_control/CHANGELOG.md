@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.14.1
+- **Told when Hive stops working in Home Assistant.** If the integration behind your radiators and boiler (Hive, or whichever they use) fails to set up, needs signing in again, keeps failing to connect, is turned off, or has every device unavailable, Home Control can't change them, so it now says so: first under Needs attention (in the app and on the dashboard card, with a button to open it in Home Assistant and what to do meanwhile), in Home Assistant's notifications (on by default), and on a phone if you choose one in Settings → Heating → Phone alerts. When it's working again, it clears itself and the phone is told.
+- Hive's login failure from 20 October 2026 ("Failed to set up", "Failed to get login info") is fixed in Home Assistant 2026.10.3.
+- Fixed: a change made by hand four weeks ago to the day could be missed when looking for patterns later in the day than it was made ("3 of the last 4 Fridays" instead of 4).
+
 ## 1.14.0
 - **Schedules that learn from changes made by hand.** When the same change keeps being made at about the same time, in the same room or group (3 of the last 4 Fridays, 4 of the last 5 weekdays, 6 of the last 7 days), Home Control suggests the schedule change that would have done it: "Lounge: start 21° at 17:00 instead of 17:30 on weekdays", "Lounge lights: turn off at 22:15 instead of 23:30 on Fridays". It counts radiators turned on the knob or in the Hive app, holds and boosts here, lights switched at the wall, from Home Assistant or by voice, but not Home Assistant automations.
   - Suggestions show at the top of the Heating and Lights pages: **Change the schedule**, **Not now** or **Don't suggest this**, and a change made can be undone.

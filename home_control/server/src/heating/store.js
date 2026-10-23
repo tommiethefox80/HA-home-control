@@ -33,6 +33,8 @@ const DEFAULTS = () => ({
       heatloss: { enabled: false, service: '' },
       // the heating's come on with everyone out: ask the chosen phones whether to turn it off
       empty: { enabled: false, services: [], minutes: 120 },
+      // Hive (or the integration behind the devices) not working; ha: in Home Assistant's notifications too
+      integration: { enabled: false, service: '', ha: true },
     },
     retention: { activityDays: 30, detailDays: 7, dailyDays: 400 },     // how long the add-on keeps its own history
     cards: { spark: true, fires: true },                                 // room cards: today's mini graph, times fired today

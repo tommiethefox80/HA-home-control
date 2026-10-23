@@ -90,6 +90,15 @@ test('a day\'s new schedule: moved earlier, a scheduled change put right, added 
   assert.equal(planDay(pts(['06:30', 20]), 15, { min: 7 * 60, value: 20 }, same), null);
 });
 
+test('four weeks ago today counts all day, whatever the time now', () => {
+  // now 20:30 on a Friday; the change was at 20:00 on the Fridays 7, 14, 21 and 28 days before
+  const fri = zonedToUtc(2025, 10, 31, 20 * 60 + 30, TZ);
+  const evs = [28, 21, 14, 7].map((d) => ({ ...ev(fri - d * DAY - 30 * M, 'up', 22), endMin: null }));
+  const [f] = findPatterns(evs, { now: fri, tz: TZ, since: fri - 40 * DAY });
+  assert.equal(f.hits, 4);
+  assert.equal(evidenceText(f), 'on each of the last 4 Fridays');
+});
+
 test('findPatterns: when, what and the end', () => {
   const evs = FRIS.map((d, i) => ({ ...ev(at(d, ['22:10', '22:20', '22:15', '22:12'][i]), 'down', [17, 17, 17.5, 17][i]), endMin: null }));
   const [f] = findPatterns(evs, { now: NOW, tz: TZ, since: NOW - 40 * DAY });

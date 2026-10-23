@@ -154,7 +154,9 @@ export function planDay(points, before, change, same) {
 
 /** Find the patterns in one room's or group's changes. */
 export function findPatterns(events, { now, tz, since }) {
-  const recent = events.filter((e) => e.at >= now - WINDOW_DAYS * DAY && e.cls);
+  // the same whole days daysFor looks at (not the same time of day: four Fridays ago at 20:00 counts at 20:30)
+  const oldest = dateKey(addDays(localDate(now, tz), -WINDOW_DAYS));
+  const recent = events.filter((e) => e.day >= oldest && e.cls);
   const out = [];
   for (const c of clusters(recent)) {
     const d = daysFor(c, { now, tz, since });

@@ -33,7 +33,7 @@ const regId = () => randomUUID().replace(/-/g, '');
 function add(entity_id, attrs, { area, state = 'off', category = null, deviceClass = null, slow = false, quirk = null } = {}) {
   const device_id = `dev_${entity_id.replace('.', '_')}`;
   devices.push({ id: device_id, area_id: area, name: attrs.friendly_name });
-  entities.push({ id: regId(), entity_id, unique_id: `u_${entity_id}`, device_id, area_id: null, entity_category: category, disabled_by: null, hidden_by: null, original_device_class: deviceClass, name: null, platform: entity_id.startsWith('light.') ? 'zha' : 'demo' });
+  entities.push({ id: regId(), entity_id, unique_id: `u_${entity_id}`, device_id, area_id: null, entity_category: category, disabled_by: null, hidden_by: null, original_device_class: deviceClass, name: null, platform: entity_id.startsWith('light.') ? 'zha' : entity_id.startsWith('climate.') ? 'hive' : 'demo' });
   states.set(entity_id, { entity_id, state, attributes: attrs, last_changed: nowIso(), last_updated: nowIso(), context: { id: randomUUID(), parent_id: null, user_id: null }, _slow: slow, _quirk: quirk });
 }
 
@@ -342,6 +342,38 @@ function mqttPublish(topic, payload, retain) {
   mqttDeliver(topic, payload, false);
 }
 
+// ---------- integrations (config entries) ----------
+// One config entry per integration the entities come from. POST /integration { domain, state, reason,
+// reauth, unavailable } as if it failed to set up, needs signing in again, or its devices dropped out.
+const INTEGRATION_NAMES = { hive: 'Hive', zha: 'Zigbee Home Automation', demo: 'Demo', unifi: 'UniFi Network', unifiprotect: 'UniFi Protect', ring: 'Ring', reolink: 'Reolink', generic: 'Generic Camera', ping: 'Ping (ICMP)' };
+const ENTRIES = new Map();
+const FLOWS = [];
+const NOTIFICATIONS = new Map(); // persistent_notification.create / dismiss
+function entryList() {
+  for (const e of entities) {
+    if (!ENTRIES.has(e.platform)) ENTRIES.set(e.platform, { entry_id: `entry_${e.platform}`, domain: e.platform, title: e.platform === 'hive' ? 'tom@example.com' : INTEGRATION_NAMES[e.platform] || e.platform, source: 'user', state: 'loaded', reason: null, disabled_by: null });
+  }
+  return [...ENTRIES.values()];
+}
+const savedStates = new Map(); // entity -> its state before its integration broke
+function setIntegration({ domain, state, reason = null, reauth, unavailable, disabled }) {
+  entryList();
+  const en = ENTRIES.get(domain);
+  if (!en) return { error: `no ${domain}` };
+  if (state) { en.state = state; en.reason = reason; }
+  if (disabled !== undefined) { en.disabled_by = disabled ? 'user' : null; if (disabled) en.state = 'not_loaded'; }
+  if (reauth === true && !FLOWS.some((f) => f.handler === domain)) FLOWS.push({ flow_id: randomUUID(), handler: domain, step_id: 'reauth_confirm', context: { source: 'reauth', entry_id: en.entry_id } });
+  if (reauth === false) for (let i = FLOWS.length - 1; i >= 0; i--) if (FLOWS[i].handler === domain) FLOWS.splice(i, 1);
+  const down = en.state !== 'loaded' || unavailable === true;
+  for (const e of entities.filter((x) => x.platform === domain)) {
+    const st = states.get(e.entity_id);
+    if (!st) continue;
+    if (down && st.state !== 'unavailable') { savedStates.set(e.entity_id, st.state); setState(e.entity_id, { state: 'unavailable' }); }
+    if (!down && st.state === 'unavailable' && savedStates.has(e.entity_id)) { setState(e.entity_id, { state: savedStates.get(e.entity_id) }); savedStates.delete(e.entity_id); }
+  }
+  return { entry: en, flows: FLOWS.filter((f) => f.handler === domain) };
+}
+
 // ---------- a week of a physical house ----------
 // Outside temperature with day/night swings and colder and milder days; two rooms that each hour
 // lose a share (k) of the gap to outside (Newton's law), warm while heating (more slowly on cold
@@ -522,7 +554,11 @@ wss.on('connection', (ws) => {
       case 'subscribe_events':
         (ws.subs ||= new Map()).set(m.id, m.event_type || '*');
         return reply(null);
-      case 'config/entity_registry/list': return reply(entities);
+      case 'config/entity_registry/list': return reply(entities.map((e) => ({ ...e, config_entry_id: e.config_entry_id ?? `entry_${e.platform}` })));
+      // integrations (config entries), as Settings → Devices & services shows them; POST /integration breaks one
+      case 'config_entries/get': return reply(entryList().filter((x) => !m.domain || x.domain === m.domain));
+      case 'config_entries/flow/progress': return reply(FLOWS);
+      case 'manifest/get': return reply({ domain: m.integration, name: INTEGRATION_NAMES[m.integration] || m.integration });
       case 'config/entity_registry/update': {
         // as Home Assistant: turning an entity on takes effect when its integration reloads, 30 s later (here 1.5 s)
         const e = entities.find((x) => x.entity_id === m.entity_id);
@@ -562,6 +598,12 @@ wss.on('connection', (ws) => {
       case 'config/auth/list': return reply([{ id: 'u1', name: 'Tom' }, { id: 'u2', name: 'Home Assistant Cloud' }]);
       case 'call_service': {
         const { domain, service, service_data: d = {} } = m;
+        if (domain === 'persistent_notification') {
+          calls.push({ at: Date.now(), domain, service, data: d });
+          if (service === 'create') NOTIFICATIONS.set(d.notification_id || randomUUID(), { title: d.title, message: d.message });
+          if (service === 'dismiss') NOTIFICATIONS.delete(d.notification_id);
+          return reply({ context: { id: randomUUID() } });
+        }
         if (domain === 'climate') {
           calls.push({ at: Date.now(), domain, service, data: d });
           const id = d.entity_id;
@@ -675,6 +717,8 @@ createServer(async (req, res) => {
   }
   if (req.url === '/sensor') { setState(body.entity, { state: body.state, attrs: body.attrs }); return done({ ok: true }); }
   // a radiator's setpoint changed outside Home Control ({ context: { parent_id } }: by an automation)
+  if (req.url === '/integration') return done(setIntegration(body));
+  if (req.url === '/notifications') return done(Object.fromEntries(NOTIFICATIONS));
   if (req.url === '/knob') { setState(body.entity, { attrs: { temperature: body.temperature } }, body.context ? { id: randomUUID(), parent_id: null, user_id: null, ...body.context } : undefined); return done({ ok: true }); }
   if (req.url === '/bounce') { const st = states.get(body.entity); st._bounces = body.times; st._silent = !!body.silent; st._bounceDelay = body.delay ?? 600; return done({ ok: true }); }
   if (req.url === '/lag') { const st = states.get(body.entity); st._lag = { at: body.at, value: body.value }; return done({ ok: true }); }

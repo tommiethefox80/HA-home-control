@@ -326,6 +326,7 @@ const ALERTS = [
   ['off', 'When the heating goes off', 'e.g. "Heating off: no rooms need heat now, so the boiler has stopped. It ran for 42 min."'],
   ['window', 'When a window looks open', 'e.g. "Kitchen: window open? Kitchen dropped 1.2° in a few minutes, so its heating is paused until 21:05."'],
   ['heatloss', 'When a room loses heat faster than usual', 'e.g. "Bedroom has been losing heat 45% faster than usual over the last two days." Usually a window or trickle vent left open, or a new draught.'],
+  ['integration', 'When Hive stops working in Home Assistant', 'e.g. "Hive isn\'t working in Home Assistant: it failed to set up." Also when it needs signing in again, keeps retrying, or all its devices drop out; and when it\'s working again. (Whichever integration your radiators and boiler use.)'],
 ];
 
 function PhoneAlerts({ s, set, setNotify, targets, saveFirst, dirty, notify }) {
@@ -343,7 +344,7 @@ function PhoneAlerts({ s, set, setNotify, targets, saveFirst, dirty, notify }) {
   return (
     <section className="section">
       <h2>Phone alerts</h2>
-      <p>Get a notification from the Home Assistant app when the boiler starts or stops, when a window looks open, or when a room starts losing heat faster than usual. Pick a group service to alert several phones at once.</p>
+      <p>Get a notification from the Home Assistant app when the boiler starts or stops, when a window looks open, or when a room starts losing heat faster than usual, or when Hive stops working in Home Assistant. Pick a group service to alert several phones at once.</p>
       {ALERTS.map(([which, label, example]) => {
         const cfg = n[which] || {};
         const custom = cfg.service && !known.has(cfg.service);
@@ -366,6 +367,12 @@ function PhoneAlerts({ s, set, setNotify, targets, saveFirst, dirty, notify }) {
               )}
               <button className="btn" disabled={!cfg.service || testing === which} onClick={() => test(which)}>{testing === which ? 'Sending…' : 'Send test'}</button>
             </div>
+            {which === 'integration' && (
+              <label className="toggle" style={{ marginTop: 6 }}>
+                <input type="checkbox" checked={cfg.ha !== false} onChange={(e) => setNotify('integration', { ha: e.target.checked })} />
+                <span>Also in Home Assistant's notifications<small>Shown in Home Assistant's notifications (the bell), with a link to fix it, and cleared when it's working again. It's always under Needs attention here and on the dashboard card.</small></span>
+              </label>
+            )}
             {which === 'heatloss' && (
               <label className="field" style={{ marginTop: 6 }}>
                 <span>When it's this much faster than usual (%)</span>

@@ -47,13 +47,18 @@ export class HaClient extends EventEmitter {
     this.emit('status', true);
   }
 
-  // entity -> device mapping, used to find a TRV's child-lock entity
+  // entity -> device mapping, used to find a TRV's child-lock entity; and each entity's integration
+  // (config entry and platform), to say when one isn't working (integrations.js)
   async refreshRegistry() {
     try {
       const list = await this.client.send('config/entity_registry/list');
       this.registry = new Map(list.map((e) => [e.entity_id, e.device_id]));
-    } catch { this.registry = null; /* not permitted: fall back to name matching */ }
+      this.entities = new Map(list.map((e) => [e.entity_id, { entry: e.config_entry_id || null, platform: e.platform || null }]));
+    } catch { this.registry = null; this.entities = null; /* not permitted: fall back to name matching */ }
   }
+
+  /** An entity's integration: { entry, platform }, or null if the registry couldn't be read. */
+  entityInfo(entityId) { return this.entities?.get(entityId) || null; }
 
   // The child-lock switch/lock that belongs to a climate entity, if any.
   childLockFor(climateId) {

@@ -3,6 +3,7 @@
 import { EventEmitter } from 'node:events';
 import { scheduledAt, localWeekPosition, normaliseSchedule, defaultSchedule, DAYS } from './schedule.js';
 import { scheduledTemp } from './learn.js';
+import { IntegrationWatch } from './integrations.js';
 import { detectOutsideEntity, readOutside } from './history.js';
 import { nextHeat, heatingUntil, outsideCurve, toFive } from './forecast.js';
 
@@ -41,6 +42,7 @@ export class Engine extends EventEmitter {
     this.boilerNext = null;        // { at, rooms } when the boiler is off
     this.boilerUntil = null;       // when it's on: about when the last room calling is warm
     this.joined = {};              // zoneId -> { at, with, reason, target, readyBy, until, due }: started early with another room
+    this.integrations = new IntegrationWatch({ engine: this, scale: TS }); // Hive (or another) not working
   }
 
   get s() { return this.store.data.settings; }
@@ -146,6 +148,10 @@ export class Engine extends EventEmitter {
     this.ha.on('state', (id, ns, os) => this.#onState(id, ns, os));
     this.ha.on('event', (type, data) => { if (type === 'mobile_app_notification_action') this.phoneAction(data?.action); });
     setInterval(() => this.tick(), 30000);
+    // is the integration behind the radiators and boiler (Hive) working? every 30 s
+    const look = () => { if (!this.disabled && this.ha.connected) this.integrations.check().then(() => this.requestTick(200)).catch((e) => this.log(`Integration check failed: ${e.message}`)); };
+    setInterval(look, 30000);
+    setTimeout(look, 20000);
     this.requestTick();
   }
 
@@ -603,6 +609,11 @@ export class Engine extends EventEmitter {
 
   #computeAttention(views, now) {
     const out = [];
+    // the integration behind the devices isn't working (Hive, say): first, and instead of each device's own notice
+    for (const p of this.integrations.problems()) {
+      out.push({ key: `integration-${p.key}`, text: p.text, href: `/config/integrations/integration/${p.domain}`, hrefText: `Open ${p.name} in Home Assistant` });
+    }
+    const covered = (id) => this.integrations.covers(id);
     const mins = (ms) => Math.round(ms / 60000 / TS);
     for (const v of views) {
       if (!v.enabled) continue;
@@ -612,7 +623,7 @@ export class Engine extends EventEmitter {
       }
       for (const t of v.trvs) {
         if (t.role === 'boiler') continue;
-        if (!t.available) out.push({ key: `off-${t.entity_id}`, room: v.name, text: `${t.name} is offline. Check its batteries, or that it's in range of its hub.` });
+        if (!t.available && !covered(t.entity_id)) out.push({ key: `off-${t.entity_id}`, room: v.name, text: `${t.name} is offline. Check its batteries, or that it's in range of its hub.` });
         const b = this.batteryFor(t.entity_id);
         if (b != null && b <= 20) out.push({ key: `bat-${t.entity_id}`, room: v.name, text: `${t.name} battery is at ${Math.round(b)}%. Replace it soon.` });
       }
@@ -627,7 +638,7 @@ export class Engine extends EventEmitter {
     const b = this.s.boiler;
     if (b.entity) {
       const st = this.ha.get(b.entity);
-      if (!st || UNAVAILABLE.has(st.state)) out.push({ key: 'boiler-offline', text: `${this.#name(b.entity)} (boiler control) is offline, so the boiler can't be fired. Check the Hive hub and receiver.` });
+      if (!st || UNAVAILABLE.has(st.state)) { if (!covered(b.entity)) out.push({ key: 'boiler-offline', text: `${this.#name(b.entity)} (boiler control) is offline, so the boiler can't be fired. Check the Hive hub and receiver.` }); }
       else {
         const askedSince = Math.max(this.rt.boiler.lastSwitch || 0, this.startedAt);
         if (b.entity.startsWith('climate.') && this.rt.boiler.on && st.attributes?.hvac_action != null && st.attributes.hvac_action !== 'heating'
@@ -1012,6 +1023,9 @@ export class Engine extends EventEmitter {
   // ---- phone alerts when the heating comes on / goes off ----
   #alertText(which, calling, ranFor, extra) {
     const list = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+    if (which === 'integration') {
+      return extra || { title: 'Hive isn\'t working', message: 'Hive isn\'t working in Home Assistant: it failed to set up. Home Control can\'t change your radiators or the boiler until it\'s fixed. (This is a test.)' };
+    }
     if (which === 'heatloss') {
       const e = extra || { room: 'Bedroom', percent: 45 };
       return { title: `${e.room}: losing heat faster`, message: `${e.room} has been losing heat at least ${e.percent}% faster than usual over the last two days, allowing for the weather. Worth checking for a window or trickle vent left open, or a new draught.` };
@@ -1089,6 +1103,21 @@ export class Engine extends EventEmitter {
     this.#alert('heatloss', [], null, false, { room: zone.name, percent });
   }
 
+  /**
+   * An integration behind the devices stopped working, or is working again (integrations.js):
+   * Activity, Home Assistant's notifications (unless turned off) and the phone alert (if on).
+   */
+  integrationAlert({ kind, rec, text }) {
+    const cfg = this.s.notify?.integration || {};
+    const id = `home_control_${rec.domain}`;
+    this.note(text);
+    if (cfg.ha !== false) {
+      if (kind === 'broken') this.#call('persistent_notification', 'create', { notification_id: id, title: `${rec.name} isn't working`, message: `${text}\n\n[Open ${rec.name} in Home Assistant](/config/integrations/integration/${rec.domain})` });
+      else this.#call('persistent_notification', 'dismiss', { notification_id: id });
+    }
+    this.#alert('integration', [], null, false, { title: kind === 'broken' ? `${rec.name} isn't working` : `${rec.name} is working again`, message: text });
+  }
+
   sendTestAlert(which) {
     if (which === 'empty') {
       const cfg = this.#emptyCfg();
@@ -1102,11 +1131,11 @@ export class Engine extends EventEmitter {
       this.note(`Sent a test "Heating on, everyone's out" alert to ${cfg.services.join(', ')}`);
       return;
     }
-    if (!['on', 'off', 'window', 'heatloss'].includes(which)) throw new Error('Unknown alert');
+    if (!['on', 'off', 'window', 'heatloss', 'integration'].includes(which)) throw new Error('Unknown alert');
     const calling = this.views.filter((v) => v.enabled && v.calling);
     const sample = calling.length ? calling : this.views.filter((v) => v.enabled).slice(0, 1);
     if (!this.#alert(which, sample, which === 'off' ? 42 : null, true)) throw new Error('Pick a device first');
-    this.note(`Sent a test "${{ on: 'Heating on', off: 'Heating off', window: 'Window open', heatloss: 'Losing heat faster' }[which]}" alert to ${this.s.notify[which].service}`);
+    this.note(`Sent a test "${{ on: 'Heating on', off: 'Heating off', window: 'Window open', heatloss: 'Losing heat faster', integration: 'Hive isn\'t working' }[which]}" alert to ${this.s.notify[which].service}`);
   }
 
   boilerView() {
@@ -1419,7 +1448,10 @@ export class Engine extends EventEmitter {
         services: [...new Set((Array.isArray(e.services) ? e.services : []).map((x) => String(x).trim()).filter((x) => /^notify\.\w+$/.test(x)))],
         minutes: Math.round(n(e.minutes, 30, 720, 120) / 30) * 30,
       };
-      s.notify = { on: clean(input.notify.on), off: clean(input.notify.off), window: clean(input.notify.window), heatloss: clean(input.notify.heatloss), empty };
+      // the integration behind the devices not working: a phone alert, and Home Assistant's notifications (on unless turned off)
+      const ig = input.notify.integration ?? s.notify?.integration ?? {};
+      const integration = { ...clean(ig), ha: ig.ha !== false };
+      s.notify = { on: clean(input.notify.on), off: clean(input.notify.off), window: clean(input.notify.window), heatloss: clean(input.notify.heatloss), empty, integration };
     }
     if (input.retention) {
       const r = input.retention;
