@@ -50,6 +50,7 @@ export function nextLine(z, tz) {
   const n = z.next;
   if (!z.enabled || !n) return waitLine(z);
   const at = n.at ? fmtTime(n.at, tz) : null;
+  if (z.blocked) return <>Wants heat, but the boiler or its radiator can't be reached in Home Assistant</>;
   if (z.calling) {
     const together = z.joined ? <>Heating with {list(z.joined.with)} so the boiler runs once</> : null;
     if (!n.until) return together;
@@ -74,6 +75,7 @@ export function nextLine(z, tz) {
 function nextWhy(z, tz, out) {
   const n = z.next;
   if (!z.enabled || !n) return null;
+  if (z.blocked) return 'It wants heat, but the boiler or its radiator can\'t be reached in Home Assistant (see Needs attention), so it isn\'t heating. It starts as soon as they\'re back.';
   if (z.calling) {
     const together = z.joined ? `Started early with ${list(z.joined.with)}: it would have needed heat about ${fmtTime(z.joined.due, tz)}, so the boiler runs once instead of starting again (Settings → Starting and stopping). ` : '';
     if (!n.until) return `${together}Heating now. Once it has learned how fast it warms, this says when it should be done.`;
@@ -157,7 +159,8 @@ function RoomCard({ z, state, onOpen, notify, today }) {
     <article className={`room${z.enabled ? '' : ' disabled'}`} style={{ '--heat': thermal(target) }}>
       <button className="room-name" onClick={onOpen} aria-label={`${z.name}: details and boost`}>
         {z.name}
-        {z.calling && <span className="calling"><Icon.flame />Heating</span>}
+        {z.calling && !z.blocked && <span className="calling"><Icon.flame />Heating</span>}
+        {z.blocked && <span className="calling blocked" title="It wants heat, but the boiler or its radiator can't be reached in Home Assistant">Can't heat</span>}
         <Icon.chev className="chev" />
       </button>
       <div className="now num">

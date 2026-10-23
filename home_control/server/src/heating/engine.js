@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { scheduledAt, localWeekPosition, normaliseSchedule, defaultSchedule, DAYS } from './schedule.js';
 import { scheduledTemp } from './learn.js';
 import { IntegrationWatch } from './integrations.js';
+import { repairUnreachable } from './repair.js';
 import { detectOutsideEntity, readOutside } from './history.js';
 import { nextHeat, heatingUntil, outsideCurve, toFive } from './forecast.js';
 
@@ -12,6 +13,7 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 const UNAVAILABLE = new Set(['unavailable', 'unknown']);
+const BLIP_MS = 3 * 60000; // unavailable for less than this is a blip, not an outage
 // Test-only: shrink the learning time windows (1 = real time).
 const TS = Number(process.env.HC_TIME_SCALE) || 1;
 
@@ -43,6 +45,51 @@ export class Engine extends EventEmitter {
     this.boilerUntil = null;       // when it's on: about when the last room calling is warm
     this.joined = {};              // zoneId -> { at, with, reason, target, readyBy, until, due }: started early with another room
     this.integrations = new IntegrationWatch({ engine: this, scale: TS }); // Hive (or another) not working
+    this.heatingReal = new Map();  // zoneId -> bool: calling, and able to heat (the boiler and its radiators reachable)
+  }
+
+  /**
+   * Can the boiler be reached in Home Assistant? Not while its entity is unavailable or its
+   * integration isn't working (Hive down): asking it to fire then does nothing, so it isn't
+   * counted as running, and isn't switched (it's put right as soon as it's back).
+   */
+  boilerReachable() {
+    const b = this.s.boiler?.entity;
+    if (!b) return true; // no boiler here: nothing to reach
+    return !this.#gone(b);
+  }
+
+  /** Can't be reached in Home Assistant: its integration not working, or unavailable for a few minutes.
+   *  A short blip (Home Assistant restarting, Hive reloading) doesn't count: the device carries on as
+   *  it was told meanwhile, and a heat-up shouldn't be cut short for it. */
+  #gone(id) {
+    if (this.integrations.covers(id)) return true;
+    const st = this.ha.get(id);
+    if (!st) return true;
+    if (!UNAVAILABLE.has(st.state)) return false;
+    const since = Date.parse(st.last_changed || '');
+    return !Number.isFinite(since) || Date.now() - since >= BLIP_MS;
+  }
+
+  /** Can this room really heat now: the boiler reachable, and a radiator of its own (or it's always open)? */
+  canHeat(zone) {
+    if (!this.boilerReachable()) return false;
+    const own = (zone.trvs || []).filter((e) => e !== this.s.boiler?.entity);
+    if (!own.length) return true;
+    return own.some((e) => !this.#gone(e));
+  }
+
+  /** Is the boiler firing now, as it reports it (Hive's hvac_action, or the switch), for the day's totals? */
+  boilerFiring() {
+    const b = this.s.boiler?.entity;
+    if (!b || !this.boilerReachable()) return false;
+    const st = this.ha.get(b);
+    if (UNAVAILABLE.has(st.state)) return !!this.rt.boiler.on; // a blip: as it was told
+    if (b.startsWith('climate.')) {
+      const a = st.attributes?.hvac_action;
+      if (a != null) return a === 'heating';
+    } else if (st.state === 'on' || st.state === 'off') return st.state === 'on';
+    return !!this.rt.boiler.on;
   }
 
   get s() { return this.store.data.settings; }
@@ -149,7 +196,20 @@ export class Engine extends EventEmitter {
     this.ha.on('event', (type, data) => { if (type === 'mobile_app_notification_action') this.phoneAction(data?.action); });
     setInterval(() => this.tick(), 30000);
     // is the integration behind the radiators and boiler (Hive) working? every 30 s
-    const look = () => { if (!this.disabled && this.ha.connected) this.integrations.check().then(() => this.requestTick(200)).catch((e) => this.log(`Integration check failed: ${e.message}`)); };
+    const look = () => {
+      if (this.disabled || !this.ha.connected) return;
+      this.integrations.check().then(() => this.requestTick(200)).catch((e) => this.log(`Integration check failed: ${e.message}`));
+      // once: take back out the time counted as heating while the boiler couldn't be reached
+      if (!this.repairing && !(this.rt.repairs?.unreachable >= 1)) {
+        this.repairing = true;
+        repairUnreachable(this).then((r) => {
+          if (r?.minutes) {
+            const h = Math.floor(r.minutes / 60); const m = r.minutes % 60;
+            this.note(`Heating records: took out ${h ? `${h} h ${m} min` : `${m} min`} that rooms were counted as heating while the boiler couldn't be reached in Home Assistant, from the last 10 days`);
+          }
+        }).catch((e) => this.log(`Couldn't repair the heating records: ${e.message}`)).finally(() => { this.repairing = false; });
+      }
+    };
     setInterval(look, 30000);
     setTimeout(look, 20000);
     this.requestTick();
@@ -618,7 +678,7 @@ export class Engine extends EventEmitter {
     for (const v of views) {
       if (!v.enabled) continue;
       const cs = this.callSince[v.id];
-      if (v.calling && cs && now - cs.at > 60 * 60000 * TS && v.current != null && v.current - cs.temp < 0.2) {
+      if (v.heating && cs && now - cs.at > 60 * 60000 * TS && v.current != null && v.current - cs.temp < 0.2) {
         out.push({ key: `stuck-${v.id}`, room: v.name, text: `${v.name} has been calling for heat for ${mins(now - cs.at)} min without warming (${cs.temp}° then, ${v.current}° now). Check its radiator is getting hot and the valve isn't stuck.` });
       }
       for (const t of v.trvs) {
@@ -711,7 +771,8 @@ export class Engine extends EventEmitter {
     if (this.ha.connected) await this.#runBoiler(views, now);
     this.#computeAttention(views, now);
     this.dailyLog?.sample(now, this, views);
-    this.callLog?.update(views, now);
+    // the call log is what really heated: not while the boiler or radiators couldn't be reached
+    this.callLog?.update(views.map((v) => (v.calling && !v.heating ? { ...v, calling: false } : v)), now);
     this.emit('change');
   }
 
@@ -763,12 +824,18 @@ export class Engine extends EventEmitter {
       if (calling) this.predictionLog?.started(zone.id, now, { forced: !!j && !(current < t.temp - start), source: t.source });
     }
     this.calling.set(zone.id, calling);
+    // calling for heat isn't heating if the boiler or its radiators can't be reached (Hive down):
+    // it isn't counted, learned from or checked as a heat-up until it really can heat
+    const wasReal = this.heatingReal.get(zone.id) || false;
+    const real = calling && !!zone.enabled && this.canHeat(zone);
+    this.heatingReal.set(zone.id, real);
+    if (calling && !real) delete this.heatSess[zone.id]; // a heat-up cut short like this teaches nothing
     if (zone.enabled) {
-      this.#trackCoast(zone, wasCalling, calling, current, t.temp, now, { stop, margin });
-      if (t.source !== 'window') this.#trackWarm(zone, wasCalling, calling, current, t.temp, now);
+      this.#trackCoast(zone, wasReal, real, current, t.temp, now, { stop, margin });
+      if (t.source !== 'window') this.#trackWarm(zone, wasReal, real, current, t.temp, now);
       this.#trackWindow(zone, current, now);
-      if (calling && !wasCalling) this.callSince[zone.id] = { at: now, temp: current };
-      if (!calling) delete this.callSince[zone.id];
+      if (real && !wasReal) this.callSince[zone.id] = { at: now, temp: current };
+      if (!real) delete this.callSince[zone.id];
     }
     if (zone.enabled) this.targetLog?.record(zone.id, t.temp, now);
 
@@ -811,6 +878,8 @@ export class Engine extends EventEmitter {
       coast: this.rt.coast?.[zone.id] || null,
       learn: this.rt.learn?.[zone.id] || null,
       coasting,
+      heating: real,                // calling, and really able to heat
+      blocked: calling && !real,    // wants heat, but the boiler or its radiators can't be reached
       openRadiator: this.openRadiator(zone),
       openRadiatorSet: zone.openRadiator === true || zone.openRadiator === false,
       // below its target but not heating: it starts again under startAt (so the boiler doesn't flick on and off)
@@ -969,6 +1038,8 @@ export class Engine extends EventEmitter {
   async #runBoiler(views, now) {
     const b = this.s.boiler;
     if (!b.entity) return;
+    // can't be reached (Hive down): nothing's switched, said or alerted; put right when it's back
+    if (!this.boilerReachable()) return;
     const demand = views.filter((v) => v.enabled && v.calling).map((v) => v.name);
     const want = demand.length > 0;
     const bs = this.rt.boiler;
@@ -1144,7 +1215,9 @@ export class Engine extends EventEmitter {
     return {
       entity: b.entity || null,
       name: b.entity ? this.#name(b.entity) : null,
-      on: this.rt.boiler.on,
+      // on only if it can be reached: asked to fire while Hive's down, it isn't
+      on: this.rt.boiler.on && this.boilerReachable(),
+      reachable: this.boilerReachable(),
       available: !!st && !UNAVAILABLE.has(st.state),
       action: st?.attributes?.hvac_action || st?.state || null,
       lastSwitch: this.rt.boiler.lastSwitch || null,

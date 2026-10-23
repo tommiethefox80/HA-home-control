@@ -31,13 +31,14 @@ export class DailyLog {
     const key = localDate(now, tz);
     const d = (this.days[key] ||= { boilerMin: 0, outSum: 0, outN: 0, rooms: {} });
     const mins = dt / 60000;
-    if (engine.rt.boiler.on) d.boilerMin += mins;
+    // the boiler as it reports itself (not while it can't be reached: asked to fire then, it doesn't)
+    if (engine.boilerFiring ? engine.boilerFiring() : engine.rt.boiler.on) d.boilerMin += mins;
     const out = engine.outsideNow();
     if (out != null) { d.outSum += out * mins; d.outN += mins; }
     for (const v of views) {
       if (!v.enabled) continue;
       const r = (d.rooms[v.id] ||= { callMin: 0, tempSum: 0, tempN: 0 });
-      if (v.calling) r.callMin += mins;
+      if (v.heating ?? v.calling) r.callMin += mins;
       if (v.current != null) { r.tempSum += v.current * mins; r.tempN += mins; }
     }
     const costId = engine.s.costEntity || detectCostEntity(engine.ha);
@@ -87,7 +88,8 @@ async function dailyMeanFromHistory(ha, id, from, tz) {
   } catch { return {}; }
 }
 
-// Boiler minutes per day from short-term history of the boiler entity.
+// Boiler minutes per day from short-term history of the boiler entity. out.from: where the
+// history starts (days after that are covered by it entirely).
 async function boilerMinutesFromHistory(ha, id, from, tz) {
   try {
     const res = await ha.send({
@@ -97,6 +99,7 @@ async function boilerMinutesFromHistory(ha, id, from, tz) {
     const rows = res?.[id] || [];
     const firing = (r, a) => (id.startsWith('climate.') ? (r.a || a)?.hvac_action === 'heating' : r.s === 'on');
     const out = {};
+    if (rows.length) Object.defineProperty(out, 'from', { value: Math.max(from, (rows[0].lu ?? rows[0].lc) * 1000), enumerable: false });
     let attrs = {};
     for (let i = 0; i < rows.length; i++) {
       if (rows[i].a) attrs = rows[i].a;
@@ -161,9 +164,13 @@ export async function buildInsights(engine, { days = 30 } = {}) {
   const boiler = {};
   const b = engine.s.boiler.entity;
   const fromHist = b ? await boilerMinutesFromHistory(ha, b, Math.max(from, now - 10 * 86400000), tz) : {};
+  // a day the boiler's own history covers entirely is taken from it (it knows when it really ran,
+  // and not while it couldn't be reached); the first, part-covered day from whichever saw more
+  const histFrom = fromHist.from != null ? localDate(fromHist.from, tz) : null;
   for (const k of keys) {
     const a = log[k]?.boilerMin, h = fromHist[k];
-    if (a != null || h != null) boiler[k] = Math.max(a || 0, h || 0); // whichever saw more of the day
+    if (histFrom != null && k > histFrom) boiler[k] = h || 0;
+    else if (a != null || h != null) boiler[k] = Math.max(a || 0, h || 0);
   }
 
   const daysOut = keys.map((k) => {

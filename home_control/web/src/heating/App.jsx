@@ -24,7 +24,7 @@ function BoilerChip({ state }) {
   const b = state.boiler;
   if (!b.entity) return <a className="boiler" href="#/settings/boiler">Choose your boiler in Settings</a>;
   const calling = state.zones.filter((z) => z.calling).map((z) => z.name);
-  if (!b.available) return <span className="boiler"><Icon.flame />Boiler control offline</span>;
+  if (!b.available || b.reachable === false) return <span className="boiler"><Icon.flame />Boiler control offline</span>;
   return (
     <span className={`boiler${b.on ? ' on' : ''}`} role="status">
       <Icon.flame />

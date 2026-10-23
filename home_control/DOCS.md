@@ -258,6 +258,10 @@ Home Control changes your radiators and boiler through their integration in Home
 
 It's shown first under Needs attention, here and on the dashboard card, instead of each device's own "offline" notice, saying what to do (for Hive: put the thermostat and radiators back on Schedule in the Hive app meanwhile) with a button to open the integration in Home Assistant. It's also shown in **Home Assistant's notifications** (the bell, on unless you turn it off), and sent to a phone if you choose one (**Settings → Heating → Phone alerts → When Hive stops working in Home Assistant**). When it's working again, the notice and the notification clear themselves, the phone is told, and Home Control takes the radiators and boiler back over. Each step is in Activity.
 
+While the boiler can't be reached, nothing can fire it, so Home Control doesn't count it as running: the top of the Heating page says **Boiler control offline**, a room that wants heat says **Can't heat** (instead of Heating), and that time isn't added to the boiler's or the rooms' heating time in Today, the room cards or Insights, or learned from. The dashboard card and `binary_sensor.home_boiler` show it as unavailable rather than on. It doesn't try to switch the boiler meanwhile; as soon as it can be reached, rooms that still want heat start again.
+
+Before 1.14.2 a room calling for heat during an outage was counted as heating. Once, after updating, Home Control finds when the boiler couldn't be reached in Home Assistant's history (the last 10 days) and takes that time back out of the rooms' records, noted in Activity. The boiler's own time comes from that history, so it's right too.
+
 ### Changes made on a radiator
 
 If someone turns a TRV or changes it in the Hive app, the room holds that temperature until its next scheduled change, then goes back to the schedule. Turn this off in **Settings → Heating → How it behaves** if you'd rather the schedule always wins.
@@ -290,7 +294,7 @@ Turn the graph and the fired count on or off in **Settings → Heating → Room 
 
 The heating shading and the fired count are recorded by the add-on, so on the day you first install it they only cover the time since then, and the card says so ("Fired twice since 18:10"). The total time and the temperatures are there straight away.
 
-Under the rooms you get a 24-hour chart for each room: actual temperature, target, outside temperature, and shading where the boiler fired. Tap or hover for exact values, or switch to a table. Beside it are today's gas cost (with yesterday's), how long the boiler has run today, and the outside temperature.
+Under the rooms you get a 24-hour chart for each room: actual temperature, target, outside temperature, and shading where the boiler fired. Tap or hover for exact values, or switch to a table. Beside it are today's gas cost (with yesterday's), how long the boiler has run today, and the outside temperature, with the day's low and high and a small graph of the last 24 hours (a faint line at midnight; tap or hover for the time and temperature).
 
 **All rooms** (the first choice above the chart, and where it starts) puts every room on one chart, one coloured line each, so you can compare them. Pick what to show:
 

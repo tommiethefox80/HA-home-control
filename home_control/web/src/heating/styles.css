@@ -109,6 +109,7 @@ button { cursor: pointer; }
 .room-name .chev { width: 16px; height: 16px; color: var(--ink-2); margin-left: auto; }
 .calling { display: inline-flex; align-items: center; gap: 3px; font-size: .78rem; font-weight: 600; color: rgb(214, 106, 36); }
 .calling svg { width: 14px; height: 14px; }
+.calling.blocked { color: var(--ink-2); font-weight: 500; }
 .now { font-size: 3.1rem; line-height: 1; margin-top: 6px; }
 .now small { font-size: .9rem; font-stretch: 100%; font-weight: 450; letter-spacing: 0; color: var(--ink-2); display: block; margin-top: 6px; }
 .status {
@@ -316,6 +317,12 @@ a.chip { color: inherit; text-decoration: none; }
 .stat-num { margin: 4px 0 2px; font-size: 2rem; line-height: 1.1; }
 .stat-sub { margin: 0; font-size: .86rem; color: var(--ink-2); }
 .stat a { color: var(--focus); }
+/* the Outside card's last 24 hours */
+.out-spark { margin-top: 10px; }
+.out-spark .out-line { stroke: var(--c-out); }
+.out-midnight { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.out-axis { position: relative; display: flex; justify-content: space-between; margin-top: 3px; font-size: .72rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.out-axis-mid { position: absolute; top: 0; transform: translateX(-50%); }
 
 .chart-card { background: var(--panel); border-radius: var(--r-card); box-shadow: var(--shadow); padding: 14px 16px 12px; margin-top: 14px; }
 .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }

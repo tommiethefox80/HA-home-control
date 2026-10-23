@@ -45,6 +45,17 @@ function NextHeat({ state }) {
   const tz = state.timeZone;
   if (!b.entity) return null;
   const rooms = state.zones.filter((z) => z.enabled);
+  if (b.reachable === false) {
+    // Hive (or whatever runs the boiler) not working: nothing can fire, so no times to give
+    const want = rooms.filter((z) => z.blocked).map((z) => z.name);
+    return (
+      <section className="stat" aria-label="Next heat">
+        <h2>Next heat</h2>
+        <p className="stat-num num">–</p>
+        <p className="stat-sub">{want.length ? `${list(want)} ${want.length === 1 ? 'wants' : 'want'} heat, but the boiler can't be reached in Home Assistant` : 'Not until the boiler can be reached in Home Assistant again'}</p>
+      </section>
+    );
+  }
   if (b.on) {
     const heating = rooms.filter((z) => z.calling).map((z) => z.name);
     return (
@@ -96,7 +107,7 @@ export function SideCards({ state, today }) {
         {state.boiler.entity ? (
           <>
             <p className="stat-num num">{today ? hm(today.boilerTodayMinutes) : '–'}</p>
-            <p className="stat-sub">{state.boiler.on ? 'Firing now' : 'Resting now'}{today?.boilerFiresToday ? ` · fired ${today.boilerFiresToday === 1 ? 'once' : today.boilerFiresToday === 2 ? 'twice' : `${today.boilerFiresToday} times`}` : ''}</p>
+            <p className="stat-sub">{state.boiler.reachable === false ? 'Can\'t be reached now' : state.boiler.on ? 'Firing now' : 'Resting now'}{today?.boilerFiresToday ? ` · fired ${today.boilerFiresToday === 1 ? 'once' : today.boilerFiresToday === 2 ? 'twice' : `${today.boilerFiresToday} times`}` : ''}</p>
           </>
         ) : <p className="stat-sub"><a href="#/settings/boiler">Choose your boiler in Settings</a></p>}
       </section>
@@ -107,9 +118,64 @@ export function SideCards({ state, today }) {
           <>
             <p className="stat-num num">{deg(ex.outside.now)}</p>
             <p className="stat-sub">{lo != null ? `Between ${deg(lo, 0)} and ${deg(hi, 0)} in the last day` : 'Now'}</p>
+            <OutsideSpark today={today} now={ex.outside.now} tz={state.timeZone} />
           </>
         ) : <p className="stat-sub">No outside temperature found. <a href="#/settings/sources">Choose one in Settings</a></p>}
       </section>
+    </div>
+  );
+}
+
+// The last 24 hours outside, under the Outside card's number (like each room card's day graph).
+function OutsideSpark({ today, now, tz }) {
+  const [hv, setHv] = useState(null);
+  const d = useMemo(() => {
+    const series = today?.outside?.series;
+    if (!series || !today.times?.length) return null;
+    const pts = [];
+    today.times.forEach((t, i) => { if (series[i] != null) pts.push({ t, v: series[i] }); });
+    const end = Date.now();
+    if (now != null && (!pts.length || end > pts[pts.length - 1].t)) pts.push({ t: end, v: now });
+    if (pts.length < 2) return null;
+    const start = end - 24 * 3600000;
+    const vals = pts.map((p) => p.v);
+    let lo = Math.min(...vals); let hi = Math.max(...vals);
+    if (hi - lo < 3) { const mid = (hi + lo) / 2; lo = mid - 1.5; hi = mid + 1.5; }
+    const x = (t) => Math.max(0, ((t - start) / (end - start)) * 1440);
+    const y = (v) => 3 + (1 - (v - lo) / (hi - lo)) * 34;
+    const path = pts.filter((p) => p.t >= start).map((p, k) => `${k ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
+    // midnight, as a faint line, so the day can be read
+    const midnight = today.dayStart && today.dayStart > start ? today.dayStart : null;
+    return { pts: pts.filter((p) => p.t >= start), path, x, y, start, end, midnight };
+  }, [today, now]);
+  if (!d) return null;
+  const clockAt = (t) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(t));
+  // midnight's label only where it won't run into the start time or "now" (its line is always drawn)
+  const midRaw = d.midnight ? d.x(d.midnight) / 1440 : null;
+  const midF = midRaw != null && midRaw > 0.22 && midRaw < 0.82 ? midRaw : null;
+  const onMove = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const f = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1);
+    const t = d.start + f * (d.end - d.start);
+    let best = d.pts[0];
+    for (const p of d.pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+    setHv({ ...best, f: d.x(best.t) / 1440 });
+  };
+  return (
+    <div className="spark out-spark">
+      <div className="spark-plot" onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHv(null)}>
+        <svg viewBox="0 0 1440 40" preserveAspectRatio="none" role="img" aria-label="Outside temperature over the last 24 hours">
+          {d.midnight && <line className="out-midnight" x1={d.x(d.midnight)} x2={d.x(d.midnight)} y1="0" y2="40" />}
+          <path className="spark-line out-line" d={d.path} />
+          {hv && <line className="spark-cross" x1={hv.f * 1440} x2={hv.f * 1440} y1="0" y2="40" />}
+        </svg>
+        {hv && (
+          <div className="spark-tip" style={{ left: `${Math.min(Math.max(hv.f, 0.18), 0.82) * 100}%` }} role="status">
+            {clockAt(hv.t)} · <b>{deg(hv.v)}</b>
+          </div>
+        )}
+      </div>
+      <div className="out-axis" aria-hidden="true"><span>{clockAt(d.start)}</span>{midF != null && <span style={{ left: `${midF * 100}%` }} className="out-axis-mid">00:00</span>}<span>now</span></div>
     </div>
   );
 }

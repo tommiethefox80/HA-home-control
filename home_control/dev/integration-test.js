@@ -57,8 +57,17 @@ await step('Hive fails to set up: Needs attention (with a button to Hive), Home 
   // the dashboard card shows it too
   const pub = await until(async () => { const s = (await mock('GET', '/published')).states['sensor.home_heating']; return s?.attributes?.attention?.some?.((x) => /Hive isn't working/.test(typeof x === 'string' ? x : x.text)) ? s : null; }, 'the dashboard sensor', 60000);
   assert.ok(pub);
+  // meanwhile: the boiler isn't shown or counted as running, rooms that want heat aren't heating,
+  // and the dashboard's boiler sensor is unavailable rather than on
+  const st = await heat('GET', 'state');
+  assert.equal(st.boiler.reachable, false);
+  assert.equal(st.boiler.on, false);
+  assert.ok(st.zones.every((z) => !z.heating), JSON.stringify(st.zones.map((z) => [z.name, z.calling, z.heating])));
+  await until(async () => (await mock('GET', '/published')).states['binary_sensor.home_boiler']?.state === 'unavailable', 'the boiler sensor unavailable', 60000);
   await sleep(35000);
   assert.equal((await phone()).length, 1, 'told once');
+  const notes = (await heat('GET', 'state')).log.filter((l) => l.at > Date.now() - 90000).map((l) => l.msg);
+  assert.equal(notes.some((m) => /^Boiler (ON|OFF)/.test(m)), false, 'nothing switched while it can\'t be reached');
 });
 
 await step('working again: cleared everywhere, and the phone told', async () => {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.14.2
+- **Outside graph**: the Outside card on the Heating page now has a small graph of the last 24 hours under the day's low and high, like each room's, with a faint line at midnight. Tap or hover for the time and temperature.
+- **Fixed: the boiler counted as running while Hive wasn't working.** When the boiler can't be reached in Home Assistant (Hive down, say), Home Control no longer shows or counts it as on: the Heating page says Boiler control offline, a room that wants heat says **Can't heat** instead of Heating, and that time isn't added to the boiler's or rooms' heating time in Today, the room cards or Insights, or learned from. The dashboard card and `binary_sensor.home_boiler` show it as unavailable. It doesn't try to switch the boiler meanwhile, and rooms that still want heat start again as soon as it's back.
+- The heating time already counted during an outage is taken back out once, from when Home Assistant's history shows the boiler couldn't be reached (the last 10 days), and noted in Activity.
+
 ## 1.14.1
 - **Told when Hive stops working in Home Assistant.** If the integration behind your radiators and boiler (Hive, or whichever they use) fails to set up, needs signing in again, keeps failing to connect, is turned off, or has every device unavailable, Home Control can't change them, so it now says so: first under Needs attention (in the app and on the dashboard card, with a button to open it in Home Assistant and what to do meanwhile), in Home Assistant's notifications (on by default), and on a phone if you choose one in Settings → Heating → Phone alerts. When it's working again, it clears itself and the phone is told.
 - Hive's login failure from 20 October 2026 ("Failed to set up", "Failed to get login info") is fixed in Home Assistant 2026.10.3.

@@ -103,7 +103,7 @@ export function heatingState(snap, today = null, panel = null) {
   const b = snap.boiler;
   const calling = snap.zones.filter((z) => z.calling).map((z) => z.name);
   const boiler = !b.entity ? 'No boiler chosen yet'
-    : !b.available ? 'Boiler control offline'
+    : !b.available || b.reachable === false ? 'Boiler control offline'
       : b.on ? (calling.length ? `Boiler on for ${list(calling)}${b.until ? ` until about ${clock(b.until, tz)}` : ''}` : 'Boiler finishing its minimum run')
         : `Boiler resting${b.next ? `, next on about ${clock(b.next.at, tz)}` : ''}`;
   const mode = snap.mode;
@@ -168,7 +168,8 @@ export function boilerNextState(snap) {
 
 export function boilerState(snap) {
   return {
-    state: snap.boiler.on ? 'on' : 'off',
+    // can't be reached (Hive down): not "off", as it isn't known
+    state: snap.boiler.reachable === false ? 'unavailable' : snap.boiler.on ? 'on' : 'off',
     attributes: { friendly_name: 'Boiler', device_class: 'heat', icon: snap.boiler.on ? 'mdi:fire' : 'mdi:fire-off' },
   };
 }
