@@ -7,7 +7,7 @@ A Home Assistant app for the heating, lighting, cameras, Wi-Fi and energy of the
 - **Cameras**: any camera Home Assistant knows about, with movement alerts (with a picture) and recording on schedules, offline alerts, and each camera's own settings in one place.
 - **Wi-Fi** (UniFi): access points, networks and who's connected; switch networks and access points off and on, the access points' lights off at night, a network on only at set times, and a QR code for guests to join.
 - **Energy** (Octopus, or Home Assistant's Energy dashboard): the electricity price now and for today and tomorrow, today's cost, the car's charging on Intelligent Octopus (bump charge, charge target, ready-by), plans that switch a socket on at the cheapest time, phone alerts when it's cheap, and each day's cost and what used the most.
-- **One Away** for everything, switched by hand or by people's phones.
+- **One Away** for everything, switched by hand or by people's phones: each room at its own Away temperature, lights that look lived in, and chosen Wi-Fi networks, access points and PoE ports switched off.
 - **Schedules that learn**: when the same change keeps being made by hand (the lounge turned up most evenings, the lights off early every Friday), it suggests changing the schedule to match, or makes the change itself, room by room.
 - **Home Assistant entities** (optional, with MQTT): each light group, heating room and scene, and Away, as real entities for Alexa, Google, automations and dashboards.
 - **Use the parts you want**: heating, lighting, cameras, Wi-Fi and energy can each be turned on or off in Settings.

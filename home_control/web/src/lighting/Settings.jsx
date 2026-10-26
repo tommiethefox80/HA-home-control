@@ -18,7 +18,12 @@ export function Settings({ state, run, go, old, arg }) {
   useEffect(() => () => clearTimeout(saveTimer.current), []);
 
   const load = () => api('GET', 'config').then((c) => { setCfg(c); setForm((f) => f || { ...c.settings }); setError(null); }).catch((e) => setError(e.message));
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // Away's evening is set under General → Away: keep the groups' "house setting" up to date
+    window.addEventListener('home-changed', load);
+    return () => window.removeEventListener('home-changed', load);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Open "new group" straight from links like #/lighting/settings/new
   useEffect(() => {
     if (arg === 'new' && cfg) { setEditing({}); go('settings', 'groups'); }
@@ -50,7 +55,8 @@ export function Settings({ state, run, go, old, arg }) {
   };
   const saveSettings = async (values) => {
     try {
-      await run(() => api('PUT', 'settings', values));
+      const { awayOffTime, awayBrightness, ...rest } = values; // eslint-disable-line no-unused-vars -- set under General → Away
+      await run(() => api('PUT', 'settings', rest));
       setSavedMsg('Saved');
       clearTimeout(savedTimer.current);
       savedTimer.current = setTimeout(() => setSavedMsg(null), 2500);
@@ -90,7 +96,7 @@ export function Settings({ state, run, go, old, arg }) {
                   <strong>{g.name}</strong>
                   <span className="fine">
                     {[lights && plural(lights, 'light'), sockets && plural(sockets, 'socket')].filter(Boolean).join(' and ') || 'Nothing in it yet'}
-                    {g.motion ? ', movement sensor' : ''}{g.lux ? ', light sensor' : ''}{g.livedIn ? ', looks lived in when away' : ''}{g.learn === 'auto' ? ', changes its schedule to match changes made by hand' : g.learn === 'off' ? ', no schedule suggestions' : ''}
+                    {g.motion ? ', movement sensor' : ''}{g.lux ? ', light sensor' : ''}{g.livedIn ? `, looks lived in when away${g.away ? ` (${[g.away.offTime && `off around ${g.away.offTime}`, g.away.brightness != null && `${g.away.brightness}%`].filter(Boolean).join(', ')})` : ''}` : ''}{g.learn === 'auto' ? ', changes its schedule to match changes made by hand' : g.learn === 'off' ? ', no schedule suggestions' : ''}
                     {g.card === 'hide' ? ', hidden from the dashboard' : g.card === 'season' && g.season ? `, on the dashboard ${describeMonthDay(g.season.from)} to ${describeMonthDay(g.season.to)}` : ''}
                   </span>
                   {missing > 0 && <span className="warn-text"><Icon name="warn" size={14} /> {plural(missing, 'device')} no longer in Home Assistant</span>}
@@ -149,19 +155,6 @@ export function Settings({ state, run, go, old, arg }) {
         </Field>
       </section>}
 
-      {show('away') && <section className="card settings-section" aria-labelledby="set-away">
-        <h3 id="set-away">Away</h3>
-        <p className="fine">Groups set to look lived in come on a little after sunset and go off around this time, varying by up to 20 minutes each day.</p>
-        <div className="field-pair">
-          <Field label="Go off around" htmlFor="awayoff">
-            <input id="awayoff" type="time" value={form.awayOffTime} onChange={(e) => set('awayOffTime', e.target.value)} />
-          </Field>
-          <Field label="Brightness (%)" htmlFor="awaybri">
-            <input id="awaybri" type="number" min="1" max="100" inputMode="numeric" value={form.awayBrightness} onChange={(e) => set('awayBrightness', e.target.value)} />
-          </Field>
-        </div>
-      </section>}
-
       {show('sun') && <section className="card settings-section" aria-labelledby="set-ha">
         <h3 id="set-ha">Sunrise and sunset</h3>
         <Field label="Sunrise and sunset from" htmlFor="sun" help="Used for changes set around sunset or sunrise. Without it, times are worked out from your home location.">
@@ -211,6 +204,11 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
   const [season, setSeason] = useState(existing?.season || null);
   const [lux, setLux] = useState(existing?.lux || { entity: '', threshold: 50 });
   const [livedIn, setLivedIn] = useState(!!existing?.livedIn);
+  // its own Away evening, or the house's (General → Away)
+  const houseAway = { offTime: cfg.settings?.awayOffTime || '23:00', brightness: cfg.settings?.awayBrightness ?? 70 };
+  const [awayOwn, setAwayOwn] = useState(!!existing?.away);
+  const [awayOff, setAwayOff] = useState(existing?.away?.offTime || houseAway.offTime);
+  const [awayBri, setAwayBri] = useState(existing?.away?.brightness ?? houseAway.brightness);
   const [card, setCard] = useState(existing?.card || 'show');
   const [learn, setLearn] = useState(existing?.learn || 'suggest');
   const [onBrightness, setOnBrightness] = useState(existing?.onBrightness ?? 100);
@@ -247,7 +245,7 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
   const save = async () => {
     setBusy(true); setErr(null);
     try {
-      const body = { name, devices, motion: motion.entity ? { ...motion, night } : null, lux: lux.entity ? lux : null, livedIn, onBrightness, season, card: card === 'season' && !season ? 'show' : card, learn };
+      const body = { name, devices, motion: motion.entity ? { ...motion, night } : null, lux: lux.entity ? lux : null, livedIn, away: awayOwn ? { offTime: awayOff, brightness: awayBri } : null, onBrightness, season, card: card === 'season' && !season ? 'show' : card, learn };
       await run(() => (existing ? api('PUT', `groups/${existing.id}`, body) : api('POST', 'groups', body)));
       onSaved();
     } catch (e) { setErr(e.message); setBusy(false); }
@@ -417,8 +415,29 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
       </section>
 
       <section className="sheet-section">
-        <Toggle label="Look lived in when away" checked={livedIn} onChange={setLivedIn}
-          description="In Away mode this group comes on in the evening at slightly different times each day." />
+        <h3>While away</h3>
+        <Toggle label="Look lived in" checked={livedIn} onChange={setLivedIn}
+          description="Comes on a little after sunset and goes off in the evening, a bit differently each day. Otherwise it stays off while the house is on Away." />
+        {livedIn && (
+          <>
+            <Field label="Evening" htmlFor="gaway" help={awayOwn ? 'Varies by up to 20 minutes each day.' : <>Change the house setting in <a href="#/lighting/settings/presence">General → Away</a>.</>}>
+              <select id="gaway" value={awayOwn ? 'own' : 'house'} onChange={(e) => setAwayOwn(e.target.value === 'own')}>
+                <option value="house">House setting: off around {houseAway.offTime}, at {houseAway.brightness}%</option>
+                <option value="own">Its own</option>
+              </select>
+            </Field>
+            {awayOwn && (
+              <div className="field-pair">
+                <Field label="Go off around" htmlFor="gawayoff">
+                  <input id="gawayoff" type="time" value={awayOff} onChange={(e) => setAwayOff(e.target.value)} />
+                </Field>
+                <Field label="Brightness (%)" htmlFor="gawaybri">
+                  <input id="gawaybri" type="number" min="1" max="100" inputMode="numeric" value={awayBri} onChange={(e) => setAwayBri(e.target.value)} />
+                </Field>
+              </div>
+            )}
+          </>
+        )}
       </section>
       {err && <Notice tone="error">{err}</Notice>}
     </Sheet>

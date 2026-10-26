@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0
+- **Away is set in one place: Settings → General → Away** (it was split between Heating → Temperatures, Lighting → Away and General → Away automatically). It has what Away does for the whole house, then switching to it from phone locations. Old links to Lighting's Away page go there.
+- **Each room can have its own Away temperature** (Settings → Heating → Rooms → Edit → While away), or use the house's. The Heating page says which ("Away at 12° (Bedroom 15°)"), and Back to Away on a room goes to its own.
+- **Each lighting group that looks lived in can have its own evening** while away: when it goes off and how bright (Settings → Lighting → Groups → Edit → While away), or use the house's.
+- **Away for the Wi-Fi**: a network, an access point (through its PoE port) or any other PoE port can be switched off while the house is on Away, and put back when someone's back (to its schedule, or on). Set on each in Wi-Fi's settings, with a new **PoE ports** page for anything else a UniFi switch powers (and a name for what's plugged in). All off to start with.
+
 ## 1.14.2
 - **Outside graph**: the Outside card on the Heating page now has a small graph of the last 24 hours under the day's low and high, like each room's, with a faint line at midnight. Tap or hover for the time and temperature.
 - **Fixed: the boiler counted as running while Hive wasn't working.** When the boiler can't be reached in Home Assistant (Hive down, say), Home Control no longer shows or counts it as on: the Heating page says Boiler control offline, a room that wants heat says **Can't heat** instead of Heating, and that time isn't added to the boiler's or rooms' heating time in Today, the room cards or Insights, or learned from. The dashboard card and `binary_sensor.home_boiler` show it as unavailable. It doesn't try to switch the boiler meanwhile, and rooms that still want heat start again as soon as it's back.

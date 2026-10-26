@@ -115,7 +115,7 @@ export const isOverridden = (z) => ['boost', 'hold', 'manual', 'snooze'].include
 // what "Back to schedule" returns the room to (Away still applies if the house is in Away)
 function backTo(z, state) {
   return state.mode === 'away'
-    ? { label: 'Back to Away', temp: state.settings.awayTemp, done: 'back on Away' }
+    ? { label: 'Back to Away', temp: z.awayTemp ?? state.settings.awayTemp, done: 'back on Away' }
     : { label: 'Back to schedule', temp: z.scheduled?.temp, done: 'back on schedule' };
 }
 

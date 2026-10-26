@@ -26,6 +26,10 @@ const calls = async (domain) => (await mock('GET', '/calls')).filter((c) => !dom
 const states = () => mock('GET', '/states');
 const t = (d) => minutesToTime((zonedParts(Date.now(), 'Europe/London').minutes + d + 1440) % 1440);
 let passed = 0;
+async function until(fn, what, ms = 10000) {
+  const end = Date.now() + ms;
+  for (;;) { if (await fn().catch(() => false)) return; if (Date.now() > end) throw new Error(`Timed out waiting for ${what}`); await sleep(200); }
+}
 async function step(name, fn) { process.stdout.write(`- ${name} ... `); await fn(); passed++; console.log('ok'); }
 
 let app;
@@ -215,6 +219,62 @@ await step('restart, block a device, track the ones Home Assistant doesn\'t, and
   const img = await fetch(`${APP}/api/wifi/networks/${GUEST}/qr.png`);
   assert.equal(img.status, 200);
   assert.equal(img.headers.get('content-type'), 'image/png');
+});
+
+await step('Away: a network, an access point and another PoE port off while away, and back afterwards', async () => {
+  const P5 = 'switch.office_switch_port_5_poe'; const P7 = 'switch.office_switch_port_7_poe';
+  // the guest network back to its schedule (on now), the garden access point and the port with a speaker on it back on
+  await wifi('PUT', `networks/${GUEST}`, { schedule: { mode: 'on_between', from: t(-1), to: t(60) }, away: true });
+  await wifi('PUT', `devices/${GARDEN}`, { away: true });
+  let v = await wifi('PUT', `ports/${P7}`, { away: true, label: 'Kitchen speaker' });
+  assert.equal(v.ports.length, 8);
+  assert.match(v.ports.find((p) => p.entity === P5).ap, /Garden/, 'the access point\'s port says so');
+  assert.deepEqual(v.ports.find((p) => p.entity === P7), { ...v.ports.find((p) => p.entity === P7), away: true, label: 'Kitchen speaker' });
+  assert.ok((await calls('entity_registry')).some((c) => c.data.entity_id === P7), 'Home Assistant asked to turn the port on');
+  await until(async () => (await states())[P7]?.state === 'on', 'the port in Home Assistant', 10000);
+  const house = await j('GET', `${APP}/api/house`);
+  assert.deepEqual(house.away.wifi.items.map((i) => i.kind), ['network', 'ap', 'port']);
+  assert.match(house.away.wifi.items[2].name, /^Kitchen speaker \(Office switch port 7\)$/);
+  await sleep(1500);
+  assert.equal((await states())["switch.fox_guest"].state, "on");
+  // the house goes to Away
+  await mock('POST', '/reset-calls');
+  await j('POST', `${APP}/api/mode`, { mode: 'away' });
+  await until(async () => (await calls('switch')).length >= 3, 'switched off', 10000);
+  const offs = (await calls('switch')).map((c) => `${c.service} ${c.data.entity_id}`).sort();
+  assert.deepEqual(offs.filter((x) => /office_switch|guest/.test(x)), ['turn_off switch.fox_guest', `turn_off ${P5}`, `turn_off ${P7}`]);
+  let st = await wifi('GET', 'state');
+  assert.equal(st.away.off.length, 3);
+  assert.equal(st.networks.find((n) => n.id === GUEST).heldAway, true);
+  assert.ok(st.events.some((e) => e.kind === 'away' && /^Away: .*Guest.*switched off until someone's back\.$/.test(e.text)), st.events[0]?.text);
+  // its schedule doesn't turn it back on meanwhile
+  await mock('POST', '/reset-calls');
+  await wifi('PUT', `networks/${GUEST}`, { schedule: { mode: 'on_between', from: t(-2), to: t(60) } });
+  await sleep(1500);
+  assert.deepEqual(await calls('switch'), []);
+  // back: the guest network to its schedule (on), the access point and the port back on
+  await j('POST', `${APP}/api/mode`, { mode: 'auto' });
+  await until(async () => (await calls('switch')).length >= 3, 'back on', 10000);
+  const ons = (await calls('switch')).map((c) => `${c.service} ${c.data.entity_id}`).sort();
+  assert.deepEqual(ons, ['turn_on switch.fox_guest', `turn_on ${P5}`, `turn_on ${P7}`]);
+  st = await wifi('GET', 'state');
+  assert.equal(st.away, null);
+  assert.ok(st.events.some((e) => /^Back from Away: .* switched back on \(an access point takes a few minutes to start\)\.$/.test(e.text)), st.events[0]?.text);
+  // with a schedule that says off now, it stays off when the house is back
+  await wifi('PUT', `networks/${GUEST}`, { schedule: { mode: 'on_between', from: t(30), to: t(60) } });
+  await sleep(800);
+  await j('POST', `${APP}/api/mode`, { mode: 'away' });
+  await sleep(1500);
+  await mock('POST', '/reset-calls');
+  await j('POST', `${APP}/api/mode`, { mode: 'auto' });
+  await sleep(1500);
+  assert.equal((await calls('switch')).some((c) => c.data.entity_id === 'switch.fox_guest'), false, 'stays off: its schedule says so');
+  // tidy up
+  await wifi('PUT', `networks/${GUEST}`, { schedule: { mode: 'none' }, away: false });
+  await wifi('POST', `networks/${GUEST}/power`, { on: true });
+  await wifi('PUT', `devices/${GARDEN}`, { away: false });
+  v = await wifi('PUT', `ports/${P7}`, { away: false, label: '' });
+  assert.equal(v.ports.find((p) => p.entity === P7).away, false);
 });
 
 await step('turned off: nothing switched, no schedules, and its sensor is removed', async () => {

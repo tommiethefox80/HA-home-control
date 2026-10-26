@@ -63,6 +63,7 @@ export function createWifi({ client, dataDir, log, house, restBase, token }) {
     ['POST', /^\/api\/wifi\/devices\/([0-9a-fA-F:]+)\/restart$/, async (m) => { await engine.restart(m[1]); return { ok: true }; }],
     ['POST', /^\/api\/wifi\/devices\/([0-9a-fA-F:]+)\/power$/, async (m, b) => { await engine.setPower(m[1], bool(b.on, 'the access point')); return snapshot(); }],
     ['PUT', /^\/api\/wifi\/devices\/([0-9a-fA-F:]+)$/, (m, b) => { engine.updateDevice(m[1], b); return engine.settingsView(); }],
+    ['PUT', /^\/api\/wifi\/ports\/(switch\.[a-z0-9_]+)$/, (m, b) => { engine.updatePort(m[1], b || {}); return engine.settingsView(); }],
     ['POST', /^\/api\/wifi\/clients\/block$/, async (m, b) => { await engine.setBlocked(String(b.entity || ''), bool(b.blocked, 'blocking')); return snapshot(); }],
     ['POST', /^\/api\/wifi\/track-all$/, async () => ({ turnedOn: await engine.trackAll() })],
   ];

@@ -218,9 +218,17 @@ export class Engine extends EventEmitter {
     if (mode === 'schedule') return this.activeSchedule(g, ms);
     if (mode === 'away' && g.livedIn) {
       const ctx = this.ctx();
-      return livedInWeek(g.id, startOfWeek(ms, ctx.tz), ctx, { offTime: this.settings.awayOffTime, brightness: this.settings.awayBrightness });
+      return livedInWeek(g.id, startOfWeek(ms, ctx.tz), ctx, this.awayFor(g));
     }
     return null;
+  }
+
+  /** A lived-in group's Away evening: its own off time and brightness, or the house's. */
+  awayFor(g) {
+    return {
+      offTime: g.away?.offTime ?? this.settings.awayOffTime,
+      brightness: g.away?.brightness ?? this.settings.awayBrightness,
+    };
   }
 
   /** The group's schedule if it's running today: not empty, and inside its season if it has one. */
@@ -911,6 +919,13 @@ export class Engine extends EventEmitter {
       ? { entity: input.lux.entity, threshold: clamp(Math.round(Number(input.lux.threshold) || 0), 0, 100000) }
       : null;
     g.livedIn = !!input.livedIn;
+    // its own Away evening (when it looks lived in), or null for the house's (left as it was if not sent)
+    if (input.away !== undefined) {
+      const a = input.away || {};
+      const offTime = typeof a.offTime === 'string' && timeToMinutes(a.offTime) != null ? a.offTime : null;
+      const brightness = a.brightness != null && a.brightness !== '' && Number.isFinite(Number(a.brightness)) ? clamp(Math.round(Number(a.brightness)), 1, 100) : null;
+      g.away = offTime || brightness != null ? { offTime, brightness } : null;
+    }
     // changes made by hand that keep happening: suggest a schedule change (the default), make it, or nothing
     if (['off', 'suggest', 'auto'].includes(input.learn)) g.learn = input.learn;
     // the Home Control dashboard card: show, show only while in season, or hide (left as it was if not sent)
@@ -1290,6 +1305,7 @@ export class Engine extends EventEmitter {
       const tgt = handsOff(gt.override) ? null : gt.level;
       return {
         id: g.id, name: g.name, livedIn: !!g.livedIn,
+        away: g.livedIn ? { ...this.awayFor(g), own: !!g.away } : null,
         card: g.card || 'show',
         onCard: g.card === 'hide' ? false : g.card === 'season' && g.season ? inSeason(today, g.season) : true,
         devices: infos,

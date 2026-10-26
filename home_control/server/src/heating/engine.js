@@ -13,6 +13,7 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 const UNAVAILABLE = new Set(['unavailable', 'unknown']);
+const AWAY_MIN = 5; const AWAY_MAX = 21; // Away temperatures, the house's and each room's
 const BLIP_MS = 3 * 60000; // unavailable for less than this is a blip, not an outage
 // Test-only: shrink the learning time windows (1 = real time).
 const TS = Number(process.env.HC_TIME_SCALE) || 1;
@@ -57,6 +58,11 @@ export class Engine extends EventEmitter {
     const b = this.s.boiler?.entity;
     if (!b) return true; // no boiler here: nothing to reach
     return !this.#gone(b);
+  }
+
+  /** What a room drops to while the house is Away: its own, or the house's. */
+  awayTempFor(zone) {
+    return zone?.awayTemp != null && Number.isFinite(Number(zone.awayTemp)) ? Number(zone.awayTemp) : this.s.awayTemp;
   }
 
   /** Can't be reached in Home Assistant: its integration not working, or unavailable for a few minutes.
@@ -258,7 +264,7 @@ export class Engine extends EventEmitter {
     const win = this.rt.windowPause?.[zone.id];
     if (win && win.until > now) return { temp: this.s.frostTemp, source: 'window', until: win.until, sched };
     if (ov && ov.until > now) return { temp: ov.temp, source: ov.kind, until: ov.until, by: ov.by, via: ov.via, forever: !!ov.forever, sched };
-    if (this.rt.mode === 'away' && !(this.rt.awayUntil && this.rt.awayUntil <= now)) return { temp: this.s.awayTemp, source: 'away', until: this.rt.awayUntil, sched };
+    if (this.rt.mode === 'away' && !(this.rt.awayUntil && this.rt.awayUntil <= now)) return { temp: this.awayTempFor(zone), source: 'away', until: this.rt.awayUntil, sched };
     if (!sched) return { temp: this.s.frostTemp, source: 'no-schedule', sched };
     const pre = preheat ? this.#preheat(zone, sched, now) : null;
     if (pre) return { temp: pre.temp, source: 'preheat', until: pre.until, readyBy: pre.readyBy, sched };
@@ -881,6 +887,7 @@ export class Engine extends EventEmitter {
       heating: real,                // calling, and really able to heat
       blocked: calling && !real,    // wants heat, but the boiler or its radiators can't be reached
       openRadiator: this.openRadiator(zone),
+      awayTemp: this.awayTempFor(zone), awayOwn: zone.awayTemp != null,
       openRadiatorSet: zone.openRadiator === true || zone.openRadiator === false,
       // below its target but not heating: it starts again under startAt (so the boiler doesn't flick on and off)
       waiting: !!zone.enabled && !calling && current != null && current < t.temp && !['off', 'window'].includes(t.source),
@@ -1442,6 +1449,11 @@ export class Engine extends EventEmitter {
       // null: worked out (no TRV of its own); true/false: set by hand
       openRadiator: input.openRadiator === true || input.openRadiator === false ? input.openRadiator : null,
     };
+    // its own Away temperature, or null for the house's (left as it was if not sent)
+    if (input.awayTemp !== undefined) {
+      const a = input.awayTemp === '' || input.awayTemp == null ? null : num(input.awayTemp);
+      clean.awayTemp = a == null ? null : Math.min(AWAY_MAX, Math.max(AWAY_MIN, Math.round(a * 2) / 2));
+    }
     // what to do with changes made by hand that keep happening: suggest a schedule change (the
     // default), make it automatically, or nothing (left as it was if not sent)
     if (['off', 'suggest', 'auto'].includes(input.learn)) clean.learn = input.learn;
@@ -1505,7 +1517,7 @@ export class Engine extends EventEmitter {
     s.hysteresis = n(input.hysteresis, 0, 2, s.hysteresis);
     s.stopEarly = n(input.stopEarly, 0, 1.5, s.stopEarly ?? 0);
     s.frostTemp = n(input.frostTemp, 5, 12, s.frostTemp);
-    s.awayTemp = n(input.awayTemp, 5, 18, s.awayTemp);
+    s.awayTemp = n(input.awayTemp, AWAY_MIN, AWAY_MAX, s.awayTemp);
     s.houseBoostTemp = n(input.houseBoostTemp, 10, 28, s.houseBoostTemp ?? 22);
     s.houseBoostMinutes = n(input.houseBoostMinutes, 5, 720, s.houseBoostMinutes ?? 30);
     s.commandGraceSeconds = n(input.commandGraceSeconds, 30, 900, s.commandGraceSeconds);

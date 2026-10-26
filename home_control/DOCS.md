@@ -60,21 +60,24 @@ Heating's settings are saved with **Save settings**; if you leave Heating's sett
   - Everything you set up is kept. Turning it back on carries on where it left off; lights are left as they are until each group's next scheduled change.
 
   At least one part has to stay on. With only one on, the Heating / Lighting switch at the top shows just that part's name.
-- **Away automatically.** The people, wait and distance for switching the house to Away from phone locations (below).
+- **Away.** What Away does for the whole house (the rooms' temperature, the lived-in lights, what Wi-Fi switches off), and the people, wait and distance for switching to it from phone locations (below).
 - **Dashboard button.** Where the Dashboard button at the top of every page goes.
 - **Home Assistant entities.** Groups, rooms, scenes and Away as real Home Assistant entities, for Alexa, Google, automations and other dashboards (below).
 
 ## Away for the whole house
 
-Away is one switch for the heating and the lights:
+Away is one switch for the whole house: the heating, the lights and, if you choose, parts of the Wi-Fi.
 
 - **Away on the Heating page** (by hand, until a date, automatically from phones, or from the button on the "everyone's out" phone alert) puts the lights on Away too. Coming back to Schedules brings both back.
 - **Away on the Lighting page** puts the heating on Away too, and Schedules brings it back. Home Assistant scripts using `lighting_control_mode` do the same.
 - **Heating switched Off** (say for the summer) is left alone: Away on the Lighting page then only changes the lights. While the heating is off, the same people, wait and distance settings still switch the lights to Away when everyone's out and back when someone's on the way home.
 
-The people, wait and distance are set once, in **Settings → General → Away automatically**. If the heating is turned off there, they still switch the lights.
+Everything about Away is set in **Settings → General → Away**:
 
-In Away, every room drops to the away temperature, and lights stay off except groups set to look lived in.
+- **Heating: rooms drop to** a temperature (12° to start with). A room can have its own instead: **Settings → Heating → Rooms → Edit → While away** (a spare room colder, say, or a room with a pet warmer). The Heating page says which: "Away at 12° (Bedroom 15°)".
+- **Lights** stay off, except groups set to look lived in: they come on a little after sunset and go off around a time (23:00 to start with), at a brightness (70%), a bit differently each day. Which groups look lived in, and a group's own time and brightness, are set in the group: **Settings → Lighting → Groups → Edit → While away**.
+- **Wi-Fi** (if it's on): which networks, access points and PoE ports are switched off while away, set on each in Wi-Fi's settings (see [Away for the Wi-Fi](#away-for-the-wi-fi)). The page lists them.
+- **Away automatically**: the people, wait and distance for switching the house to Away from phone locations, and back. If the heating is turned off there, they still switch the lights (and the Wi-Fi).
 
 ## Schedules that learn from changes made by hand
 
@@ -183,7 +186,7 @@ Every 30 seconds, and whenever a valve or thermometer changes:
 1. Each room's **target** is worked out, in this order of priority:
    - **Off** mode: frost protection temperature
    - a **boost**, **hold**, or a change someone made **on the radiator**
-   - **Away** mode: away temperature
+   - **Away** mode: the room's Away temperature (its own, or the house's)
    - the room's **schedule**
 2. Every TRV in the room is set to that target (only when it differs, and spaced out so Hive's cloud API isn't hammered).
 3. A room **calls for heat** when it falls 0.3° (configurable) below target, and stops when it reaches target, or a set amount below it if you use **Stop heating this far below target** to let the radiators' leftover heat finish the job. A room that stops early waits while it's still warming from that leftover heat; as soon as it stops rising (or if it wasn't heated at all) it starts again at the usual 0.3° below target. How early it stops depends on the heat-up: the full amount after a long heat-up from cold, less for a short top-up (whose radiator has less heat left in it), and always at least 0.2° above where it started. A room below its target that isn't heating says when it will, on its card ("Heats again below 17.9°"), on its own page (with why), and on the dashboard card.
@@ -199,7 +202,7 @@ Radiators keep giving off heat after they shut off, so a room can carry on warmi
 
 - **Learn automatically** (the default): after every heat-up the app watches how far the room keeps rising, then nudges that room's stop point. If it overshot, it stops earlier next time; if it fell short, it stops later. Changes are small (at most 0.3° per heat-up, never more than 1.5° early), so one odd day can't throw it out, and most rooms settle within a few heat-ups. Only the radiators' leftover heat counts: a rise of more than the room rose while heating, faster than it warmed while heating, or more than an hour after the heat went off (a shower, people in the room, the sun) is ignored, and a short top-up only ever teaches it to stop less early. The room's settings show what it has learned and the last few heat-ups, with **Forget and relearn** if you move furniture or change a radiator.
 - **Fixed %**: always stop a set percentage below the target (2% of 21° is about 0.4°). After a heat-up it suggests a percentage based on how far the room actually rose.
-- **House setting**: use the single value under Settings → Temperatures.
+- **House setting**: use the single value under Settings → Heating → Temperatures.
 
 Whichever you pick, it's the most a room stops early: a short top-up stops less early (see above). When a room stops calling early, its valves are turned down too, so they close even if the boiler is still firing for another room. When the room needs heat again, they go back up to the target.
 
@@ -235,7 +238,7 @@ If a room drops sharply (1° within 10 minutes by default), it's probably a wind
 
 ### Away automatically
 
-With **Settings → General → Away automatically** on, the app watches the people you tick (Home Assistant "person" entities, which use the location from the Home Assistant app on each phone). When everyone has been out for 15 minutes, the house switches to Away: the heating and the lights. When anyone is home or within 2 miles, it switches back to Schedules so the house is warming as they arrive. A mode you pick by hand always wins: if you choose Schedules while everyone is out, it stays on Schedules until someone has been home. See [Away for the whole house](#away-for-the-whole-house).
+With **Away automatically** on (**Settings → General → Away**), the app watches the people you tick (Home Assistant "person" entities, which use the location from the Home Assistant app on each phone). When everyone has been out for 15 minutes, the house switches to Away: the heating, the lights and anything chosen in the Wi-Fi. When anyone is home or within 2 miles, it switches back to Schedules so the house is warming as they arrive. A mode you pick by hand always wins: if you choose Schedules while everyone is out, it stays on Schedules until someone has been home. See [Away for the whole house](#away-for-the-whole-house).
 
 ### Needs attention
 
@@ -355,7 +358,7 @@ The "on" alert names the rooms that fired the boiler and their temperatures. The
 
 - **Off for 2 hours** (or the time you choose: 1 to 8 hours): Away until then, then back to the schedules.
 - **Off until we're back**: Away until someone's home.
-- **Off until we're nearly home**: Away until someone's within the distance set in Settings → General → Away automatically (2 miles to start with).
+- **Off until we're nearly home**: Away until someone's within the distance set in Settings → General → Away (2 miles to start with).
 
 Off means Away: every room at the Away temperature, so the house doesn't get too cold, and the lights on Away too, as with Away anywhere. The phones are told what was done, and the alert is replaced so it can't be pressed twice. Ignoring it leaves the heating as it is.
 
@@ -486,7 +489,7 @@ Movement alerts go to the phones chosen in **Cameras → Settings → Phones to 
 Each camera alerts on its own schedule:
 
 - **Always**
-- **When everyone's out**: whenever the house is on Away, set by hand or by Away automatically (Settings → General).
+- **When everyone's out**: whenever the house is on Away, set by hand or by Away automatically (Settings → General → Away).
 - **Between set times**, such as 23:00 to 06:30.
 - **When everyone's out, or between set times**
 - **Never**
@@ -570,9 +573,22 @@ In **Settings**:
 - **Status lights at night**: the lights on the access points and switches go off at the first time and back on at the second, every day. Choose which devices, or leave them all ticked.
 - **Network schedules**: each network can be **off between two times** (a children's network overnight) or **on only between two times** (a guest network in the day).
 - **Access points**: off between two times, once its PoE port is chosen.
+- **PoE ports**: any other port switched off while away (below).
 - **Connected devices**: list the devices on each access point, on each network, and on the dashboard card. The first two start on, the card off.
 
 Each change is made once, at its time (or when the device is next online, if it isn't then). Switching something by hand in between is left alone until the next scheduled change. Saving a schedule puts things as it says right away. Everything the schedules do, and every change made here, is listed on **Activity**.
+
+## Away for the Wi-Fi
+
+When the house goes to Away (from the Heating or Lighting page, the phone alert, phone locations or Home Assistant), Wi-Fi can switch things off too, and put them back when someone's back. Nothing is switched off unless you choose it:
+
+- **A network**: **Off while away** under each network in **Settings → Network schedules** (a guest or children's network, say).
+- **An access point**: **Off while away** under each access point in **Settings → Access points**, once its PoE port is chosen. It takes a few minutes to start again afterwards.
+- **Anything else on a PoE port** (a speaker, a screen, a camera indoors): **Settings → PoE ports** lists every PoE port on your UniFi switches, with **Off while away** and a name for what's plugged in. Ports an access point is plugged into are set under Access points instead. Home Assistant keeps PoE ports turned off to start with; ticking one asks it to turn it on, which takes about a minute.
+
+Each is switched off once, as the house goes to Away (or as soon as it's online, if it isn't then); switching it back on by hand meanwhile is left alone, and its schedule doesn't switch it back on. When someone's back, each goes to what its schedule says now, or back on if Away switched it off and it has no schedule. Activity lists both, and the Wi-Fi pages say what's off while you're away.
+
+Anything that only reaches the network through what's switched off goes offline too: smart plugs, bulbs and cameras on that Wi-Fi, including lights set to look lived in, and Home Assistant itself if it's connected through it. Phone locations come from the phones' own connection, so Away automatically still works.
 
 ## Wi-Fi on a dashboard
 

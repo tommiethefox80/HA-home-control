@@ -28,7 +28,6 @@ export const SETTINGS_MENU = {
       { id: 'each', label: 'Each light and socket' },
       { id: 'scenes', label: 'Scenes' },
       { id: 'behaviour', label: 'How it behaves' },
-      { id: 'away', label: 'Away' },
       { id: 'sun', label: 'Sunrise and sunset' },
       { id: 'start', label: 'Getting started' },
     ],
@@ -47,6 +46,7 @@ export const SETTINGS_MENU = {
       { id: 'clients', label: 'Connected devices' },
       { id: 'networks', label: 'Network schedules' },
       { id: 'aps', label: 'Access points' },
+      { id: 'ports', label: 'PoE ports' },
       { id: 'kinds', label: 'What each device is' },
     ],
   },
@@ -69,6 +69,7 @@ const isGeneral = (id) => GENERAL.some((g) => g.id === id);
  * on a wide screen (the part's first page when none was asked for).
  */
 export function settingsPage(part, arg) {
+  if (arg === 'away') arg = 'presence'; // Away's settings moved to General (Lighting's Away, and #/settings/away)
   const own = SETTINGS_MENU[part].items;
   const item = arg && (isGeneral(arg) || own.some((i) => i.id === arg)) ? arg : null;
   return { item, shown: item || own[0].id, general: isGeneral(item) };

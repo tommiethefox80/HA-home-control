@@ -125,3 +125,15 @@ a.cam-chip { text-decoration: none; }
   .tab-short { display: inline; }
   .tab-long:has(+ .tab-short) { display: none; }
 }
+
+/* PoE ports switched off while away */
+.wifi-ports + .wifi-ports { margin-top: 12px; }
+.wifi-ports h4 { margin: 12px 0 2px; font-size: .9rem; font-weight: 650; color: var(--ink-2); }
+.wifi-port-set { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.wifi-port-set input[type='text'] { width: 13rem; max-width: 100%; }
+.wifi-port-away { display: inline-flex; gap: 8px; align-items: center; font-size: .92rem; cursor: pointer; white-space: nowrap; min-height: 40px; }
+.wifi-port-away input { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); }
+@media (max-width: 520px) {
+  .wifi-port-set { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+  .wifi-port-set input[type='text'] { width: 100%; min-width: 0; }
+}

@@ -79,6 +79,9 @@ export function App({ active = true, switcher }) {
       {link === 'down' && <div className="wrap"><Notice tone="warn">Lost touch with the Home app. Retrying every few seconds.</Notice></div>}
 
       <main className="wrap" id="main">
+        {state?.away?.off?.length > 0 && route.tab !== 'settings' && (
+          <Notice tone="info">Away: {joinNames(state.away.off)} {state.away.off.length === 1 ? 'is' : 'are'} switched off until someone's back.</Notice>
+        )}
         {state && !state.unifi && route.tab !== 'settings' && route.tab !== 'activity' && <NoUnifi state={state} />}
         {route.tab === 'aps' && <AccessPoints state={state} run={run} go={go} />}
         {route.tab === 'networks' && <Networks state={state} run={run} />}
@@ -458,10 +461,10 @@ function Activity({ state }) {
       <ul className="cam-events">
         {items?.map((e) => (
           <li key={e.id} className={`cam-ev wifi-ev-${e.kind}`}>
-            <span className="cam-thumb cam-thumb-none wifi-ev-icon"><Icon name={e.kind === 'schedule' ? 'clock' : e.kind === 'manual' ? 'wifi' : 'list'} size={20} /></span>
+            <span className="cam-thumb cam-thumb-none wifi-ev-icon"><Icon name={e.kind === 'schedule' ? 'clock' : e.kind === 'manual' ? 'wifi' : e.kind === 'away' ? 'away' : 'list'} size={20} /></span>
             <div className="cam-ev-text">
               <span>{e.text}</span>
-              <small>{when(e.at, tz)}{e.kind === 'schedule' ? ' · schedule' : e.kind === 'manual' ? ' · from here' : ''}</small>
+              <small>{when(e.at, tz)}{e.kind === 'schedule' ? ' · schedule' : e.kind === 'manual' ? ' · from here' : e.kind === 'away' ? ' · Away' : ''}</small>
             </div>
           </li>
         ))}
@@ -552,13 +555,28 @@ function Settings({ state, run, arg }) {
         <h3 id="wifi-net-h">Network schedules {saved === 'net' && <span className="saved-note" role="status">Saved</span>}</h3>
         <p className="fine">Switch a network off at night, or have a guest network on only in the day. Changes happen at the times set; switching a network by hand in between is left alone until the next one.</p>
         {!view.networks.length && <p className="fine">No networks found.</p>}
-        {view.networks.map((n) => <NetSchedule key={n.id} n={n} onSave={(schedule) => put(`networks/${n.id}`, { schedule }, 'net')} />)}
+        {view.networks.map((n) => <NetSchedule key={n.id} n={n} onSave={(schedule) => put(`networks/${n.id}`, { schedule }, 'net')}
+          onAway={(away) => put(`networks/${n.id}`, { away }, 'net')} />)}
       </section>}
 
       {show('aps') && <section className="card settings-section" aria-labelledby="wifi-ap-h">
         <h3 id="wifi-ap-h">Access points {saved === 'ap' && <span className="saved-note" role="status">Saved</span>}</h3>
         <p className="fine">An access point can be switched off by turning off the PoE port on the switch it's plugged into (the UniFi Network integration can't switch the access point itself off). Choose the port to switch it off from here, and on a schedule if you like.</p>
         {view.devices.filter((d) => d.wifi).map((d) => <ApSettings key={d.id} d={d} onSave={(body) => put(`devices/${d.id}`, body, 'ap')} />)}
+      </section>}
+
+      {show('ports') && <section className="card settings-section" aria-labelledby="wifi-port-h">
+        <h3 id="wifi-port-h">PoE ports {saved === 'port' && <span className="saved-note" role="status">Saved</span>}</h3>
+        <p className="fine">Switch a PoE port off while the house is on Away, so whatever it powers goes offline (a speaker, a screen, a camera indoors), and back on when someone's back. Not the port another switch, your router or Home Assistant is connected through. Access points are set under <a href="#/wifi/settings/aps">Access points</a>.</p>
+        {!view.ports?.length && <p className="fine">No PoE ports found: Home Assistant's UniFi Network integration adds one for each port on a UniFi switch (or gateway) with PoE.</p>}
+        {Object.entries((view.ports || []).reduce((m, p) => { (m[p.switchName] ||= []).push(p); return m; }, {})).map(([sw, list]) => (
+          <div key={sw} className="wifi-ports">
+            <h4>{sw}</h4>
+            <ul className="group-list">
+              {list.map((p) => <PortRow key={p.entity} p={p} sw={sw} onSave={(body) => put(`ports/${p.entity}`, body, 'port')} />)}
+            </ul>
+          </div>
+        ))}
       </section>}
 
       {show('kinds') && <section className="card settings-section" aria-labelledby="wifi-kind-h">
@@ -596,7 +614,7 @@ function LedTimes({ value, onSave }) {
   );
 }
 
-function NetSchedule({ n, onSave }) {
+function NetSchedule({ n, onSave, onAway }) {
   const [v, setV] = useState(n.schedule);
   useEffect(() => { setV(n.schedule); }, [n.schedule.mode, n.schedule.from, n.schedule.to]);
   const dirty = v.mode !== n.schedule.mode || (v.mode !== 'none' && (v.from !== n.schedule.from || v.to !== n.schedule.to));
@@ -609,7 +627,37 @@ function NetSchedule({ n, onSave }) {
       </Field>
       {v.mode !== 'none' && <Times id={`wifi-n-${n.id}`} value={v} onChange={setV} fromLabel={v.mode === 'off_between' ? 'Off at' : 'On at'} toLabel={v.mode === 'off_between' ? 'Back on at' : 'Off at'} />}
       {dirty && <button type="button" className="btn btn-primary" onClick={() => onSave(v)}>Save</button>}
+      <Toggle label="Off while away" checked={!!n.away} onChange={onAway}
+        description={`Turned off when the house goes to Away, and ${n.schedule.mode === 'none' ? 'back on' : 'back to its schedule'} when someone's back. Anything that only connects to ${n.name} goes offline meanwhile.`} />
     </div>
+  );
+}
+
+function PortRow({ p, sw, onSave }) {
+  const [label, setLabel] = useState(p.label);
+  useEffect(() => { setLabel(p.label); }, [p.label]);
+  // "Port 3", or the name it's been given in Home Assistant if that's something else
+  const own = p.name === p.entity ? '' : p.name.replace(new RegExp(`^${sw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`), '').replace(/\s*PoE$/i, '');
+  const name = own && !/^port \d+$/i.test(own) ? `Port ${p.port}: ${own}` : `Port ${p.port}`;
+  const state = !p.available ? 'unavailable' : p.heldAway ? 'off (Away)' : p.state === 'on' ? 'on' : 'off';
+  return (
+    <li className="wifi-port">
+      <div className="group-li-text">
+        <strong>{name}</strong>
+        <span className="fine">{p.ap ? `Powers ${p.ap}: set under Access points` : !p.enabled ? 'Turned off in Home Assistant: ticking Off while away turns it on there' : `Power ${state}`}</span>
+      </div>
+      {!p.ap && (
+        <div className="wifi-port-set">
+          <input type="text" maxLength={40} placeholder="What's plugged in" aria-label={`What's plugged into ${name}`} value={label}
+            onChange={(e) => setLabel(e.target.value)} onBlur={() => { if (label !== p.label) onSave({ label }); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+          <label className="wifi-port-away">
+            <input type="checkbox" checked={p.away} onChange={(e) => onSave({ away: e.target.checked })} />
+            <span>Off while away</span>
+          </label>
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -643,6 +691,10 @@ function ApSettings({ d, onSave }) {
           {v.mode !== 'none' && <Times id={`wifi-ps-${d.id}`} value={v} onChange={setV} fromLabel="Off at" toLabel="Back on at" />}
           {dirty && <button type="button" className="btn btn-primary" onClick={() => onSave({ schedule: v })}>Save</button>}
         </>
+      )}
+      {d.power && (
+        <Toggle label="Off while away" checked={!!d.away} onChange={(away) => onSave({ away })}
+          description={`Switched off when the house goes to Away, and ${d.schedule.mode === 'none' ? 'back on' : 'back to its schedule'} when someone's back (it takes a few minutes to start). Anything on Wi-Fi only through ${d.name} goes offline meanwhile: smart plugs, bulbs and cameras, including lights set to look lived in.`} />
       )}
     </div>
   );

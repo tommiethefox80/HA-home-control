@@ -1,6 +1,7 @@
 // Wi-Fi: access points, networks and who's connected, from Home Assistant's UniFi Network
 // integration, with schedules: the access points' lights off at night, a network on only at set
-// times, an access point switched off through the PoE port it's plugged into.
+// times, an access point switched off through the PoE port it's plugged into. And Away: chosen
+// networks, access points and PoE ports off while the house is on Away, and back afterwards.
 //
 // Everything is read from Home Assistant's registries and states, matched by the unique IDs the
 // UniFi Network integration gives its entities:
@@ -96,15 +97,18 @@ export class Engine extends EventEmitter {
   /** Home Assistant renamed an entity's ID: an access point's PoE port follows it. */
   /** Every entity ID Wi-Fi keeps (most is by MAC address): the PoE switches access points are turned off with. */
   entityIds() {
-    return Object.values(this.data.devices || {}).map((d) => d?.poe).filter((e) => typeof e === 'string');
+    return [...Object.values(this.data.devices || {}).map((d) => d?.poe).filter((e) => typeof e === 'string'), ...Object.keys(this.data.ports || {})];
   }
 
   renameEntity(from, to) {
     let hit = false;
     for (const conf of Object.values(this.data.devices || {})) if (conf?.poe === from) { conf.poe = to; hit = true; }
+    if (this.data.ports?.[from]) { this.data.ports[to] = this.data.ports[from]; delete this.data.ports[from]; hit = true; }
+    for (const k of ['off']) if (this.data.away?.[k]?.[from]) { this.data.away[k][to] = this.data.away[k][from]; delete this.data.away[k][from]; }
+    if (this.data.awayPending?.[from]) { this.data.awayPending[to] = this.data.awayPending[from]; delete this.data.awayPending[from]; }
     if (!hit) return false;
     this.store.save();
-    this.addEvent(`Home Assistant renamed ${from} to ${to}: the access point switched off through it follows it.`);
+    this.addEvent(`Home Assistant renamed ${from} to ${to}: the PoE port switched from here follows it.`);
     return true;
   }
 
@@ -256,6 +260,7 @@ export class Engine extends EventEmitter {
       restart: d.entities.restart || null,
       power,
       schedule: conf.schedule || { ...NO_SCHEDULE },
+      away: !!conf.away, heldAway: this.heldAway(conf.poe),
       ledScheduled: !!d.entities.led && this.ledScheduled(d.mac),
       uplink: st('uplink')?.state || null,
     };
@@ -294,8 +299,12 @@ export class Engine extends EventEmitter {
       clients: Number.isFinite(count) ? count : clients.filter((c) => c.connected && c.network === name).length,
       qr: n.qr ? { enabled: n.qr.enabled, byUser: n.qr.by === 'user' } : null,
       schedule: this.data.networks[n.id]?.schedule || { ...NO_SCHEDULE },
+      away: !!this.data.networks[n.id]?.away, heldAway: this.heldAway(n.switch),
     };
   }
+
+  /** Switched off by Away, until the house is back. */
+  heldAway(entity) { return !!(entity && this.data.away?.on && this.data.away.off?.[entity]?.turned); }
 
   ledScheduled(mac) {
     const L = this.data.settings.leds;
@@ -321,6 +330,7 @@ export class Engine extends EventEmitter {
       untracked: this.untracked().length,
       settings: this.data.settings,
       events: this.data.events.slice(0, 30),
+      away: this.data.away?.on ? { since: this.data.away.since, off: Object.values(this.data.away.off || {}).filter((r) => r.turned).map((r) => r.name) } : null,
     };
   }
 
@@ -328,7 +338,40 @@ export class Engine extends EventEmitter {
   settingsView() {
     const snap = this.snapshot();
     const all = [...snap.aps, ...snap.others, ...snap.hidden];
-    return { ...snap, devices: all.map((d) => ({ ...d, poeChoices: d.wifi ? this.poeChoices(d) : [] })) };
+    return { ...snap, devices: all.map((d) => ({ ...d, poeChoices: d.wifi ? this.poeChoices(d) : [] })), ports: this.portsView() };
+  }
+
+  /** Every PoE port, for switching others off while away: what's on it, if known. */
+  portsView() {
+    const apOn = new Map();
+    for (const d of this.ix.devices.values()) { const c = this.data.devices[d.mac]; if (c?.poe) apOn.set(c.poe, this.deviceName(d)); }
+    return this.ix.poe.map((p) => {
+      const v = this.poeView(p.entity);
+      const conf = this.data.ports?.[p.entity] || {};
+      return {
+        entity: p.entity, port: p.port, switchName: v.switchName || p.mac, name: v.name, state: v.state, enabled: p.enabled, available: v.available,
+        ap: apOn.get(p.entity) || null, away: !!conf.away, label: conf.label || '', heldAway: this.heldAway(p.entity),
+      };
+    }).sort((a, b) => a.switchName.localeCompare(b.switchName) || a.port - b.port);
+  }
+
+  portName(entity) {
+    const v = this.poeView(entity);
+    const where = v.switchName && v.port != null ? `${v.switchName} port ${v.port}` : v.name;
+    const label = this.data.ports?.[entity]?.label;
+    return label ? `${label} (${where})` : where;
+  }
+
+  /** For General → Away: what goes off while away. */
+  awayView() {
+    const items = [];
+    for (const n of this.ix.networks.values()) if (this.data.networks[n.id]?.away) items.push({ kind: 'network', name: this.networkView(n, []).name });
+    for (const d of this.ix.devices.values()) {
+      const c = this.data.devices[d.mac];
+      if (c?.away) items.push({ kind: 'ap', name: this.deviceName(d), ready: !!c.poe });
+    }
+    for (const [entity, c] of Object.entries(this.data.ports || {})) if (c?.away && this.ix.poe.some((p) => p.entity === entity)) items.push({ kind: 'port', name: this.portName(entity) });
+    return { items, on: !!this.data.away?.on };
   }
 
   events({ before = Infinity, limit = 60 } = {}) {
@@ -486,6 +529,7 @@ export class Engine extends EventEmitter {
     const cur = this.data.networks[n.id] || {};
     const schedule = this.schedule(body.schedule, cur.schedule);
     this.data.networks[n.id] = { ...cur, schedule };
+    if ('away' in body) this.data.networks[n.id].away = !!body.away || undefined;
     this._forget(`net:${n.id}`);
     this.store.save();
     this.tick();
@@ -507,9 +551,24 @@ export class Engine extends EventEmitter {
       if (p && !p.enabled) this.enableEntities([p.entity]).catch(() => {}); // Home Assistant turns these off to start with
     }
     if (body.schedule) next.schedule = this.schedule(body.schedule, cur.schedule);
+    if ('away' in body) next.away = !!body.away || undefined;
     if (next.schedule?.mode === 'on_between') throw new UserError('An access point can be switched off between two times; it\'s on the rest of the day');
     this.data.devices[d.mac] = next;
     this._forget(`power:${d.mac}`);
+    this.store.save();
+    this.tick();
+    this.changed();
+  }
+
+  /** Another PoE port: switched off while away, and what's plugged into it (a name to know it by). */
+  updatePort(entity, body) {
+    const p = this.ix.poe.find((x) => x.entity === entity);
+    if (!p) throw new UserError('That isn\'t a PoE port Home Assistant knows', 404);
+    const next = { ...(this.data.ports[entity] || {}) };
+    if ('away' in body) next.away = !!body.away || undefined;
+    if ('label' in body) next.label = String(body.label || '').trim().slice(0, 40) || undefined;
+    if (next.away && !p.enabled) this.enableEntities([p.entity]).catch(() => {}); // Home Assistant turns these off to start with
+    if (Object.values(next).some((v) => v !== undefined)) this.data.ports[entity] = next; else delete this.data.ports[entity];
     this.store.save();
     this.tick();
     this.changed();
@@ -559,6 +618,7 @@ export class Engine extends EventEmitter {
    *  hand in between are left alone until the next scheduled change. */
   tick(ms = Date.now()) {
     if (!this.ready || this.disabled) return;
+    this._awayTick(ms);
     const leds = { on: [], off: [] };
     const L = this.data.settings.leds;
     const b = this.boundary(L, ms);
@@ -591,6 +651,7 @@ export class Engine extends EventEmitter {
   }
 
   _due(key, b, entity, act) {
+    if (this.data.away?.on && this.data.away.off?.[entity]) return; // Away has it off: its schedule picks up when the house is back
     if (this.data.applied[key] === b.key) return;
     const st = this.states.get(entity);
     if (!st || st.state === 'unavailable') return; // done when it's back
@@ -601,6 +662,98 @@ export class Engine extends EventEmitter {
       delete this.data.applied[key]; // try again next time round
       this.log.warn?.(`Wi-Fi schedule: ${err.message}`);
     });
+  }
+
+  // ---------- Away ----------
+
+  /** What goes off while the house is on Away: networks, access points (through their PoE port) and other PoE ports. */
+  awayTargets() {
+    const out = new Map();
+    for (const n of this.ix.networks.values()) {
+      const conf = this.data.networks[n.id];
+      if (conf?.away && n.switch) out.set(n.switch, { kind: 'network', name: this.networkView(n, []).name, key: `net:${n.id}` });
+    }
+    const apPorts = new Set();
+    for (const d of this.ix.devices.values()) {
+      const conf = this.data.devices[d.mac];
+      if (conf?.poe) apPorts.add(conf.poe);
+      if (conf?.away && conf.poe) out.set(conf.poe, { kind: 'ap', name: this.deviceName(d), key: `power:${d.mac}` });
+    }
+    for (const [entity, conf] of Object.entries(this.data.ports || {})) {
+      if (!conf?.away || apPorts.has(entity) || out.has(entity) || !this.ix.poe.some((p) => p.entity === entity)) continue;
+      out.set(entity, { kind: 'port', name: this.portName(entity), key: null });
+    }
+    return out;
+  }
+
+  /** On Away: switch off what's chosen, once (a change by hand meanwhile is left alone). Back: each
+   *  goes to what its schedule says now, or back on if Away switched it off and it has no schedule. */
+  _awayTick(ms = Date.now()) {
+    const A = (this.data.away ||= { on: false, since: null, off: {} });
+    A.off ||= {};
+    const want = !!this.house?.awayMode?.();
+    const back = [];
+    // put back after Away but unavailable then: as soon as it's back
+    for (const [entity, rec] of Object.entries(this.data.awayPending || {})) {
+      if (want && this.awayTargets().has(entity)) { delete this.data.awayPending[entity]; continue; }
+      const st = this.states.get(entity);
+      if (!st || st.state === 'unavailable') continue;
+      delete this.data.awayPending[entity];
+      this.store.save();
+      if (st.state !== 'on') this._turn(entity, true, rec, back);
+    }
+    if (!want && !A.on) { this._backNote(back, true); return; }
+    if (want && !A.on) Object.assign(A, { on: true, since: ms, off: {} });
+    const targets = want ? this.awayTargets() : new Map();
+    for (const [entity, t] of targets) if (!A.off[entity]) A.off[entity] = { ...t, done: false, turned: false };
+    // no longer chosen, or the house is back: put back
+    for (const [entity, rec] of Object.entries(A.off)) {
+      if (targets.has(entity)) continue;
+      delete A.off[entity];
+      if (!rec.done) continue;
+      const b = this.boundary(this._scheduleOf(rec.key), ms); // its schedule as it is now (it may have changed while away)
+      if (b && rec.key) this.data.applied[rec.key] = b.key;
+      if (!(b ? b.on : rec.turned)) continue;
+      const st = this.states.get(entity);
+      if (!st || st.state === 'unavailable') { (this.data.awayPending ||= {})[entity] = { name: rec.name, kind: rec.kind }; continue; }
+      if (st.state !== 'on') this._turn(entity, true, rec, back);
+    }
+    const off = [];
+    for (const [entity, rec] of Object.entries(A.off)) {
+      if (rec.done) continue;
+      const st = this.states.get(entity);
+      if (!st || st.state === 'unavailable') continue; // when it's back
+      rec.done = true;
+      if (st.state !== 'on') continue; // already off
+      rec.turned = true;
+      this._turn(entity, false, rec, off, () => { rec.done = false; rec.turned = false; });
+    }
+    if (!want) Object.assign(A, { on: false, since: null, off: {} });
+    if (off.length) this.addEvent(`Away: ${listOf(off.map((r) => r.name))} switched off until someone's back.`, 'away');
+    this._backNote(back, !want);
+    this.store.save();
+    if (off.length || back.length || !want) this.changed();
+  }
+
+  _scheduleOf(key) {
+    const [kind, id] = String(key || '').split(/:(.*)/s);
+    if (kind === 'net') return this.data.networks[id]?.schedule || null;
+    if (kind === 'power') return this.data.devices[id]?.schedule || null;
+    return null;
+  }
+
+  _turn(entity, on, rec, list, undo = null) {
+    list.push(rec);
+    this.ha.callService('switch', on ? 'turn_on' : 'turn_off', { entity_id: entity }).catch((err) => {
+      undo?.();
+      this.log.warn?.(`Wi-Fi Away: couldn't switch ${rec.name} ${on ? 'on' : 'off'}: ${err.message}`);
+    });
+  }
+
+  _backNote(back, home) {
+    if (!back.length) return;
+    const slow = back.some((r) => r.kind === 'ap') ? ' (an access point takes a few minutes to start)' : '';
+    this.addEvent(`${home ? 'Back from Away: ' : ''}${listOf(back.map((r) => r.name))} switched back on${slow}.`, 'away');
   }
 
   clock(ms) {

@@ -128,7 +128,8 @@ await step('the Settings menu: General first (parts, Away, Dashboard), then a gr
   const p = await open('#/settings');
   await p.waitForSelector('.setf-nav');
   const nav = await p.$eval('.setf-nav', (e) => e.textContent);
-  assert.match(nav, /General.*What it looks after.*Away automatically.*Dashboard button.*Heating.*Rooms.*Boiler.*History.*Lighting/s);
+  assert.match(nav, /General.*What it looks after.*Away.*Dashboard button.*Heating.*Rooms.*Boiler.*History.*Lighting/s);
+  assert.doesNotMatch(nav, /Lighting.*How it behaves\s*Away/s, 'Away isn\'t under Lighting any more');
   // heating's own page shows beside it, with no general settings mixed in
   assert.match(await p.$eval('.setf-page', (e) => e.textContent), /^Rooms/);
   assert.equal(await p.$$eval('.section h2', (hs) => hs.filter((h) => /Away automatically|Dashboard button/.test(h.textContent)).length), 0, 'still in heating settings');
@@ -138,6 +139,11 @@ await step('the Settings menu: General first (parts, Away, Dashboard), then a gr
   await p.waitForSelector('.home-set');
   assert.match(await p.$eval('.home-set', (e) => e.textContent), /What it looks after.*Heating.*Lighting.*Cameras.*Wi-Fi/s);
   await p.goto(`${APP}/#/settings/presence`, { waitUntil: 'load' });
+  await p.waitForSelector('#home-away');
+  // Away: what it does for the whole house (rooms, lights), then switching to it from phones
+  await p.waitForFunction(() => /Heating.*Rooms drop to.*Lights.*Go off around.*Away automatically/s.test(document.querySelector('.home-set')?.textContent || ''), { timeout: 5000 });
+  // Lighting's old Away page lands here too
+  await p.goto(`${APP}/#/lighting/settings/away`, { waitUntil: 'load' });
   await p.waitForSelector('#home-away');
   // links from before the menu still land
   await p.goto(`${APP}/#/settings/away`, { waitUntil: 'load' });

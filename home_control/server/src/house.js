@@ -100,6 +100,23 @@ export function createHouse({ log, dataDir = null }) {
     return everyoneOut();
   }
 
+  /** Is the house on Away itself (not just everyone out)? Wi-Fi follows this: on Away (by hand, from
+   *  the phone alert or automatically) on the Heating or Lighting page; with neither looked after
+   *  here, once everyone's been out for the wait set in Away automatically. */
+  function awayMode() {
+    try {
+      if (on('heating') && hrt().mode === 'away' && !(hrt().awayUntil && hrt().awayUntil <= Date.now())) return true;
+      if (on('lighting') && lighting.engine.data.mode === 'away') return true;
+      if (!on('heating') && !on('lighting')) {
+        if (!everyoneOut()) { st.wifiEmptySince = null; return false; }
+        st.wifiEmptySince ??= Date.now();
+        const p = presenceSettings();
+        return Date.now() - st.wifiEmptySince >= (Number.isFinite(Number(p.delayMinutes)) ? Number(p.delayMinutes) : 15) * 60000;
+      }
+    } catch { /* starting up */ }
+    return false;
+  }
+
   function everyoneOut() {
     const p = presenceSettings();
     const list = people();
@@ -209,7 +226,30 @@ export function createHouse({ log, dataDir = null }) {
       dashboardPath: s.dashboardPath || '/',
       presence: s.presence || { enabled: false, people: [], delayMinutes: 15, nearMiles: 2 },
       people: people(true),
+      away: awayView(),
     };
+  }
+
+  // What Away does: the house's settings, and the rooms and groups that have their own
+  function awayView() {
+    const out = {};
+    if (on('heating')) {
+      out.heating = {
+        temp: heating.store.data.settings.awayTemp,
+        rooms: heating.store.data.zones.filter((z) => z.enabled !== false).map((z) => ({ id: z.id, name: z.name, temp: z.awayTemp ?? null })),
+      };
+    }
+    if (on('lighting')) {
+      const ls = lighting.engine.settings;
+      out.lighting = {
+        offTime: ls.awayOffTime, brightness: ls.awayBrightness,
+        groups: lighting.engine.data.groups.map((g) => ({ id: g.id, name: g.name, livedIn: !!g.livedIn, offTime: g.away?.offTime ?? null, brightness: g.away?.brightness ?? null })),
+      };
+    }
+    if (on('wifi') && wifi?.engine?.awayView) {
+      try { out.wifi = wifi.engine.awayView(); } catch { /* not connected yet */ }
+    }
+    return out;
   }
 
   function updateSettings(body) {
@@ -217,7 +257,15 @@ export function createHouse({ log, dataDir = null }) {
     const h = {};
     if (typeof body.dashboardPath === 'string') h.dashboardPath = body.dashboardPath;
     if (body.presence && typeof body.presence === 'object') h.presence = body.presence;
+    if (body.away?.heating && on('heating') && body.away.heating.temp != null) h.awayTemp = body.away.heating.temp;
     if (Object.keys(h).length) heating.engine.updateSettings(h); // kept with the heating's settings, as before
+    const al = body.away?.lighting;
+    if (al && on('lighting')) {
+      const l = {};
+      if (al.offTime !== undefined) l.awayOffTime = al.offTime;
+      if (al.brightness !== undefined) l.awayBrightness = al.brightness;
+      if (Object.keys(l).length) lighting.engine.saveSettings(l);
+    }
     lighting.engine.changed();
     return settingsView();
   }
@@ -267,6 +315,6 @@ export function createHouse({ log, dataDir = null }) {
     setInterval(check, 30000);
   }
 
-  const api = { attach, setFromLighting, view, check, handle, on, isAway, events, state: st, panel: null };
+  const api = { attach, setFromLighting, view, check, handle, on, isAway, awayMode, events, state: st, panel: null };
   return api;
 }

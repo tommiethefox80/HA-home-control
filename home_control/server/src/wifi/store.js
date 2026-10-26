@@ -17,8 +17,11 @@ function defaults() {
   return {
     version: 1,
     settings: structuredClone(DEFAULT_SETTINGS),
-    networks: {},  // network id -> { schedule }
-    devices: {},   // device MAC -> { kind, poe, schedule }
+    networks: {},  // network id -> { schedule, away }
+    devices: {},   // device MAC -> { kind, poe, schedule, away }
+    ports: {},     // PoE port entity -> { away, label }: other ports switched off while away
+    away: { on: false, since: null, off: {} }, // what Away switched off, to put back afterwards
+    awayPending: {}, // put back after Away, but unavailable then: done when it's back
     applied: {},   // schedule key -> the scheduled change last made, so each is made once
     events: [],
   };

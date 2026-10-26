@@ -35,13 +35,21 @@ function BoilerChip({ state }) {
 }
 const list = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
 
+// "Away at 12°", or with rooms of their own, "Away at 12° (Bedroom 15°)"
+function awayText(state) {
+  const own = state.zones.filter((z) => z.enabled && z.awayOwn && z.awayTemp !== state.settings.awayTemp);
+  const rest = state.zones.filter((z) => z.enabled && !own.includes(z));
+  if (!rest.length && own.length) return `Away: ${own.map((z) => `${z.name} ${deg(z.awayTemp)}`).join(', ')}`;
+  return `Away at ${deg(state.settings.awayTemp)}${own.length ? ` (${own.map((z) => `${z.name} ${deg(z.awayTemp)}`).join(', ')})` : ''}`;
+}
+
 function AwaySheet({ onClose, onPick, lights }) {
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); tomorrow.setHours(16, 0, 0, 0);
   const [custom, setCustom] = useState(() => new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
   return (
     <Sheet onClose={onClose} label="Away">
       <h2>Away</h2>
-      <p className="lede">Every room drops to the away temperature{lights ? ' and the lights go to Away too' : ''}. Schedules pick up again when you return.</p>
+      <p className="lede">Every room drops to its Away temperature{lights ? ' and the lights go to Away too' : ''}. Schedules pick up again when you return.</p>
       <div className="choice-row">
         <button className="chip" onClick={() => onPick(null)}>Until I switch it back</button>
         <button className="chip" onClick={() => onPick(tomorrow.getTime())}>Until 16:00 tomorrow</button>
@@ -85,7 +93,7 @@ function ModeBar({ state, notify }) {
           <button className="btn link" onClick={stopBoost}>Stop boost</button>
         </p>
       )}
-      {m === 'away' && <p className="mode-note">Away at {deg(state.settings.awayTemp)}{state.presence?.auto ? ', switched on automatically because everyone is out. It switches back when someone is on their way home.' : state.awayUntil ? ` until ${fmtTime(state.awayUntil, state.timeZone, true)}.` : state.awayBack === 'home' ? ' until someone\'s home (from the phone alert).' : state.awayBack === 'near' ? ' until someone\'s nearly home (from the phone alert).' : ' until you switch back.'}</p>}
+      {m === 'away' && <p className="mode-note">{awayText(state)}{state.presence?.auto ? ', switched on automatically because everyone is out. It switches back when someone is on their way home.' : state.awayUntil ? ` until ${fmtTime(state.awayUntil, state.timeZone, true)}.` : state.awayBack === 'home' ? ' until someone\'s home (from the phone alert).' : state.awayBack === 'near' ? ' until someone\'s nearly home (from the phone alert).' : ' until you switch back.'}</p>}
       {m === 'off' && <p className="mode-note">Heating off. Rooms are kept above {deg(state.settings.frostTemp)} to stop pipes freezing.</p>}
       {boost && <BoostSheet state={state} onClose={() => setBoost(false)} notify={notify} />}
       {away && <AwaySheet lights={state.lighting?.groups > 0 && !state.lighting.paused} onClose={() => setAway(false)} onPick={(until) => { setAway(false); setMode('away', until); }} />}

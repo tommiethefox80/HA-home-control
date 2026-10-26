@@ -77,7 +77,9 @@ function RoomEditor({ room, entities, state, onClose, notify }) {
     stopEarlyMode: room.stopEarlyMode || (room.stopEarlyPct != null ? 'fixed' : 'auto'),
     openRadiator: room.openRadiator ?? null,
     learn: room.learn || 'suggest',
+    awayTemp: room.awayTemp ?? '',
   });
+  const houseAway = state.settings.awayTemp;
   const live = state.zones.find((z) => z.id === room.id);
   const [busy, setBusy] = useState(false);
   const boiler = state.settings.boiler.entity;
@@ -143,6 +145,22 @@ function RoomEditor({ room, entities, state, onClose, notify }) {
       </label>
 
       <StopEarlyField room={room} form={form} setForm={setForm} live={live} houseStop={Number(state.settings.stopEarly) || 0} notify={notify} />
+
+      <div className="field">
+        <span>While away</span>
+        <small>What this room drops to while the house is on Away. The house setting is under <a href="#/settings/presence" onClick={onClose}>General → Away</a>.</small>
+        <div className="choice-row" role="group" aria-label="Away temperature">
+          <button type="button" className="chip" aria-pressed={form.awayTemp === ''} onClick={() => setForm({ ...form, awayTemp: '' })}>House setting ({deg(houseAway)})</button>
+          <button type="button" className="chip" aria-pressed={form.awayTemp !== ''} onClick={() => setForm({ ...form, awayTemp: form.awayTemp === '' ? String(houseAway) : form.awayTemp })}>Its own</button>
+        </div>
+        {form.awayTemp !== '' && (
+          <div className="pct-row">
+            <input type="number" inputMode="decimal" step="0.5" min="5" max="21" aria-label={`Away temperature for ${form.name || 'this room'}`}
+              value={form.awayTemp} onChange={(e) => setForm({ ...form, awayTemp: e.target.value })} />
+            <span className="pct-unit">°</span>
+          </div>
+        )}
+      </div>
 
       <label className="field">
         <span>Changes made by hand</span>
@@ -402,7 +420,7 @@ function EmptyHouseAlert({ s, setNotify, targets, test, testing }) {
       <label className="toggle">
         <input type="checkbox" checked={!!e.enabled} onChange={(ev) => setNotify('empty', { enabled: ev.target.checked })} />
         <span>When the heating comes on with everyone out
-          <small>Asks the phones below, with three buttons: <b>Off for {hours(e.minutes || 120)}</b>, <b>Off until we're back</b> (someone's home) or <b>Off until we're nearly home</b> (within the distance set in Away automatically). Off means Away, at the Away temperature. Asked once while everyone's out; not when someone's on their way home, nor for a boost or hold someone set. With Away automatically on, it switches to Away by itself, so this only asks if that's been overruled by hand. Needs the Home Assistant app on the phone.</small>
+          <small>Asks the phones below, with three buttons: <b>Off for {hours(e.minutes || 120)}</b>, <b>Off until we're back</b> (someone's home) or <b>Off until we're nearly home</b> (within the distance set in General → Away). Off means Away, with each room at its Away temperature. Asked once while everyone's out; not when someone's on their way home, nor for a boost or hold someone set. With Away automatically on, it switches to Away by itself, so this only asks if that's been overruled by hand. Needs the Home Assistant app on the phone.</small>
         </span>
       </label>
       {e.enabled && (
@@ -483,7 +501,7 @@ export default function Settings({ state, notify, focus }) {
             return (
               <li key={z.id} style={{ '--heat': thermal(live?.target) }}>
                 <span className="dot" />
-                <span style={{ flex: 1 }}>{z.name}<br /><span className="sub">{z.trvs.length} radiator{z.trvs.length === 1 ? '' : 's'}{z.sensor ? ' and a thermometer' : ''}{z.enabled ? '' : ', not managed'}</span></span>
+                <span style={{ flex: 1 }}>{z.name}<br /><span className="sub">{z.trvs.length} radiator{z.trvs.length === 1 ? '' : 's'}{z.sensor ? ' and a thermometer' : ''}{z.awayTemp != null ? `, ${deg(z.awayTemp)} while away` : ''}{z.enabled ? '' : ', not managed'}</span></span>
                 <button className="btn" onClick={() => setEditing(z)}>Edit</button>
               </li>
             );
@@ -517,9 +535,12 @@ export default function Settings({ state, notify, focus }) {
 
       {show('temperatures') && <section className="section">
         <h2>Temperatures</h2>
+        <label className="field">
+          <span>Frost protection</span>
+          <small>With the heating switched off, every room is kept above this. Away has its own temperatures, under <a href="#/settings/presence">General → Away</a> and each room's settings.</small>
+          <input type="number" step="0.5" value={s.frostTemp} onChange={(e) => set({ frostTemp: numIn(e.target.value) })} />
+        </label>
         <div className="grid2">
-          <label className="field"><span>Away</span><input type="number" step="0.5" value={s.awayTemp} onChange={(e) => set({ awayTemp: numIn(e.target.value) })} /></label>
-          <label className="field"><span>Frost protection</span><input type="number" step="0.5" value={s.frostTemp} onChange={(e) => set({ frostTemp: numIn(e.target.value) })} /></label>
           <label className="field"><span>Boost temperature</span><input type="number" step="0.5" value={s.houseBoostTemp ?? 22} onChange={(e) => set({ houseBoostTemp: numIn(e.target.value) })} /></label>
           <label className="field"><span>Boost length (min)</span><input type="number" step="5" value={s.houseBoostMinutes ?? 30} onChange={(e) => set({ houseBoostMinutes: numIn(e.target.value) })} /></label>
         </div>

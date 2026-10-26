@@ -1,6 +1,6 @@
 // Settings for the whole of Home Control, the General group at the top of the Settings menu in
-// every section: which parts it looks after (heating, lighting…), Away automatically, and the
-// Dashboard button. Each is its own page in the menu. Changes save as they're made.
+// every section: which parts it looks after (heating, lighting…), Away (what it does, and switching
+// to it from phone locations), the Dashboard button and Home Assistant entities. Each is its own page in the menu. Changes save as they're made.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { hcFetch } from './net.js';
 
@@ -53,12 +53,86 @@ const num = (v) => (v === '' || v == null ? null : Number(v));
 
 export const GENERAL = [
   { id: 'parts', label: 'What it looks after' },
-  { id: 'presence', label: 'Away automatically' },
+  { id: 'presence', label: 'Away' },
   { id: 'dashboard', label: 'Dashboard button' },
   { id: 'entities', label: 'Home Assistant entities' },
 ];
 
-/** One of the General settings pages: 'parts', 'presence' or 'dashboard'. */
+const deg = (v) => `${Math.round(Number(v) * 10) / 10}°`;
+const listOf = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+
+/** What Away does for the whole house: the rooms' temperature and the lived-in lights. A room or a
+ *  lighting group can have its own, in its own settings; this says which do. */
+function AwayDefaults({ away, busy, put }) {
+  const from = (a) => ({ temp: a.heating?.temp ?? '', off: a.lighting?.offTime ?? '23:00', bri: a.lighting?.brightness ?? '' });
+  const [v, setV] = useState(() => from(away));
+  useEffect(() => { setV(from(away)); }, [away.heating?.temp, away.lighting?.offTime, away.lighting?.brightness]); // eslint-disable-line react-hooks/exhaustive-deps
+  const h = away.heating; const l = away.lighting; const w = away.wifi;
+  const ownRooms = (h?.rooms || []).filter((r) => r.temp != null);
+  const lived = (l?.groups || []).filter((g) => g.livedIn);
+  const ownText = (g) => {
+    const bits = [g.offTime && `off around ${g.offTime}`, g.brightness != null && `${g.brightness}%`].filter(Boolean);
+    return bits.length ? `${g.name} (${bits.join(', ')})` : g.name;
+  };
+  return (
+    <>
+      {h && (
+        <>
+          <h3>Heating</h3>
+          <label className="home-field home-narrow">
+            <span>Rooms drop to (°C)</span>
+            <input type="number" step="0.5" min="5" max="21" inputMode="decimal" value={v.temp} disabled={busy}
+              onChange={(e) => setV({ ...v, temp: e.target.value })}
+              onBlur={() => { const t = num(v.temp); if (t != null && t !== h.temp) put({ away: { heating: { temp: t } } }); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+          </label>
+          <small className="home-after">
+            {ownRooms.length
+              ? <>{ownRooms.length === h.rooms.length ? 'Every room has its own' : 'With their own'}: {listOf(ownRooms.map((r) => `${r.name} ${deg(r.temp)}`))}. </>
+              : 'Every room uses this. '}
+            To give a room its own, edit it in <a href="#/settings/rooms">Heating → Rooms</a>.
+          </small>
+        </>
+      )}
+      {l && (
+        <>
+          <h3>Lights</h3>
+          <p className="home-set-fine">Lights stay off, except groups set to look lived in: they come on a little after sunset and go off around this time, a bit differently each day (up to 20 minutes either way).</p>
+          <div className="home-pair">
+            <label className="home-field">
+              <span>Go off around</span>
+              <input type="time" value={v.off} disabled={busy} onChange={(e) => setV({ ...v, off: e.target.value })}
+                onBlur={() => { if (v.off && v.off !== l.offTime) put({ away: { lighting: { offTime: v.off } } }); }} />
+            </label>
+            <label className="home-field">
+              <span>Brightness (%)</span>
+              <input type="number" min="1" max="100" inputMode="numeric" value={v.bri} disabled={busy} onChange={(e) => setV({ ...v, bri: e.target.value })}
+                onBlur={() => { const b = num(v.bri); if (b != null && b !== l.brightness) put({ away: { lighting: { brightness: b } } }); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+            </label>
+          </div>
+          <small className="home-after">
+            {lived.length ? <>Looking lived in: {listOf(lived.map(ownText))}. </> : 'No group is set to look lived in yet. '}
+            Choose which, and give a group its own time or brightness, by editing it in <a href="#/lighting/settings/groups">Lighting → Groups</a>.
+          </small>
+        </>
+      )}
+      {w && (
+        <>
+          <h3>Wi-Fi</h3>
+          <small>
+            {w.items.length
+              ? <>Switched off while away, and back when someone's back: {listOf(w.items.map((i) => `${i.name}${i.kind === 'network' ? ' (network)' : i.kind === 'ap' && !i.ready ? ' (choose its PoE port)' : ''}`))}. </>
+              : 'Nothing is switched off while away. '}
+            Choose networks in <a href="#/wifi/settings/networks">Network schedules</a>, access points in <a href="#/wifi/settings/aps">Access points</a> and anything else powered by a PoE port in <a href="#/wifi/settings/ports">PoE ports</a>.
+          </small>
+        </>
+      )}
+    </>
+  );
+}
+
+/** One of the General settings pages: 'parts', 'presence' (Away), 'dashboard' or 'entities'. */
 export function HomeSettings({ item = 'parts' }) {
   const { home, setHome } = useHome();
   const [confirm, setConfirm] = useState(null);
@@ -167,6 +241,9 @@ export function HomeSettings({ item = 'parts' }) {
 
       {item === 'presence' && (
         <>
+          <p className="home-set-fine">One Away for the whole house: the Away button on the Heating or Lighting page, phone locations (below), or the Away switch in Home Assistant all do the same. This is what it does; a room or a lighting group can have its own setting, in its own settings.</p>
+          {home.away && <AwayDefaults away={home.away} busy={busy} put={put} />}
+          <h3>Away automatically</h3>
           <label className="home-toggle">
             <span className="home-sw">
               <input type="checkbox" role="switch" checked={!!pr.enabled} disabled={busy} onChange={(e) => savePresence({ enabled: e.target.checked })} />
@@ -174,7 +251,7 @@ export function HomeSettings({ item = 'parts' }) {
             </span>
             <span>
               <strong>Use phone locations</strong>
-              <small>When everyone below has been out for a while, the house goes to Away{mods.heating && mods.lighting ? ': the heating and the lights' : ''}{mods.cameras ? '. Camera alerts set to "when everyone\'s out" follow it' : ''}. When someone is home or on their way back, it goes back to Schedules. A mode you pick by hand always wins.</small>
+              <small>When everyone below has been out for a while, the house goes to Away{(() => { const what = [mods.heating && 'the heating', mods.lighting && 'the lights', mods.wifi && home.away?.wifi?.items?.length && 'what Wi-Fi switches off'].filter(Boolean); return what.length > 1 ? `: ${listOf(what)}` : ''; })()}{mods.cameras ? '. Camera alerts set to "when everyone\'s out" follow it' : ''}. When someone is home or on their way back, it goes back to Schedules. A mode you pick by hand always wins.</small>
             </span>
           </label>
           {pr.enabled && (
