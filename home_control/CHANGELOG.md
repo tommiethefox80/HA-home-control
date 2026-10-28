@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.15.1
+- **Lived-in lights on dark mornings too.** While the house is on Away, groups set to look lived in can also come on around a time you choose and go off around sunrise, on mornings when it's still dark then (most of the autumn and winter; never in summer, when the sun's up first). Each time varies a little from day to day. Turn it on in Settings → General → Away → **Dark mornings too** (off to start with); a group can have its own morning time, or none, under While away in its settings.
+
 ## 1.15.0
 - **Away is set in one place: Settings → General → Away** (it was split between Heating → Temperatures, Lighting → Away and General → Away automatically). It has what Away does for the whole house, then switching to it from phone locations. Old links to Lighting's Away page go there.
 - **Each room can have its own Away temperature** (Settings → Heating → Rooms → Edit → While away), or use the house's. The Heating page says which ("Away at 12° (Bedroom 15°)"), and Back to Away on a room goes to its own.

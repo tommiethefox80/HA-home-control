@@ -132,7 +132,7 @@ export function App({ active = true, switcher }) {
                 options={[{ value: 'schedule', label: 'Schedules', icon: 'calendar' }, { value: 'away', label: 'Away', icon: 'away' }]} />
               <p className="mode-help">
                 {mode === 'schedule' && 'Lights and sockets follow their schedules. Changes made by hand last until the next scheduled change.'}
-                {mode === 'away' && 'Everything stays off, except groups set to look lived in, which come on in the evening at slightly different times each day.'}
+                {mode === 'away' && 'Everything stays off, except groups set to look lived in, which come on in the evening (and on dark mornings, if chosen) at slightly different times each day.'}
                 {state && houseText(state)}
               </p>
             </div>

@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS = {
   defaultTransition: 2,         // seconds
   awayOffTime: '23:00',         // when lived-in groups switch off in Away
   awayBrightness: 70,
+  awayMorning: null,            // lived-in groups on around this time until sunrise too (null: evenings only)
   dashboardPath: '/',
   stepSize: 10,                 // brightness step for the -/+ buttons
   autoAway: false,              // switch to Away when everyone has left, back when someone is home

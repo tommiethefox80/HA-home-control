@@ -86,13 +86,57 @@ test('Away: a lived-in group uses its own evening, or the house\'s', () => {
   assert.equal(engine.weekFor(shed), null, 'not lived in: kept off');
   // only one of them its own: the other from the house's
   engine.saveGroup({ name: 'Hall', devices: ['light.hall'], livedIn: true, away: { offTime: null, brightness: 55 } }, hall.id);
-  assert.deepEqual(engine.awayFor(hall), { offTime: '23:00', brightness: 55 });
+  assert.deepEqual(engine.awayFor(hall), { offTime: '23:00', brightness: 55, morning: null });
   // saved without it: kept; empty: the house's again
   engine.saveGroup({ name: 'Hall', devices: ['light.hall'], livedIn: true }, hall.id);
-  assert.deepEqual(hall.away, { offTime: null, brightness: 55 });
+  assert.deepEqual(hall.away, { offTime: null, brightness: 55, morning: null });
   engine.saveGroup({ name: 'Hall', devices: ['light.hall'], livedIn: true, away: { offTime: '', brightness: '' } }, hall.id);
   assert.equal(hall.away, null);
   engine.saveSettings({ awayOffTime: '21:30', awayBrightness: 30 });
-  assert.deepEqual(engine.awayFor(hall), { offTime: '21:30', brightness: 30 });
+  assert.deepEqual(engine.awayFor(hall), { offTime: '21:30', brightness: 30, morning: null });
   for (const t of [engine.timer, engine.tickTimer, store.saveTimer, store.timer]) timers.push(t);
+});
+
+test('Away: lived-in mornings, on around a time until about sunrise, on dark mornings only', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-away-m-'));
+  const store = new LightStore(dir, { info() {}, warn() {} });
+  const engine = new LightingEngine({ ha: new StubHa(), store, log: { info() {}, warn() {} }, now: () => Date.UTC(2026, 11, 14, 12) });
+  // Northwich: sunrise about 08:20 in mid-December, about 04:40 in mid-June
+  engine.config = { time_zone: 'Europe/London', latitude: 53.26, longitude: -2.52 };
+  const { group: lounge } = engine.saveGroup({ name: 'Lounge', devices: ['light.lounge_lamp'], livedIn: true });
+  const { group: hall } = engine.saveGroup({ name: 'Hall', devices: ['light.hall'], livedIn: true, away: { morning: false } });
+  const { group: bed } = engine.saveGroup({ name: 'Bedroom', devices: ['light.bed'], livedIn: true, away: { morning: '07:15' } });
+  engine.data.mode = 'away';
+  const minutes = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
+  // the house's mornings start off: evenings only
+  assert.equal(engine.weekFor(lounge)[0].length, 3, 'midnight, on at sunset, off in the evening');
+  engine.saveSettings({ awayMorning: '06:30' });
+  for (let d = 0; d < 7; d++) {
+    const day = engine.weekFor(lounge)[d];
+    assert.equal(day.length, 5, JSON.stringify(day));
+    const [, mOn, mOff, eOn, eOff] = day;
+    assert.ok(mOn.on && !mOff.on && eOn.on && !eOff.on);
+    assert.ok(Math.abs(minutes(mOn.time) - 6 * 60 - 30) <= 15, mOn.time);
+    assert.ok(minutes(mOff.time) >= 8 * 60 && minutes(mOff.time) <= 8 * 60 + 50, `off around sunrise: ${mOff.time}`);
+    assert.ok(minutes(eOn.time) >= 15 * 60 + 40 && minutes(eOn.time) <= 16 * 60 + 40, `on around sunset: ${eOn.time}`);
+    assert.equal(mOn.brightness, 70);
+  }
+  // varies from day to day, the same each time it's worked out
+  const days = Object.values(engine.weekFor(lounge)).map((d) => d[1].time);
+  assert.ok(new Set(days).size > 1, days.join(' '));
+  assert.deepEqual(Object.values(engine.weekFor(lounge)).map((d) => d[1].time), days);
+  // a group with none, and one with its own
+  assert.equal(engine.weekFor(hall)[0].length, 3);
+  assert.equal(engine.awayFor(hall).morning, null);
+  assert.ok(Math.abs(minutes(engine.weekFor(bed)[0][1].time) - 7 * 60 - 15) <= 15);
+  // in summer the sun's up first: evenings only
+  const summer = new LightingEngine({ ha: new StubHa(), store, log: { info() {}, warn() {} }, now: () => Date.UTC(2026, 5, 15, 12) });
+  summer.config = engine.config;
+  assert.ok(Object.values(summer.weekFor(lounge)).every((d) => d.length === 3), 'no mornings in June');
+  // cleared: evenings only again
+  engine.saveSettings({ awayMorning: '' });
+  assert.equal(store.data.settings.awayMorning, null);
+  assert.equal(engine.weekFor(lounge)[0].length, 3);
+  for (const e of [engine, summer]) for (const t of [e.timer, e.tickTimer]) timers.push(t);
+  for (const t of [store.saveTimer, store.timer]) timers.push(t);
 });

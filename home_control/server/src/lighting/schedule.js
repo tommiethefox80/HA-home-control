@@ -378,24 +378,36 @@ export function seeded(str) {
   return (h >>> 0) / 4294967296;
 }
 
-/** A lived-in day for one group: on a little after sunset, off around the chosen time. */
-export function livedInWeek(groupId, weekStart, ctx, { offTime = '23:00', brightness = 70 } = {}) {
+/**
+ * A lived-in week for one group: on a little after sunset, off around the chosen time; and, with a
+ * morning time, on around then until about sunrise, on mornings when it's still dark then.
+ * Each day's times vary a little (the same each time it's worked out), so it doesn't look set.
+ */
+export function livedInWeek(groupId, weekStart, ctx, { offTime = '23:00', brightness = 70, morning = null } = {}) {
   const week = emptyWeek();
   const off = timeToMinutes(offTime) ?? 23 * 60;
+  const wake = typeof morning === 'string' ? timeToMinutes(morning) : null;
+  const pt = (min, on) => ({ time: minutesToTime(min), on, brightness: on ? brightness : null, kelvin: null, fade: null });
   for (let d = 0; d < 7; d++) {
     const date = addDays(weekStart, d);
     const key = `${groupId}:${dateKey(date)}`;
+    const sun = sunTimes(date, ctx);
+    const day = [{ time: '00:00', on: false, brightness: null, kelvin: null, fade: null }];
+    // the morning: on around the time (±15 min), off around sunrise (10 min before to 20 after), if
+    // that leaves at least 20 minutes of light being needed
+    if (wake != null) {
+      const sunriseMin = sun.sunrise != null ? zonedParts(sun.sunrise, ctx.tz).minutes : 7 * 60;
+      const onMin = Math.max(0, wake + Math.round(seeded(key + ':mon') * 30) - 15);
+      const offMin = Math.min(12 * 60, sunriseMin + Math.round(seeded(key + ':moff') * 30) - 10);
+      if (offMin - onMin >= 20) day.push(pt(onMin, true), pt(offMin, false));
+    }
     const onOffset = Math.round(seeded(key + ':on') * 40) - 10; // 10 min before to 30 min after sunset
     const offShift = Math.round(seeded(key + ':off') * 40) - 20; // ±20 min
-    const sun = sunTimes(date, ctx);
     const sunsetMin = sun.sunset != null ? zonedParts(sun.sunset, ctx.tz).minutes : 19 * 60;
     const onMin = Math.max(0, Math.min(1430, sunsetMin + onOffset));
     const offMin = Math.max(0, Math.min(1439, off + offShift));
-    week[d] = offMin > onMin
-      ? [{ time: '00:00', on: false, brightness: null, kelvin: null, fade: null },
-         { time: minutesToTime(onMin), on: true, brightness, kelvin: null, fade: null },
-         { time: minutesToTime(offMin), on: false, brightness: null, kelvin: null, fade: null }]
-      : [{ time: '00:00', on: false, brightness: null, kelvin: null, fade: null }];
+    if (offMin > onMin && onMin > timeToMinutes(day[day.length - 1].time)) day.push(pt(onMin, true), pt(offMin, false));
+    week[d] = day;
   }
   return week;
 }

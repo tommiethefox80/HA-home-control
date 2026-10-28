@@ -227,6 +227,8 @@ export class Engine extends EventEmitter {
   awayFor(g) {
     return {
       offTime: g.away?.offTime ?? this.settings.awayOffTime,
+      // its own morning ('HH:MM', or false for none), or the house's
+      morning: g.away?.morning != null ? g.away.morning || null : this.settings.awayMorning || null,
       brightness: g.away?.brightness ?? this.settings.awayBrightness,
     };
   }
@@ -924,7 +926,9 @@ export class Engine extends EventEmitter {
       const a = input.away || {};
       const offTime = typeof a.offTime === 'string' && timeToMinutes(a.offTime) != null ? a.offTime : null;
       const brightness = a.brightness != null && a.brightness !== '' && Number.isFinite(Number(a.brightness)) ? clamp(Math.round(Number(a.brightness)), 1, 100) : null;
-      g.away = offTime || brightness != null ? { offTime, brightness } : null;
+      // mornings: a time, false for none, or null for the house's
+      const morning = a.morning === false ? false : typeof a.morning === 'string' && timeToMinutes(a.morning) != null ? a.morning : null;
+      g.away = offTime || brightness != null || morning != null ? { offTime, brightness, morning } : null;
     }
     // changes made by hand that keep happening: suggest a schedule change (the default), make it, or nothing
     if (['off', 'suggest', 'auto'].includes(input.learn)) g.learn = input.learn;
@@ -1025,6 +1029,7 @@ export class Engine extends EventEmitter {
     if (input.defaultTransition !== undefined) s.defaultTransition = clamp(Math.round(Number(input.defaultTransition)) || 0, 0, 60);
     if (input.awayOffTime !== undefined && timeToMinutes(input.awayOffTime) != null) s.awayOffTime = input.awayOffTime;
     if (input.awayBrightness !== undefined) s.awayBrightness = clamp(Math.round(Number(input.awayBrightness)) || 70, 1, 100);
+    if (input.awayMorning !== undefined) s.awayMorning = typeof input.awayMorning === 'string' && timeToMinutes(input.awayMorning) != null ? input.awayMorning : null;
     if (input.stepSize !== undefined) s.stepSize = [5, 10, 20, 25].includes(Number(input.stepSize)) ? Number(input.stepSize) : 10;
     if (input.autoAway !== undefined) s.autoAway = !!input.autoAway;
     if (input.showDevices !== undefined) s.showDevices = { page: !!input.showDevices?.page, card: !!input.showDevices?.card };

@@ -55,7 +55,7 @@ export function Settings({ state, run, go, old, arg }) {
   };
   const saveSettings = async (values) => {
     try {
-      const { awayOffTime, awayBrightness, ...rest } = values; // eslint-disable-line no-unused-vars -- set under General → Away
+      const { awayOffTime, awayBrightness, awayMorning, ...rest } = values; // eslint-disable-line no-unused-vars -- set under General → Away
       await run(() => api('PUT', 'settings', rest));
       setSavedMsg('Saved');
       clearTimeout(savedTimer.current);
@@ -96,7 +96,7 @@ export function Settings({ state, run, go, old, arg }) {
                   <strong>{g.name}</strong>
                   <span className="fine">
                     {[lights && plural(lights, 'light'), sockets && plural(sockets, 'socket')].filter(Boolean).join(' and ') || 'Nothing in it yet'}
-                    {g.motion ? ', movement sensor' : ''}{g.lux ? ', light sensor' : ''}{g.livedIn ? `, looks lived in when away${g.away ? ` (${[g.away.offTime && `off around ${g.away.offTime}`, g.away.brightness != null && `${g.away.brightness}%`].filter(Boolean).join(', ')})` : ''}` : ''}{g.learn === 'auto' ? ', changes its schedule to match changes made by hand' : g.learn === 'off' ? ', no schedule suggestions' : ''}
+                    {g.motion ? ', movement sensor' : ''}{g.lux ? ', light sensor' : ''}{g.livedIn ? `, looks lived in when away${g.away ? ` (${[g.away.offTime && `off around ${g.away.offTime}`, g.away.brightness != null && `${g.away.brightness}%`, g.away.morning === false ? 'no mornings' : g.away.morning && `mornings from ${g.away.morning}`].filter(Boolean).join(', ')})` : ''}` : ''}{g.learn === 'auto' ? ', changes its schedule to match changes made by hand' : g.learn === 'off' ? ', no schedule suggestions' : ''}
                     {g.card === 'hide' ? ', hidden from the dashboard' : g.card === 'season' && g.season ? `, on the dashboard ${describeMonthDay(g.season.from)} to ${describeMonthDay(g.season.to)}` : ''}
                   </span>
                   {missing > 0 && <span className="warn-text"><Icon name="warn" size={14} /> {plural(missing, 'device')} no longer in Home Assistant</span>}
@@ -205,10 +205,12 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
   const [lux, setLux] = useState(existing?.lux || { entity: '', threshold: 50 });
   const [livedIn, setLivedIn] = useState(!!existing?.livedIn);
   // its own Away evening, or the house's (General → Away)
-  const houseAway = { offTime: cfg.settings?.awayOffTime || '23:00', brightness: cfg.settings?.awayBrightness ?? 70 };
+  const houseAway = { offTime: cfg.settings?.awayOffTime || '23:00', brightness: cfg.settings?.awayBrightness ?? 70, morning: cfg.settings?.awayMorning || null };
   const [awayOwn, setAwayOwn] = useState(!!existing?.away);
   const [awayOff, setAwayOff] = useState(existing?.away?.offTime || houseAway.offTime);
   const [awayBri, setAwayBri] = useState(existing?.away?.brightness ?? houseAway.brightness);
+  // its own mornings: '' for none, or the time it comes on (until about sunrise)
+  const [awayMorning, setAwayMorning] = useState(existing?.away?.morning === false ? '' : existing?.away?.morning || houseAway.morning || '');
   const [card, setCard] = useState(existing?.card || 'show');
   const [learn, setLearn] = useState(existing?.learn || 'suggest');
   const [onBrightness, setOnBrightness] = useState(existing?.onBrightness ?? 100);
@@ -245,7 +247,7 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
   const save = async () => {
     setBusy(true); setErr(null);
     try {
-      const body = { name, devices, motion: motion.entity ? { ...motion, night } : null, lux: lux.entity ? lux : null, livedIn, away: awayOwn ? { offTime: awayOff, brightness: awayBri } : null, onBrightness, season, card: card === 'season' && !season ? 'show' : card, learn };
+      const body = { name, devices, motion: motion.entity ? { ...motion, night } : null, lux: lux.entity ? lux : null, livedIn, away: awayOwn ? { offTime: awayOff, brightness: awayBri, morning: awayMorning || false } : null, onBrightness, season, card: card === 'season' && !season ? 'show' : card, learn };
       await run(() => (existing ? api('PUT', `groups/${existing.id}`, body) : api('POST', 'groups', body)));
       onSaved();
     } catch (e) { setErr(e.message); setBusy(false); }
@@ -417,12 +419,12 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
       <section className="sheet-section">
         <h3>While away</h3>
         <Toggle label="Look lived in" checked={livedIn} onChange={setLivedIn}
-          description="Comes on a little after sunset and goes off in the evening, a bit differently each day. Otherwise it stays off while the house is on Away." />
+          description="Comes on a little after sunset and goes off in the evening (and on dark mornings until about sunrise, if chosen), a bit differently each day. Otherwise it stays off while the house is on Away." />
         {livedIn && (
           <>
-            <Field label="Evening" htmlFor="gaway" help={awayOwn ? 'Varies by up to 20 minutes each day.' : <>Change the house setting in <a href="#/lighting/settings/presence">General → Away</a>.</>}>
+            <Field label="Times" htmlFor="gaway" help={awayOwn ? 'Each varies by up to 20 minutes from day to day.' : <>Change the house setting in <a href="#/lighting/settings/presence">General → Away</a>.</>}>
               <select id="gaway" value={awayOwn ? 'own' : 'house'} onChange={(e) => setAwayOwn(e.target.value === 'own')}>
-                <option value="house">House setting: off around {houseAway.offTime}, at {houseAway.brightness}%</option>
+                <option value="house">House setting: sunset until about {houseAway.offTime}{houseAway.morning ? `, and ${houseAway.morning} until sunrise` : ''}, at {houseAway.brightness}%</option>
                 <option value="own">Its own</option>
               </select>
             </Field>
@@ -434,6 +436,21 @@ function GroupEditor({ cfg, editing, run, onClose, onSaved }) {
                 <Field label="Brightness (%)" htmlFor="gawaybri">
                   <input id="gawaybri" type="number" min="1" max="100" inputMode="numeric" value={awayBri} onChange={(e) => setAwayBri(e.target.value)} />
                 </Field>
+              </div>
+            )}
+            {awayOwn && (
+              <div className="field-pair">
+                <Field label="Dark mornings" htmlFor="gawaym" help={awayMorning ? 'Off around sunrise, on mornings when it\'s still dark then.' : null}>
+                  <select id="gawaym" value={awayMorning ? 'on' : 'off'} onChange={(e) => setAwayMorning(e.target.value === 'on' ? houseAway.morning || '06:30' : '')}>
+                    <option value="off">Evenings only</option>
+                    <option value="on">On until sunrise too</option>
+                  </select>
+                </Field>
+                {awayMorning && (
+                  <Field label="On around" htmlFor="gawaymt">
+                    <input id="gawaymt" type="time" value={awayMorning} onChange={(e) => setAwayMorning(e.target.value)} />
+                  </Field>
+                )}
               </div>
             )}
           </>

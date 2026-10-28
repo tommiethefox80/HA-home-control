@@ -64,14 +64,15 @@ const listOf = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(
 /** What Away does for the whole house: the rooms' temperature and the lived-in lights. A room or a
  *  lighting group can have its own, in its own settings; this says which do. */
 function AwayDefaults({ away, busy, put }) {
-  const from = (a) => ({ temp: a.heating?.temp ?? '', off: a.lighting?.offTime ?? '23:00', bri: a.lighting?.brightness ?? '' });
+  const from = (a) => ({ temp: a.heating?.temp ?? '', off: a.lighting?.offTime ?? '23:00', bri: a.lighting?.brightness ?? '', morning: a.lighting?.morning || '06:30' });
   const [v, setV] = useState(() => from(away));
-  useEffect(() => { setV(from(away)); }, [away.heating?.temp, away.lighting?.offTime, away.lighting?.brightness]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setV(from(away)); }, [away.heating?.temp, away.lighting?.offTime, away.lighting?.brightness, away.lighting?.morning]); // eslint-disable-line react-hooks/exhaustive-deps
   const h = away.heating; const l = away.lighting; const w = away.wifi;
   const ownRooms = (h?.rooms || []).filter((r) => r.temp != null);
   const lived = (l?.groups || []).filter((g) => g.livedIn);
   const ownText = (g) => {
-    const bits = [g.offTime && `off around ${g.offTime}`, g.brightness != null && `${g.brightness}%`].filter(Boolean);
+    const bits = [g.offTime && `off around ${g.offTime}`, g.brightness != null && `${g.brightness}%`,
+      g.morning === false ? 'no mornings' : g.morning && `mornings from ${g.morning}`].filter(Boolean);
     return bits.length ? `${g.name} (${bits.join(', ')})` : g.name;
   };
   return (
@@ -97,7 +98,7 @@ function AwayDefaults({ away, busy, put }) {
       {l && (
         <>
           <h3>Lights</h3>
-          <p className="home-set-fine">Lights stay off, except groups set to look lived in: they come on a little after sunset and go off around this time, a bit differently each day (up to 20 minutes either way).</p>
+          <p className="home-set-fine">Lights stay off, except groups set to look lived in: they come on a little after sunset and go off around this time, a bit differently each day (up to 20 minutes either way). On dark mornings they can come on too, until about sunrise.</p>
           <div className="home-pair">
             <label className="home-field">
               <span>Go off around</span>
@@ -111,9 +112,27 @@ function AwayDefaults({ away, busy, put }) {
                 onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
             </label>
           </div>
+          <label className="home-toggle home-gap">
+            <span className="home-sw">
+              <input type="checkbox" role="switch" checked={!!l.morning} disabled={busy}
+                onChange={(e) => put({ away: { lighting: { morning: e.target.checked ? v.morning || '06:30' : null } } })} />
+              <span className="home-sw-track" aria-hidden="true" />
+            </span>
+            <span>
+              <strong>Dark mornings too</strong>
+              <small>On around a time and off around sunrise (give or take 15 minutes), on mornings when it's still dark then: most of the autumn and winter. In summer the sun's up first, so it stays off.</small>
+            </span>
+          </label>
+          {l.morning && (
+            <label className="home-field home-narrow">
+              <span>On around</span>
+              <input type="time" value={v.morning} disabled={busy} onChange={(e) => setV({ ...v, morning: e.target.value })}
+                onBlur={() => { if (v.morning && v.morning !== l.morning) put({ away: { lighting: { morning: v.morning } } }); }} />
+            </label>
+          )}
           <small className="home-after">
             {lived.length ? <>Looking lived in: {listOf(lived.map(ownText))}. </> : 'No group is set to look lived in yet. '}
-            Choose which, and give a group its own time or brightness, by editing it in <a href="#/lighting/settings/groups">Lighting → Groups</a>.
+            Choose which, and give a group its own times or brightness, by editing it in <a href="#/lighting/settings/groups">Lighting → Groups</a>.
           </small>
         </>
       )}

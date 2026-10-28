@@ -242,8 +242,8 @@ export function createHouse({ log, dataDir = null }) {
     if (on('lighting')) {
       const ls = lighting.engine.settings;
       out.lighting = {
-        offTime: ls.awayOffTime, brightness: ls.awayBrightness,
-        groups: lighting.engine.data.groups.map((g) => ({ id: g.id, name: g.name, livedIn: !!g.livedIn, offTime: g.away?.offTime ?? null, brightness: g.away?.brightness ?? null })),
+        offTime: ls.awayOffTime, brightness: ls.awayBrightness, morning: ls.awayMorning || null,
+        groups: lighting.engine.data.groups.map((g) => ({ id: g.id, name: g.name, livedIn: !!g.livedIn, offTime: g.away?.offTime ?? null, brightness: g.away?.brightness ?? null, morning: g.away?.morning ?? null })),
       };
     }
     if (on('wifi') && wifi?.engine?.awayView) {
@@ -264,6 +264,7 @@ export function createHouse({ log, dataDir = null }) {
       const l = {};
       if (al.offTime !== undefined) l.awayOffTime = al.offTime;
       if (al.brightness !== undefined) l.awayBrightness = al.brightness;
+      if (al.morning !== undefined) l.awayMorning = al.morning || null;
       if (Object.keys(l).length) lighting.engine.saveSettings(l);
     }
     lighting.engine.changed();
