@@ -5,6 +5,7 @@ import { scheduledAt, localWeekPosition, normaliseSchedule, defaultSchedule, DAY
 import { scheduledTemp } from './learn.js';
 import { IntegrationWatch } from './integrations.js';
 import { repairUnreachable } from './repair.js';
+import { recordMode, modeLogFromActivity, unusualSpans, daysTouched } from './modelog.js';
 import { detectOutsideEntity, readOutside } from './history.js';
 import { nextHeat, heatingUntil, outsideCurve, toFive } from './forecast.js';
 
@@ -58,6 +59,20 @@ export class Engine extends EventEmitter {
     const b = this.s.boiler?.entity;
     if (!b) return true; // no boiler here: nothing to reach
     return !this.#gone(b);
+  }
+
+  /** When the house was on Away or had the heating off (modelog.js): filled in from Activity the first time. */
+  modeLog() {
+    if (!Array.isArray(this.rt.modeLog)) this.rt.modeLog = modeLogFromActivity(this.store.log, { current: this.rt.mode });
+    return this.rt.modeLog;
+  }
+
+  /** Times between from and to that aren't the house's usual: Away or off, and the two days after. */
+  unusualSpans(from, to = Date.now()) { return unusualSpans(this.modeLog(), from, to); }
+
+  /** The days in the last `days` that those times touch. */
+  unusualDays(days = 60, now = Date.now()) {
+    return daysTouched(this.unusualSpans(now - days * 86400000, now), this.ha.timeZone || 'UTC');
   }
 
   /** What a room drops to while the house is Away: its own, or the house's. */
@@ -753,6 +768,7 @@ export class Engine extends EventEmitter {
       }
     }
     if (this.rt.mode === 'away' && this.rt.awayUntil && this.rt.awayUntil <= now) {
+      this.rt.modeLog = recordMode(this.modeLog(), 'auto', this.rt.awayUntil);
       this.rt.mode = 'auto';
       this.rt.awayUntil = null;
       this.note('Away mode ended, back to schedules');
@@ -1421,6 +1437,7 @@ export class Engine extends EventEmitter {
       pr.suppress = mode === 'auto' && !!everyoneOut;
       pr.emptySince = null;
     }
+    this.rt.modeLog = recordMode(this.modeLog(), mode);
     this.rt.mode = mode;
     this.rt.awayUntil = mode === 'away' && until ? Number(until) : null;
     this.rt.awayBack = null; // "until someone's back" is set after, by the phone alert's button

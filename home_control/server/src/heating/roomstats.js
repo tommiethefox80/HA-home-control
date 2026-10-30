@@ -192,6 +192,9 @@ export async function buildRoomStats(engine, { days = 7, windEntity = null } = {
     ? sample(rowsFor(result, boilerId), from, to, (r) => (boilerId.startsWith('climate.') ? r.a?.hvac_action === 'heating' : r.s === 'on'))
     : times.map(() => false);
 
+  // the house on Away or with the heating off, and the two days after: not its usual (modelog.js)
+  const unusual = engine.unusualSpans ? engine.unusualSpans(from, to + STEP) : [];
+  const away = (t) => unusual.some(([a, b]) => t >= a && t < b);
   const raw = zones.map((z) => {
     const sources = z.sensor ? [z.sensor] : (z.trvs || []).filter((e) => e !== boilerId || (z.trvs || []).length === 1);
     const series = sources.map((id) => sample(rowsFor(result, id), from, to, tempOf(id)));
@@ -201,8 +204,9 @@ export async function buildRoomStats(engine, { days = 7, windEntity = null } = {
     // no heat at all: not calling, and the boiler off (a room's valve can open on its own reading
     // while the boiler runs for another room, and an always-open radiator always does)
     // (before the app's log, without a boiler to go by, there's no knowing: leave it out)
-    const heated = times.map((t, i) => (t < callsFrom && !boilerId) || inCall(t) || !!boiler[i]);
-    const warms = warmUps(times, temps, outside, calls);
+    // (and the house's unusual times are left out like heated ones)
+    const heated = times.map((t, i) => (t < callsFrom && !boilerId) || inCall(t) || !!boiler[i] || away(t));
+    const warms = warmUps(times, temps, outside, calls.filter(([a]) => !away(a)));
     const cools = coolDowns(times, temps, outside, heated, { wind: windy });
     return { z, warms, cools, ...summarise(warms, cools) };
   });
@@ -247,6 +251,7 @@ export async function buildRoomStats(engine, { days = 7, windEntity = null } = {
     from, to, days: Math.round(((to - from) / 86400000) * 10) / 10, callsFrom,
     outsideEntity: outsideId || null,
     windEntity: windId,
+    unusual,
     outside: outs.length ? { min: r1(Math.min(...outs)), max: r1(Math.max(...outs)) } : null,
     houseK: houseK != null ? Math.round(houseK * 10000) / 10000 : null,
     degreeDays: r1(dd), weatherDays: dayKeys.length,

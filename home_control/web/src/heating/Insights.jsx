@@ -266,6 +266,7 @@ function RoomHeat() {
         From the last {data.days >= 7 ? 'week' : `${data.days} days`} of temperatures{data.outside ? ` (${deg(data.outside.min)} to ${deg(data.outside.max)} outside)` : ''}: how fast each room warms, how much colder days slow that down, and how quickly it cools once the heating's off. Cooling is only measured when a room has had no heat at all for 45 minutes, so leftover radiator heat doesn't count.
       </p>
       {data.callsFrom > data.from + 86400000 && <p className="chart-explain">Warm-ups count from {dayLabel(new Date(data.callsFrom).toISOString().slice(0, 10), { weekday: 'short', day: 'numeric', month: 'short' })}, when Home Control started recording each room's heat-ups; heat loss uses the whole week.</p>}
+      {data.unusual?.length > 0 && <p className="chart-explain">The house was on Away (or the heating off) {rooms.some((r) => r.lossTrend?.settling) ? 'until recently' : 'for some of this week'}, so that time and the two days after aren't counted: a house left cold loses heat faster than usual while its walls warm back up. {rooms.some((r) => r.lossTrend?.settling) ? 'Checking for rooms losing heat faster than usual starts again two days after you\'re back.' : ''}</p>}
       {!data.outsideEntity && <p className="chart-explain">No outside temperature found, so heat loss can't be worked out. Choose one in <a href="#/settings/sources">Settings</a>.</p>}
       {(best || worst || weather || faster.length > 0) && (
         <ul className="callouts">

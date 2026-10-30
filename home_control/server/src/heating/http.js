@@ -229,9 +229,11 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
     if (data && !data.error) {
       engine.model = { at: Date.now(), houseK: data.houseK, k: Object.fromEntries(data.rooms.filter((r) => r.loss?.k != null).map((r) => [r.id, r.loss.k])) };
       // is any room losing heat faster than usual?
-      engine.heatLoss.update(data);
+      // (Away, and the two days after, aren't the house's usual: modelog.js)
+      const skip = engine.unusualDays(60);
+      engine.heatLoss.update(data, Date.now(), { skip });
       const enabled = store.data.zones.filter((z) => z.enabled);
-      const { alerts, normal } = engine.heatLoss.check(enabled.map((z) => z.id), { percent: store.data.settings.heatLoss?.percent ?? 40, tz: ha.timeZone || 'UTC' });
+      const { alerts, normal } = engine.heatLoss.check(enabled.map((z) => z.id), { percent: store.data.settings.heatLoss?.percent ?? 40, tz: ha.timeZone || 'UTC', skip });
       for (const a of alerts) engine.heatLossAlert(a.id, a.percent);
       for (const id of normal) { const z = enabled.find((x) => x.id === id); if (z) engine.note(`${z.name}: losing heat at its usual rate again`); }
       for (const r of data.rooms) {

@@ -1,5 +1,5 @@
 name: Home Control
-version: "1.15.1"
+version: "1.15.2"
 slug: home_control
 description: Heating, lighting, cameras, Wi-Fi and energy for the whole house in one panel. Room heating schedules with boiler control, lights and sockets with dimming schedules and scenes, camera alerts and recording on schedules, UniFi access points and networks on schedules, electricity prices and plans for the cheapest times, and one Away for everything
 url: https://github.com/tommiethefox80/ha-home-control

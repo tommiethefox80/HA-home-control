@@ -18,6 +18,9 @@
 //
 // A notice can be dismissed: it stays hidden until the room is back to its usual, and comes back
 // only if it starts losing heat faster again after that.
+//
+// Away (or the heating off), and the two days after, aren't the house's usual (modelog.js): those
+// times are left out of the room figures, and days from before they were left out are dropped.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -67,13 +70,19 @@ export class HeatLossWatch {
     }
   }
 
-  /** Each room's rate for each day, from the latest room figures (rooms[].daily: [{ day, k, kLow, n, wind }]). */
-  update(stats, now = Date.now()) {
+  /**
+   * Each room's rate for each day, from the latest room figures (rooms[].daily: [{ day, k, kLow, n, wind }]).
+   * `skip`: days that weren't all the house's usual (Away, and the two days after). The latest
+   * figures already leave those times out, so such a day keeps only what they have for it (its
+   * usual part), and is dropped otherwise, including from before they were left out.
+   */
+  update(stats, now = Date.now(), { skip = null } = {}) {
     const cutoff = new Date(now - 60 * DAY).toISOString().slice(0, 10);
     for (const r of stats?.rooms || []) {
       const d = (this.days[r.id] ||= {});
-      for (const x of r.daily || []) if (x.k != null && x.n > 0) d[x.day] = { k: x.k, kLow: x.kLow ?? x.k, n: x.n, wind: x.wind ?? null };
-      for (const k of Object.keys(d)) if (k < cutoff) delete d[k];
+      const fresh = new Set();
+      for (const x of r.daily || []) if (x.k != null && x.n > 0) { d[x.day] = { k: x.k, kLow: x.kLow ?? x.k, n: x.n, wind: x.wind ?? null }; fresh.add(x.day); }
+      for (const k of Object.keys(d)) if (k < cutoff || (skip?.has(k) && !fresh.has(k))) delete d[k];
     }
     this.save();
   }
@@ -82,7 +91,7 @@ export class HeatLossWatch {
    * Work out each room's state. Returns { alerts: [{ id, percent }] newly worth telling,
    * normal: [ids] back to their usual }.
    */
-  check(zoneIds, { percent = 40, now = Date.now(), tz = 'UTC' } = {}) {
+  check(zoneIds, { percent = 40, now = Date.now(), tz = 'UTC', skip = null } = {}) {
     const today = dayKey(now, tz);
     const yesterday = dayKey(now - DAY, tz);
     const oldest = dayKey(now - 30 * DAY, tz);
@@ -95,7 +104,9 @@ export class HeatLossWatch {
       const usual = Object.entries(d).filter(([k]) => k < yesterday && k >= oldest).map(([, x]) => x);
       const was = this.state[id];
       if (recentN < 2 || usual.length < 4) {
-        this.state[id] = { elevated: false, recentN, usualDays: usual.length };
+        // (after Away, the last two days are left out: say so)
+        const settling = !!(skip?.has(today) || skip?.has(yesterday));
+        this.state[id] = { elevated: false, recentN, usualDays: usual.length, ...(settling ? { settling } : {}) };
         continue; // too little to go on (not 'back to normal', so a dismissal stands)
       }
       const avg = (f) => recent.reduce((a, x) => a + f(x) * x.n, 0) / recentN;
