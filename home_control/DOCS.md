@@ -437,7 +437,7 @@ Settings and schedules are stored in the add-on's `/data` folder and are include
 
 ## How it behaves
 
-- Changes at a wall switch, in the Home Assistant app or by voice are left alone until the group's next scheduled change. The Activity tab says who changed what.
+- Changes at a wall switch, in the Home Assistant app or by voice are left alone until the group's next scheduled change. The Activity tab says who changed what, and lists each scheduled change that switched something ("Lounge: on at 70% (schedule)", or "(schedule from 06:30)" if it happened later than its time, say once the app started or it got dark enough), and Away's lived-in lights coming on and going off. A change that follows a mode change (Away, back to Schedules) or "back to schedule" is said once, in that line. Lights coming on for movement aren't listed, as there can be dozens a day; the add-on's own log has every command.
 - Changes made in this app last until the next scheduled change, or for 30 min to 4 h if you pick that in the group's details.
 - Saving a schedule doesn't change any lights there and then: the new schedule takes over from its next change. To apply it straight away, open the group and press **Back to schedule**.
 - A few seconds after switching a Zigbee light (ZHA), the app asks Home Assistant to read the light's real state back, so a bulb that ignored the command is caught and switched again. After switching a light off it checks again at 20 and 50 seconds: a light that comes back on by itself within a minute, with nobody behind it, is switched off again and Activity says so. A person at a wall switch more than a minute after the off is respected as usual. The Log tab has a line for every command and anything a light did by itself.

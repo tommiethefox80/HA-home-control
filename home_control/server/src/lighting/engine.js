@@ -65,6 +65,7 @@ export class Engine extends EventEmitter {
     this.motion = new Map();        // groupId -> { active, offAt }
     this.verifying = new Map();     // entity -> until: state changes now are the device's real state being read back
     this.lastLevels = new Map();    // groupId -> number, for the target log
+    this.lastSource = new Map();    // groupId -> { source, mode }: what its target came from last time round
     this.ready = false;
     this.startedAt = this.now();
   }
@@ -362,20 +363,24 @@ export class Engine extends EventEmitter {
     this._checkPresence(ms);
     for (const g of this.data.groups) {
       const ov = this.data.overrides[g.id];
+      let resumed = false;
       if (ov?.until && ov.until <= ms) {
         delete this.data.overrides[g.id];
-        this.addActivity(`${g.name}: ${this._backTo()}`, g.id);
+        resumed = true; // said in Activity below, with what the schedule switches
         this.store.save();
       }
       const gt = this.groupTarget(g, ms);
       this._recordTarget(g, gt, ms);
+      let switched = 0;
       for (const id of g.devices) {
         const info = this.deviceInfo(id, g.name);
         const want = this.wantFor(g, info, gt);
         if (!want || !this.differs(info, want)) continue;
         if (want.on && !info.on && gt.luxBlocked && !gt.override?.devices?.[id]) continue; // bright enough
         this._maybeSend(g, info, want, gt);
+        switched++;
       }
+      this._noteScheduled(g, gt, ms, switched, resumed);
     }
     if (!this._aliveSaved || ms - this._aliveSaved > 60000) {
       this.data.lastAlive = ms;
@@ -383,6 +388,38 @@ export class Engine extends EventEmitter {
       this.store.save();
     }
     this.changed();
+  }
+
+  /**
+   * Activity: a scheduled change (or Away's lived-in one) that switched something, once per change.
+   * Changes made by hand, scenes and "back to schedule" say so where they're made; lights on for
+   * movement aren't listed (there can be dozens a day), and nor is going off when the movement stops.
+   */
+  _noteScheduled(g, gt, ms, switched, resumed = false) {
+    const prev = this.lastSource.get(g.id);
+    this.lastSource.set(g.id, { source: gt.source, mode: this.data.mode });
+    const ours = ['schedule', 'away'].includes(gt.source) && gt.level && !(gt.source === 'away' && !g.livedIn);
+    const dimmable = g.devices.some((id) => this.deviceInfo(id, g.name).dimmable);
+    const lvl = gt.level;
+    const what = !lvl?.on ? 'off' : `on${dimmable && lvl.brightness != null ? ` at ${lvl.brightness}%` : ''}${lvl.kelvin ? `, ${lvl.kelvin} K` : ''}${lvl.fade >= 60 ? `, fading over ${Math.round(lvl.fade / 60)} min` : ''}`;
+    const key = `${gt.source}|${gt.since ?? ''}|${lvl ? this._sig(lvl) : ''}`;
+    const noted = (this.data.noted ||= {});
+    // a change by hand (or a scene, or "leave it") ran out, usually at the next scheduled change
+    if (resumed) {
+      noted[g.id] = key;
+      this.addActivity(`${g.name}: ${this._backTo()}${switched && ours ? `, ${what}` : ''}.`, g.id);
+      return;
+    }
+    if (!switched || !ours) return; // (kept off while away: the change to Away says so)
+    if (noted[g.id] === key) return;
+    noted[g.id] = key;
+    this.store.save();
+    // off again after movement, after "back to schedule" pressed here (that said so), or because
+    // the house went to Away or came back (the change of mode says so)
+    if (prev && (prev.source === 'motion' || prev.source === 'override' || prev.mode !== this.data.mode)) return;
+    // later than its time (back from Away, the app starting, or it was bright enough until now): say since when
+    const from = gt.since && ms - gt.since > 3 * 60000 ? ` from ${minutesToTime(zonedParts(gt.since, this.ctx().tz).minutes)}` : '';
+    this.addActivity(`${g.name}: ${what} (${gt.source === 'away' ? 'Away, looking lived in' : 'schedule'}${from}).`, g.id);
   }
 
   _backTo() {

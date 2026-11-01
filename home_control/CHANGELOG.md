@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.15.3
+- **Scheduled light changes are in Activity.** Lighting's Activity only listed changes made by hand, scenes and settings; a scheduled change (the lounge on at 06:30, say) was only in the add-on's log. Now each scheduled change that switches something is listed once ("Lounge: on at 70% (schedule)"), as are Away's lived-in lights, and a change made by hand running out says what the schedule then did ("Lounge: back to schedule, off."). Lights on for movement still aren't listed.
+
 ## 1.15.2
 - **Fixed: rooms "losing heat 300% faster than usual" after a week on Away.** A house left on Away cools right down, walls and all: short bursts of heat to keep a room at 12° warm the air, which drops quickly back into the cold walls, and for a day or two after you're back a warmed room loses heat fast in the same way while its walls catch up. That looked like rooms losing heat three or four times faster than usual. Now the time the house was on Away (or had the heating off), and the two days after, is left out of the losing-heat check, of how fast each room cools in Insights, and of the predictions of when each room next needs heat. Days already counted from an Away are taken out (worked out from Activity for the last 30 days), so the notices go straight away; checking starts again two days after you're back.
 

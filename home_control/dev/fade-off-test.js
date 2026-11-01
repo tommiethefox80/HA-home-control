@@ -122,5 +122,18 @@ await j('POST', `${MOCK}/human`, { entity: 'light.lounge_lamp', on: true, bright
 await sleep(1500);
 const g = (await j('GET', `${APP}/api/lighting/state`)).groups.find((x) => x.id === 'lounge');
 check(g.override?.type === 'manual', `a real switch press is still respected (${g.status.text})`);
+
+// a scheduled change made at its time is written in Activity, once (back to the schedule first)
+await j('POST', `${APP}/api/lighting/groups/lounge/resume`);
+await sleep(4000); // off, as its schedule says now
+const at = zonedParts(Date.now(), 'Europe/London');
+const next = minutesToTime(at.minutes + 1);
+await j('PUT', `${APP}/api/lighting/schedules/lounge`, { week: every([{ time: minutesToTime(at.minutes - 60), on: false }, { time: next, on: true, brightness: 55 }]) });
+await sleep((60 - at.second) * 1000 + 5000);
+for (let i = 0; i < 40 && (await lamp()).state !== 'on'; i++) await sleep(1000); // the next look (every 15 s or so)
+await sleep(1500);
+const lines = (await j('GET', `${APP}/api/lighting/activity`)).items.filter((i) => /^Lounge: on/.test(i.text)).map((i) => i.text);
+check((await lamp()).state === 'on', `on at ${next} by its schedule`);
+check(lines.length === 1 && lines[0] === 'Lounge: on at 55% (schedule).', `in Activity once: ${JSON.stringify(lines)}`);
 console.log(ok ? 'fade-off checks passed' : 'fade-off checks FAILED');
 process.exit(ok ? 0 : 1);
