@@ -218,6 +218,40 @@ await step('All off is a one-press action: everything off until its next change,
   assert.equal((await states())['light.lounge_lamp'].state, 'on');
 });
 
+await step('All off in…: everything off after the time chosen, cancelled if asked, and done by All off itself', async () => {
+  assert.equal((await states())['light.lounge_lamp'].state, 'on');
+  await assert.rejects(app('POST', '/api/lighting/off-timer', { seconds: 2 }), /between 10 seconds and 4 hours/);
+  // cancelled: nothing happens
+  let st = await app('POST', '/api/lighting/off-timer', { seconds: 600 });
+  assert.ok(Math.abs(st.offTimer.at - Date.now() - 600000) < 5000, JSON.stringify(st.offTimer));
+  assert.match((await app('GET', '/api/lighting/activity')).items[0].text, /^All off in 10 min, at \d\d:\d\d\.$/);
+  await sleep(2500);
+  const pub = (await mock('GET', '/published')).states['sensor.home_lighting'];
+  assert.ok(pub?.attributes?.all_off_at, 'on the dashboard sensor, for automations');
+  st = await app('DELETE', '/api/lighting/off-timer');
+  assert.equal(st.offTimer, null);
+  assert.equal((await app('GET', '/api/lighting/activity')).items[0].text, 'All off timer cancelled.');
+  // 10 seconds: everything goes off then, not before
+  await app('POST', '/api/lighting/off-timer', { seconds: 10 });
+  await sleep(6000);
+  assert.equal((await states())['light.lounge_lamp'].state, 'on', 'not yet');
+  await sleep(8000);
+  const s = await states();
+  for (const id of ['light.lounge_ceiling', 'light.lounge_lamp', 'switch.lounge_uplighter_plug']) assert.equal(s[id].state, 'off', id);
+  st = await app('GET', '/api/lighting/state');
+  assert.equal(st.offTimer, null);
+  assert.match((await app('GET', '/api/lighting/activity')).items[0].text, /^All off \(from the timer set at \d\d:\d\d\): everything switched off until its next scheduled change\.$/);
+  // All off pressed meanwhile: that's it done, the timer goes
+  for (const id of ['lounge', 'hallway', 'christmas-lights']) await app('POST', `/api/lighting/groups/${id}/resume`);
+  await sleep(3000);
+  await app('POST', '/api/lighting/off-timer', { seconds: 300 });
+  await app('POST', '/api/lighting/scenes/all-off/run');
+  assert.equal((await app('GET', '/api/lighting/state')).offTimer, null);
+  for (const id of ['lounge', 'hallway', 'christmas-lights']) await app('POST', `/api/lighting/groups/${id}/resume`);
+  await sleep(4000);
+  assert.equal((await states())['light.lounge_lamp'].state, 'on');
+});
+
 await step('sockets follow schedules', async () => {
   await schedule('christmas-lights', { week: everyDay([{ time: t(-5), on: true }, { time: t(180), on: false }]) });
   await sleep(4000);

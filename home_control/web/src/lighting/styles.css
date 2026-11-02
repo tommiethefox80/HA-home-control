@@ -434,6 +434,16 @@ pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 .scene-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 .scene-btn { min-height: 44px; }
 .scene-done { font-size: 0.9rem; color: var(--ink-2); }
+/* All off in…: the choice of times, and the countdown in place of the button */
+.off-in-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.off-in-btn { min-height: 48px; justify-content: center; }
+.off-timer {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 4px 0 14px;
+  border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 0.95rem;
+}
+.off-timer .num { font-variant-numeric: tabular-nums; }
+.off-timer-at { color: var(--ink-2); }
+.off-timer-cancel { min-height: 36px; padding: 0 12px; }
 .scene-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .scene-group { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 12px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-2); }
 .scene-group::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 5px; border-radius: 0 4px 4px 0; background: var(--light); }

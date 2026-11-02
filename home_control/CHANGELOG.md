@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.15.4
+- **All off in…** on the Lighting page, next to All off: choose 10 seconds, 30 seconds, 1, 2, 5, 10, 15 or 30 minutes, 1 or 2 hours, and everything switches off then, until its next scheduled change. The button shows the countdown with **Cancel** until then, and Activity lists it. `sensor.home_lighting` has the time in `all_off_at`.
+
 ## 1.15.3
 - **Scheduled light changes are in Activity.** Lighting's Activity only listed changes made by hand, scenes and settings; a scheduled change (the lounge on at 06:30, say) was only in the add-on's log. Now each scheduled change that switches something is listed once ("Lounge: on at 70% (schedule)"), as are Away's lived-in lights, and a change made by hand running out says what the schedule then did ("Lounge: back to schedule, off."). Lights on for movement still aren't listed.
 

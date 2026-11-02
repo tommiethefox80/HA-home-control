@@ -130,6 +130,8 @@ export function createLighting({ client, dataDir, log, house }) {
     ['PUT', /^\/api\/lighting\/scenes\/([\w-]+)$/, (m, b) => ({ scene: engine.saveScene(b, m[1]) })],
     ['DELETE', /^\/api\/lighting\/scenes\/([\w-]+)$/, (m) => { engine.deleteScene(m[1]); return { ok: true }; }],
     ['POST', /^\/api\/lighting\/scenes\/([\w-]+)\/run$/, (m) => { requireRunning(); const n = engine.runScene(m[1]); return { changed: n, ...snapshot() }; }],
+    ['POST', /^\/api\/lighting\/off-timer$/, (m, b) => { requireRunning(); engine.startOffTimer(b?.seconds); return snapshot(); }],
+    ['DELETE', /^\/api\/lighting\/off-timer$/, () => { engine.cancelOffTimer(); return snapshot(); }],
   ];
 
   /** Handle a lighting request. Returns false if the path isn't a lighting route. */

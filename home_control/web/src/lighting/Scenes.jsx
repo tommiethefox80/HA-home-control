@@ -1,8 +1,74 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, lightCss, warmthWord, plural } from './lib.js';
 import { Icon, Sheet, Segmented, Slider, Field, Notice, brightnessTrack, warmthTrack } from './ui.jsx';
 
 // ---------- the row of scene buttons on the Lights page ----------
+
+// All off in…: for leaving a room, going up to bed or going out
+const OFF_IN = [
+  { secs: 10, label: '10 seconds' }, { secs: 30, label: '30 seconds' }, { secs: 60, label: '1 minute' },
+  { secs: 120, label: '2 minutes' }, { secs: 300, label: '5 minutes' }, { secs: 600, label: '10 minutes' },
+  { secs: 900, label: '15 minutes' }, { secs: 1800, label: '30 minutes' }, { secs: 3600, label: '1 hour' }, { secs: 7200, label: '2 hours' },
+];
+const countdown = (ms) => {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const sec = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+};
+
+function OffIn({ state, run, setDone }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const timer = state.offTimer;
+  useEffect(() => {
+    if (!timer) return undefined;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [timer?.at]); // eslint-disable-line react-hooks/exhaustive-deps
+  const start = async (o) => {
+    setBusy(true);
+    try {
+      await run(() => api('POST', 'off-timer', { seconds: o.secs }));
+      setOpen(false);
+      setNow(Date.now());
+      setDone(`Everything goes off in ${o.label}`);
+      setTimeout(() => setDone(null), 4000);
+    } catch { /* shown at the top */ }
+    setBusy(false);
+  };
+  const cancel = async () => {
+    setBusy(true);
+    try { await run(() => api('DELETE', 'off-timer')); setDone('All off timer cancelled'); setTimeout(() => setDone(null), 4000); } catch { /* shown at the top */ }
+    setBusy(false);
+  };
+  if (timer) {
+    const at = new Date(timer.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return (
+      <span className="off-timer" role="timer" aria-live="off">
+        <Icon name="clock" size={18} />
+        <span>All off in <b className="num">{countdown(timer.at - now)}</b>{timer.secs >= 60 && <span className="off-timer-at"> · {at}</span>}</span>
+        <button type="button" className="btn btn-quiet off-timer-cancel" onClick={cancel} disabled={busy}>Cancel</button>
+      </span>
+    );
+  }
+  return (
+    <>
+      <button type="button" className="btn btn-quiet scene-btn" onClick={() => setOpen(true)}>
+        <Icon name="clock" size={18} />All off in…
+      </button>
+      {open && (
+        <Sheet title="All off in" subtitle="Everything switches off after this, until its next scheduled change. You can cancel it until then." onClose={() => setOpen(false)}>
+          <div className="off-in-grid" role="group" aria-label="All off in">
+            {OFF_IN.map((o, i) => (
+              <button key={o.secs} type="button" className="btn btn-quiet off-in-btn" onClick={() => start(o)} disabled={busy} data-autofocus={i === 0 ? '' : undefined}>{o.label}</button>
+            ))}
+          </div>
+        </Sheet>
+      )}
+    </>
+  );
+}
 
 export function SceneRow({ state, run }) {
   const [done, setDone] = useState(null);
@@ -22,6 +88,7 @@ export function SceneRow({ state, run }) {
         <button type="button" className="btn btn-quiet scene-btn" onClick={() => go({ id: 'all-off', name: 'All off' })} disabled={busy === 'all-off'}>
           <Icon name="power" size={18} />All off
         </button>
+        <OffIn state={state} run={run} setDone={setDone} />
         {(state.scenes || []).map((sc) => (
           <button key={sc.id} type="button" className="btn btn-quiet scene-btn" onClick={() => go(sc)} disabled={busy === sc.id}>
             <Icon name={/goodnight|bed|sleep/i.test(sc.name) ? 'moon' : 'bulb'} size={18} />{sc.name}

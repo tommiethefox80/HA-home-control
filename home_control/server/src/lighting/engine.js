@@ -34,6 +34,13 @@ const DEVICE_DOMAINS = ['light', 'switch'];
 const COLOR_MODES = ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'];
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+/** 10 seconds, 1 min, 1 h 30 min */
+export function durationText(secs) {
+  if (secs < 60) return `${secs} seconds`;
+  const m = Math.round(secs / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`;
+}
 const isDevice = (id) => typeof id === 'string' && DEVICE_DOMAINS.includes(id.split('.')[0]) && /^[a-z_]+\.[a-z0-9_]+$/.test(id);
 
 /** Holds where the app sends nothing: a person's change, or "leave it as it is" after a schedule edit. */
@@ -136,6 +143,7 @@ export class Engine extends EventEmitter {
 
   stop() {
     clearInterval(this.timer);
+    clearTimeout(this.offTimerT);
     this.queue.clear();
     this.addActivity('Lighting app stopped. Lights and sockets were left as they are.');
     this.data.lastAlive = this.now();
@@ -360,6 +368,7 @@ export class Engine extends EventEmitter {
     // paused: another app is still in charge; disabled: turned off in Home Control's settings
     if (!this.ready || this.data.paused || this.disabled) { this.changed(); return; }
     const ms = this.now();
+    if (this.data.offTimer && !this.offTimerT) this._armOffTimer(); // after a restart
     this._checkPresence(ms);
     for (const g of this.data.groups) {
       const ov = this.data.overrides[g.id];
@@ -1159,6 +1168,7 @@ export class Engine extends EventEmitter {
       n++;
     }
     const by = from ? ` (from ${from})` : '';
+    if (sc === ALL_OFF && this.data.offTimer) this.cancelOffTimer({ quiet: true }); // done now
     if (sc === ALL_OFF) this.addActivity(`All off${by}: everything switched off until its next scheduled change.`);
     else {
       const tail = sc.until === 'morning' ? ' until the morning' : ' until their next scheduled change';
@@ -1166,6 +1176,57 @@ export class Engine extends EventEmitter {
     }
     return n;
   }
+
+  // ---------- All off in… ----------
+
+  /** All off after a while (10 seconds to 4 hours): for leaving a room, going up to bed or going out. */
+  startOffTimer(seconds, { from = null } = {}) {
+    const secs = Math.round(Number(seconds));
+    if (!Number.isFinite(secs) || secs < 5 || secs > 4 * 3600) throw new UserError('Choose a time between 10 seconds and 4 hours');
+    const ms = this.now();
+    this.data.offTimer = { at: ms + secs * 1000, set: ms, secs };
+    this._armOffTimer();
+    this.addActivity(`All off in ${durationText(secs)}${secs >= 60 ? `, at ${this._clock(ms + secs * 1000)}` : ''}${from ? ` (from ${from})` : ''}.`);
+    return this.data.offTimer;
+  }
+
+  cancelOffTimer({ quiet = false } = {}) {
+    if (!this.data.offTimer) return false;
+    delete this.data.offTimer;
+    clearTimeout(this.offTimerT); this.offTimerT = null;
+    if (quiet) { this.store.save(); this.changed(); } else this.addActivity('All off timer cancelled.');
+    return true;
+  }
+
+  _armOffTimer() {
+    clearTimeout(this.offTimerT);
+    const t = this.data.offTimer;
+    if (!t) { this.offTimerT = null; return; }
+    this.offTimerT = setTimeout(() => { this.offTimerT = null; this._offTimerDue(); }, Math.max(0, Math.min(t.at - this.now(), 2 ** 31 - 1)));
+  }
+
+  _offTimerDue() {
+    const t = this.data.offTimer;
+    if (!t) return;
+    const ms = this.now();
+    if (ms < t.at - 500) { this._armOffTimer(); return; }
+    // not connected or paused: try again shortly (a few minutes late is still worth doing)
+    if (!this.ready || this.data.paused || this.disabled) {
+      if (ms - t.at < 15 * 60000) { this.offTimerT = setTimeout(() => { this.offTimerT = null; this._offTimerDue(); }, 5000); return; }
+      delete this.data.offTimer;
+      this.addActivity(`All off at ${this._clock(t.at)} was missed while the app couldn't reach Home Assistant, so it wasn't done.`);
+      return;
+    }
+    delete this.data.offTimer;
+    if (ms - t.at > 15 * 60000) { // the app was stopped then: too late to switch everything off now
+      this.addActivity(`All off at ${this._clock(t.at)} was missed while the app was stopped, so it wasn't done.`);
+      return;
+    }
+    try { this.runScene('all-off', { from: `the timer set at ${this._clock(t.set)}` }); } catch (err) { this.log.warn?.(`All off timer: ${err.message}`); }
+    this.tick();
+  }
+
+  _clock(ms) { return minutesToTime(zonedParts(ms, this.ctx().tz).minutes); }
 
   saveScene(input, existingId = null) {
     const name = String(input?.name ?? '').trim().slice(0, 30);
@@ -1376,6 +1437,7 @@ export class Engine extends EventEmitter {
       haError: this.ha.connected ? null : this.ha.lastError,
       downFor: this.ready ? 0 : ms - (this.downSince ?? this.startedAt),
       mode: this.data.mode,
+      offTimer: this.data.offTimer ? { at: this.data.offTimer.at, set: this.data.offTimer.set, secs: this.data.offTimer.secs } : null,
       ctx: { tz: ctx.tz, lat: ctx.lat, lon: ctx.lon, sun: ctx.sun },
       today: { ...today, minutes: zonedParts(ms, ctx.tz).minutes, sunrise: sun.sunrise, sunset: sun.sunset },
       sunFound: this.sunEntity(),

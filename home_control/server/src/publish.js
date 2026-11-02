@@ -217,6 +217,7 @@ export function lightingState(snap, panel = null) {
       paused: !!snap.paused,
       step: snap.settings?.stepSize || 10, // the brightness step for minus and plus, as in the app
       show_devices: !!snap.settings?.showDevices?.card, // each light and socket under its group (Lighting → Settings)
+      all_off_at: snap.offTimer ? new Date(snap.offTimer.at).toISOString() : null, // All off in… (the Lighting page)
       summary,
       groups,
       connected: !!snap.connected,
