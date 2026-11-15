@@ -524,3 +524,15 @@ a.chip { color: inherit; text-decoration: none; }
 @media (prefers-color-scheme: dark) { .hold-chip.hold-faster { color: rgb(240 150 130); } }
 .log-filter { margin: 0 0 12px; max-width: 100%; overflow-x: auto; }
 .log-filter button { white-space: nowrap; }
+
+/* the chart's range: how far back, or two dates */
+.range-pick { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: -2px 0 8px; }
+.range-select select, .range-dates input {
+  font: inherit; font-size: .9rem; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 7px 10px; min-height: 38px;
+}
+.range-select select { padding-right: 28px; font-weight: 600; }
+.range-dates { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.range-dates label { display: grid; gap: 3px; font-size: .78rem; color: var(--ink-2); }
+.range-dates .btn { min-height: 38px; }
+.range-sum { margin: 0 0 10px; font-size: .88rem; color: var(--ink-2); }

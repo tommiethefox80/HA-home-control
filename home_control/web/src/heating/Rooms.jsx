@@ -292,7 +292,10 @@ function RoomSheet({ z, state, onClose, notify }) {
 
       <h3>Today</h3>
       <Ribbon schedule={state.schedules[z.id]} day={nowLocal(tz).day} tz={tz} tall showNow showHours labels />
-      <div className="actions"><a className="btn link" href={`#/schedules/${z.id}`} onClick={onClose}>Edit the week’s schedule</a></div>
+      <div className="actions">
+        <a className="btn link" href={`#/schedules/${z.id}`} onClick={onClose}>Edit the week’s schedule</a>
+        <button type="button" className="btn link" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent('hc-history', { detail: { room: z.id } })); }}>Its heating history</button>
+      </div>
 
       <h3>Radiators</h3>
       <ul className="devices">

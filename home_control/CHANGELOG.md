@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.16.0
+- **Heating history, as far back as you like.** The chart under the rooms (the last 24 hours until now) has a choice of range: the last 6 or 12 hours, 24 hours, 2, 3, 7, 14, 30 or 90 days, the last year, or chosen dates. Pick a room for its temperature, target and outside with shading where it heated, as on its card, or All rooms to compare them; above the chart, how long it heated, its average temperature, the boiler's hours and the outside average. A room's page has **Its heating history**.
+- Home Assistant keeps detailed history for about 10 days, so Home Control now keeps its own record every half hour (each room's temperature, target and minutes heated, outside and the boiler), as long as the daily totals (400 days to start with). The last 10 days are filled in from Home Assistant's history the first time, and any gap after the app's been stopped. Before the record starts, a range of two weeks or more is drawn in days from the daily totals.
+- With one room picked, the chart now shades when that room heated (as its card does) rather than when the boiler fired.
+
 ## 1.15.4
 - **All off in…** on the Lighting page, next to All off: choose 10 seconds, 30 seconds, 1, 2, 5, 10, 15 or 30 minutes, 1 or 2 hours, and everything switches off then, until its next scheduled change. The button shows the countdown with **Cancel** until then, and Activity lists it. `sensor.home_lighting` has the time in `all_off_at`.
 

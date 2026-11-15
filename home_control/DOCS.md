@@ -297,7 +297,14 @@ Turn the graph and the fired count on or off in **Settings → Heating → Room 
 
 The heating shading and the fired count are recorded by the add-on, so on the day you first install it they only cover the time since then, and the card says so ("Fired twice since 18:10"). The total time and the temperatures are there straight away.
 
-Under the rooms you get a 24-hour chart for each room: actual temperature, target, outside temperature, and shading where the boiler fired. Tap or hover for exact values, or switch to a table. Beside it are today's gas cost (with yesterday's), how long the boiler has run today, and the outside temperature, with the day's low and high and a small graph of the last 24 hours (a faint line at midnight; tap or hover for the time and temperature).
+Under the rooms is a chart of the heating, the last 24 hours to start with. Pick a room for its temperature, target and outside, with shading where it heated (as on its card), or **All rooms** to compare them. Tap or hover for exact values, or switch to a table.
+
+**How far back**: the list above the chart has the last 6 or 12 hours, 24 hours, 2, 3, 7, 14, 30 or 90 days, the last year, or **Choose dates…** for any From and To. Above the chart it says how long the room heated over that time and its average temperature, the boiler's hours and the outside average. A room's own page has **Its heating history**, which brings this chart up for that room.
+
+- Up to 3½ days within Home Assistant's own history (10 days) is drawn straight from it, every 5 to 15 minutes, with each heat-up as it happened.
+- Longer is drawn from Home Control's own record: every half hour, each room's average temperature and target and the minutes it heated, the outside average and the boiler's minutes. It's drawn every 30 minutes for a week, every hour for two weeks, every 3 hours for a month, every 6 hours for 3 months and daily for a year. The first time, the last 10 days are filled in from Home Assistant's history, and after the app's been stopped, the gap. It's kept as long as the daily totals (Settings → Heating → History, 400 days to start with), about 1.5 MB a year for eight rooms.
+- Before that record starts, two weeks or more are drawn in days, from each day's totals (average temperature and how long it heated); shorter ranges start where the record does, and the chart says so.
+- Heat-ups are shown as they happened for as long as the room detail is kept (7 days to start with, up to 90); before that, as the minutes heated in each point. Beside it are today's gas cost (with yesterday's), how long the boiler has run today, and the outside temperature, with the day's low and high and a small graph of the last 24 hours (a faint line at midnight; tap or hover for the time and temperature).
 
 **All rooms** (the first choice above the chart, and where it starts) puts every room on one chart, one coloured line each, so you can compare them. Pick what to show:
 
@@ -309,7 +316,7 @@ Under the All rooms chart, **Calling for heat** has a lane per room, in the same
 
 Tap a room's name under the chart to pick it out (tap again to show all). Tap or hover for every room's value at that time, listed warmest first. Your choice of room and measure is remembered on each device.
 
-Room temperatures and boiler runs come from Home Assistant's history, so the chart fills in straight away. Targets are recorded by the add-on from when it's installed; before that the chart shows the schedule.
+Room temperatures and boiler runs come from Home Assistant's history, so the chart fills in straight away. Targets are recorded by the add-on from when it's installed; before that the chart shows the schedule. Your choice of range is remembered on each device.
 
 Pick the gas cost sensor and the outside temperature in **Settings → Heating → Gas cost and outside**, or leave them on **Find automatically**. Any sensor that counts today's cost and resets at midnight works, such as Octopus Energy's "Current Accumulative Cost Gas". For outside, use a weather entity or an outdoor thermometer.
 
@@ -397,8 +404,9 @@ Two places (for heating; lighting keeps everything in `lighting.json`):
 | `heating.json` | Settings, rooms, schedules, current holds, boosts and snoozes, and what each room has learned (stop early, warm-up speed) | Always |
 | `activity.json` | The Activity log | Activity log: 30 days to start with (1–365) |
 | `daily.json` | Each day's totals: boiler hours, average outside temperature, each room's heating time and average temperature, gas cost | Daily totals: 400 days (30–1100) |
-| `targets.json` | What each room was aiming for, for the 24-hour chart | Room detail: 7 days (1–90) |
-| `calls.json` | When each room called for heat, for the room cards | Room detail, as above |
+| `history.json` | Every half hour: each room's average temperature, target and minutes heated, the outside average and the boiler's minutes, for the history chart | Daily totals, as above |
+| `targets.json` | What each room was aiming for, for the history chart | Room detail: 7 days (1–90) |
+| `calls.json` | When each room called for heat, for the room cards and the history chart | Room detail, as above |
 | `lighting.json` | Lighting: groups, schedules, scenes, settings and the lighting Activity log (last 300 entries) | Always |
 | `energy.json` | Energy: plans, settings and the energy Activity log (last 400 entries) | Always |
 | `entities.json` | Which Home Assistant entities to make, and which it made (to remove them when they go) | Always |

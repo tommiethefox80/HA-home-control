@@ -793,6 +793,7 @@ export class Engine extends EventEmitter {
     if (this.ha.connected) await this.#runBoiler(views, now);
     this.#computeAttention(views, now);
     this.dailyLog?.sample(now, this, views);
+    this.longLog?.sample(now, this, views); // the History chart's half-hourly figures
     // the call log is what really heated: not while the boiler or radiators couldn't be reached
     this.callLog?.update(views.map((v) => (v.calling && !v.heating ? { ...v, calling: false } : v)), now);
     this.emit('change');

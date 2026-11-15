@@ -246,12 +246,12 @@ function HistorySettings({ s, set }) {
       </label>
       <label className="field">
         <span>Room detail (days)</span>
-        <small>Each room's targets and when it called for heat. The 24-hour chart and the room cards only use the last day. {usage ? `Now ${kb(size('targets.json', 'calls.json'))}.` : ''}</small>
+        <small>Each room's targets and each heat-up as it happened, for the room cards and the history chart (which shows heating in half hours before this). {usage ? `Now ${kb(size('targets.json', 'calls.json'))}.` : ''}</small>
         <input type="number" min="1" max="90" step="1" value={r.detailDays} onChange={(e) => upd('detailDays', e.target.value)} />
       </label>
       <label className="field">
-        <span>Daily totals (days)</span>
-        <small>Each day's boiler hours, outside average, and each room's heating time and average temperature. Insights shows the last 30 days. {usage ? `Now ${usage.daily.days} day${usage.daily.days === 1 ? '' : 's'}, ${kb(size('daily.json'))}.` : ''}</small>
+        <span>Daily totals and half-hourly history (days)</span>
+        <small>Each day's boiler hours, outside average, and each room's heating time and average temperature (Insights shows the last 30 days); and every half hour's, for the history chart on the Rooms page. {usage ? `Now ${usage.daily.days} day${usage.daily.days === 1 ? '' : 's'}, ${kb(size('daily.json', 'history.json'))}.` : ''}</small>
         <input type="number" min="30" max="1100" step="1" value={r.dailyDays} onChange={(e) => upd('dailyDays', e.target.value)} />
       </label>
       <p className="hint">Lowering a number deletes the older records when you save. All of it is included in Home Assistant backups.</p>

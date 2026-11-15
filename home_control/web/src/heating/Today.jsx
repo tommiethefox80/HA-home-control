@@ -220,6 +220,100 @@ function stepPath(values, x, y) {
 
 
 const ROOM_KEY = 'hc-chart-room';
+const RANGE_KEY = 'hc-chart-range';
+const HOUR = 3600000; const DAYMS = 24 * HOUR;
+// how far back the chart goes; "Last 24 hours" is the Rooms page's own, kept fresh with it
+const RANGES = [
+  { id: '6h', hours: 6, label: 'Last 6 hours' },
+  { id: '12h', hours: 12, label: 'Last 12 hours' },
+  { id: '24h', hours: 24, label: 'Last 24 hours' },
+  { id: '2d', hours: 48, label: 'Last 2 days' },
+  { id: '3d', hours: 72, label: 'Last 3 days' },
+  { id: '7d', hours: 168, label: 'Last 7 days' },
+  { id: '14d', hours: 336, label: 'Last 14 days' },
+  { id: '30d', hours: 720, label: 'Last 30 days' },
+  { id: '90d', hours: 2160, label: 'Last 90 days' },
+  { id: '365d', hours: 8760, label: 'Last year' },
+  { id: 'dates', label: 'Choose dates…' },
+];
+const isoDay = (ms, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+// local midnight of a 'YYYY-MM-DD' day in the house's time zone
+function dayStartMs(day, tz) {
+  const [y, mo, d] = day.split('-').map(Number);
+  let t = Date.UTC(y, mo - 1, d);
+  for (let k = 0; k < 2; k++) {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+    const local = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute);
+    t -= local - Date.UTC(y, mo - 1, d);
+  }
+  return t;
+}
+const dayLabel = (ms, tz, opts) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, ...opts }).format(new Date(ms));
+const hmText = (mins) => { const m = Math.round(mins); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`; };
+// minutes of [a, b] intervals inside from..to
+const minutesIn = (list, from, to) => (list || []).reduce((m, [a, b]) => m + Math.max(0, Math.min(b, to) - Math.max(a, from)), 0) / 60000;
+
+/** The chart's figures for a range: the Rooms page's own for the last 24 hours, otherwise /api/history. */
+function useRangeData(range, today) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const key = range.id === 'dates' ? `${range.from}|${range.to}` : range.id;
+  useEffect(() => {
+    if (range.id === '24h' || (range.id === 'dates' && !(range.from && range.to))) { setData(null); setError(null); return undefined; }
+    let stop = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const q = range.id === 'dates' ? `history?from=${range.from}&to=${range.to}` : `history?hours=${range.hours}`;
+        const d = await api(q);
+        if (stop) return;
+        if (d.error) setError(d.error); else { setData(d); setError(null); }
+      } catch (e) { if (!stop) setError(e.message); }
+      if (!stop) setLoading(false);
+    };
+    setData(null);
+    load();
+    // the last few hours or days: kept up to date (chosen dates don't change)
+    const t = range.id === 'dates' ? null : setInterval(load, range.hours <= 72 ? 120000 : 600000);
+    return () => { stop = true; clearInterval(t); };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (range.id === '24h') return { data: today, error: null, loading: !today };
+  return { data, error, loading };
+}
+
+/** Choose how far back: a list, and two dates for "Choose dates…". */
+function RangePicker({ range, setRange, tz }) {
+  const today = isoDay(Date.now(), tz);
+  const [from, setFrom] = useState(range.fromDay || isoDay(Date.now() - 7 * DAYMS, tz));
+  const [to, setTo] = useState(range.toDay || today);
+  const choose = (id) => {
+    if (id === 'dates') { setRange({ id: 'dates', fromDay: from, toDay: to, from: dayStartMs(from, tz), to: Math.min(Date.now(), dayStartMs(to, tz) + DAYMS) }); return; }
+    setRange(RANGES.find((r) => r.id === id));
+  };
+  const show = () => {
+    if (!from || !to) return;
+    const [a, b] = from <= to ? [from, to] : [to, from];
+    setRange({ id: 'dates', fromDay: a, toDay: b, from: dayStartMs(a, tz), to: Math.min(Date.now(), dayStartMs(b, tz) + DAYMS) });
+  };
+  return (
+    <div className="range-pick">
+      <label className="range-select">
+        <span className="sr-only">How far back</span>
+        <select value={range.id} onChange={(e) => choose(e.target.value)}>
+          {RANGES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+        </select>
+      </label>
+      {range.id === 'dates' && (
+        <div className="range-dates">
+          <label><span>From</span><input type="date" value={from} max={today} onChange={(e) => setFrom(e.target.value)} /></label>
+          <label><span>To</span><input type="date" value={to} max={today} onChange={(e) => setTo(e.target.value)} /></label>
+          {(from !== range.fromDay || to !== range.toDay) && <button type="button" className="btn primary" onClick={show}>Show</button>}
+        </div>
+      )}
+    </div>
+  );
+}
 const METRIC_KEY = 'hc-chart-metric';
 const ALL = 'all';
 const METRICS = [
@@ -248,7 +342,18 @@ function roomSeries(rooms, metric) {
   }));
 }
 
-export function TodayChart({ state, today, error }) {
+export function TodayChart({ state, today: day, error: dayError }) {
+  const tz0 = state.timeZone;
+  const [range, setRangeState] = useState(() => {
+    try { const r = JSON.parse(recall(RANGE_KEY) || 'null'); if (r && RANGES.some((x) => x.id === r.id)) return r.id === 'dates' ? r : RANGES.find((x) => x.id === r.id); } catch { /* none */ }
+    return RANGES.find((x) => x.id === '24h');
+  });
+  const setRange = (r) => { setRangeState(r); setHover(null); remember(RANGE_KEY, JSON.stringify(r.id === 'dates' ? r : { id: r.id })); };
+  const { data: today, error, loading } = useRangeData(range, day);
+  const err = range.id === '24h' ? dayError : error;
+  const rangeTitle = range.id === 'dates'
+    ? `${dayLabel(range.from, tz0, { day: 'numeric', month: 'short' })} – ${dayLabel(range.to - 1, tz0, { day: 'numeric', month: 'short', year: isoDay(range.from, tz0).slice(0, 4) !== isoDay(Date.now(), tz0).slice(0, 4) ? 'numeric' : undefined })}`
+    : range.label;
   const rooms = today?.rooms || [];
   const [roomId, setRoomId] = useState(() => recall(ROOM_KEY) || ALL);
   const [metric, setMetric] = useState(() => (METRICS.some((m) => m.id === recall(METRIC_KEY)) ? recall(METRIC_KEY) : 'temp'));
@@ -260,10 +365,25 @@ export function TodayChart({ state, today, error }) {
   const [hover, setHover] = useState(null);
   const [table, setTable] = useState(false);
   const tz = state.timeZone;
+  const span = today ? today.to - today.from : DAYMS;
+  const long = span > 26 * HOUR;
+  const daily = (today?.step || 0) >= DAYMS;
+  // a moment on the chart: 14:05 for a day, "Sat 8 Nov, 14:00" for longer, "Sat 8 Nov" for days
+  const when = (t) => (!long ? clock(t, tz) : daily ? dayLabel(t, tz, { weekday: 'short', day: 'numeric', month: 'short' }) : `${dayLabel(t, tz, { weekday: 'short', day: 'numeric', month: 'short' })}, ${clock(t, tz)}`);
   const fmt = metric === 'diff' && isAll ? signed : (v) => deg(v);
   const mInfo = METRICS.find((m) => m.id === metric);
 
   const pick = (id) => { setRoomId(id); setHover(null); setFocus(null); remember(ROOM_KEY, id); };
+  // "Its heating history" on a room's page: that room, and the chart brought into view
+  const cardRef = useRef(null);
+  useEffect(() => {
+    const on = (e) => {
+      if (e.detail?.room) pick(e.detail.room);
+      setTimeout(() => cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+    };
+    window.addEventListener('hc-history', on);
+    return () => window.removeEventListener('hc-history', on);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const pickMetric = (id) => { setMetric(id); setHover(null); remember(METRIC_KEY, id); };
 
   const geo = useMemo(() => {
@@ -293,10 +413,23 @@ export function TodayChart({ state, today, error }) {
     const stepDeg = span <= 5 ? 1 : span > 14 ? 4 : 2;
     const yTicks = [];
     for (let v = Math.ceil(lo / stepDeg) * stepDeg; v <= hi; v += stepDeg) yTicks.push(v);
-    const xTicks = today.times.map((t, i) => ({ t, i })).filter(({ t }) => {
-      const hhmm = clock(t, tz);
-      return hhmm.endsWith(':00') && Number(hhmm.slice(0, 2)) % (width < 520 ? 6 : 3) === 0;
-    });
+    let xTicks;
+    if (!long) {
+      xTicks = today.times.map((t, i) => ({ t, i, label: clock(t, tz) })).filter(({ t }) => {
+        const hhmm = clock(t, tz);
+        return hhmm.endsWith(':00') && Number(hhmm.slice(0, 2)) % (width < 520 ? 6 : 3) === 0;
+      });
+    } else {
+      // days (at midnight), thinned to fit; over four months, the first of each month
+      const fits = Math.max(2, Math.floor((width - m.l - m.r) / (span > 20 * DAYMS ? 56 : 62)));
+      let marks = today.times.map((t, i) => ({ t, i })).filter(({ t }) => clock(t, tz) === '00:00');
+      if (span > 120 * DAYMS) marks = marks.filter(({ t }) => dayLabel(t, tz, { day: 'numeric' }) === '1').map((x) => ({ ...x, label: dayLabel(x.t, tz, { month: 'short' }) }));
+      else {
+        const every = Math.ceil(marks.length / fits);
+        marks = marks.filter((_, k) => k % every === 0).map((x) => ({ ...x, label: dayLabel(x.t, tz, span > 16 * DAYMS ? { day: 'numeric', month: 'short' } : { weekday: 'short', day: 'numeric' }) }));
+      }
+      xTicks = marks;
+    }
     // up to four rooms also get their name at the end of the line, nudged apart so they never overlap
     let labels = [];
     if (isAll && series.length <= 4) {
@@ -313,7 +446,7 @@ export function TodayChart({ state, today, error }) {
     if (isAll) {
       const rows = rooms.map((r, k) => ({
         id: r.id, name: r.name, color: series[k]?.color || 'var(--ink-2)',
-        calls: (r.calls || []).filter(([a, b]) => b > today.from && a < today.to),
+        calls: (r.calls || []).filter(([a, b]) => b > today.from && a < today.to + (today.step || 0)),
       }));
       lanes = { top: H + 6, rows, h: 22 + rows.length * LANE };
     }
@@ -321,9 +454,25 @@ export function TodayChart({ state, today, error }) {
     return { H, total, m, n, x, y, tx, yTicks, xTicks, outside, labels, lanes };
   }, [today, room, rooms, isAll, series, metric, width, tz]);
 
-  if (error) return <section className="chart-card"><h2>Today</h2><p className="stat-sub">{error}</p></section>;
-  if (!today) return <section className="chart-card"><h2>Today</h2><p className="stat-sub">Loading the last 24 hours…</p></section>;
+  const head = (
+    <div className="chart-head">
+      <h2>{rangeTitle}</h2>
+      {today && !err && <button className="btn link" onClick={() => setTable((v) => !v)}>{table ? 'Show chart' : 'Show as table'}</button>}
+    </div>
+  );
+  const picker = <RangePicker range={range} setRange={setRange} tz={tz0} />;
+  if (err) return <section className="chart-card" ref={cardRef}>{head}{picker}<p className="stat-sub">{err}</p></section>;
+  if (!today) return <section className="chart-card" ref={cardRef}>{head}{picker}<p className="stat-sub">{range.id === 'dates' && !(range.from && range.to) ? 'Choose the dates.' : loading ? `Loading ${rangeTitle.toLowerCase().replace(/^last/, 'the last')}…` : ''}</p></section>;
   if (!room && !isAll) return null;
+  // the range's totals: how long it heated, the boiler, the average temperatures
+  const end = today.end ?? today.to + (today.step || 0);
+  const avg = (vals) => { const v = (vals || []).filter((x) => x != null); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null; };
+  const boilerMins = minutesIn(today.boilerRuns, today.from, end);
+  const sums = isAll
+    ? [state.boiler.entity && `Boiler ${hmText(boilerMins)}`, ...rooms.map((r) => `${r.name} ${hmText(minutesIn(r.calls, today.from, end))}`)].filter(Boolean)
+    : [`Heated ${hmText(minutesIn(room.calls, today.from, end))}`, avg(room.temps) != null && `averaging ${deg(avg(room.temps))}`, state.boiler.entity && `boiler ${hmText(boilerMins)}`];
+  const outAvg = avg(today.outside?.series);
+  const fromDay = (t) => dayLabel(t, tz, { day: 'numeric', month: 'short' });
 
   const { H, total, m, x, y, tx, yTicks, xTicks, outside, labels, lanes } = geo || { H: 240, total: 240, m: { l: 0, r: 0, t: 0, b: 0 }, x: () => 0, y: () => 0, tx: () => 0, yTicks: [], xTicks: [], outside: [], labels: [], lanes: null };
   const onMove = (e) => {
@@ -334,7 +483,7 @@ export function TodayChart({ state, today, error }) {
     if (i < 0 || i >= geo.n) return setHover(null);
     setHover(i);
   };
-  const firingAt = (t) => today.boilerRuns.some(([a, b]) => t >= a && t <= b);
+  const firingAt = (t) => today.boilerRuns.some(([a, b]) => t >= a && t <= b + (long ? (today.step || 0) - 1 : 0));
   const callAt = (r, t) => (r.calls || []).find(([a, b]) => t >= a && t <= b);
   const callersAt = (t) => rooms.map((r) => ({ r, c: callAt(r, t) })).filter((x) => x.c).sort((p, q) => p.c[0] - q.c[0])
     .map(({ r, c }) => ({ id: r.id, name: r.name, start: c[0], why: WHY[c[2]] || null }));
@@ -357,6 +506,7 @@ export function TodayChart({ state, today, error }) {
   };
   const hv = hover != null ? {
     t: today.times[hover], fire: firingAt(today.times[hover]),
+    heat: !isAll && room ? minutesIn(room.calls, today.times[hover], today.times[hover] + (today.step || 0)) : 0,
     ...(isAll
       ? {
         rows: series.map((s, k) => ({ ...s, v: s.values[hover], calling: !!callAt(rooms[k], today.times[hover]) })).sort((a, b) => (b.v ?? -1e9) - (a.v ?? -1e9)),
@@ -364,7 +514,10 @@ export function TodayChart({ state, today, error }) {
       }
       : { temp: room.temps[hover], target: room.targets[hover], out: outside[hover] }),
   } : null;
-  const tipW = isAll ? 210 : 160;
+  // table rows: every hour for a day, every 3 hours, 12 hours or day for longer (with the time heated in each)
+  const rowMs = !long ? HOUR : span <= 3.6 * DAYMS ? 3 * HOUR : span <= 16 * DAYMS ? 12 * HOUR : DAYMS;
+  const rowEvery = Math.max(1, Math.round(rowMs / (today.step || 300000)));
+  const tipW = isAll ? 210 : long ? 190 : 160;
   const tipLeft = hover != null ? Math.min(Math.max(x(hover) - tipW / 2, 4), width - tipW - 4) : 0;
   const pathFor = isAll && metric === 'target' ? stepPath : linePath;
   // the highlighted room is drawn last so it sits on top
@@ -377,11 +530,12 @@ export function TodayChart({ state, today, error }) {
   const title = isAll ? `All rooms: ${mInfo.title.toLowerCase()}` : `the ${room.name}`;
 
   return (
-    <section className="chart-card" aria-label={`Today in ${title}`}>
-      <div className="chart-head">
-        <h2>Last 24 hours</h2>
-        <button className="btn link" onClick={() => setTable((v) => !v)}>{table ? 'Show chart' : 'Show as table'}</button>
-      </div>
+    <section className="chart-card" ref={cardRef} aria-label={`${rangeTitle} in ${title}`}>
+      {head}
+      {picker}
+      <p className="range-sum">{sums.filter(Boolean).join(' · ')}{outAvg != null ? ` · outside ${deg(outAvg)} on average` : ''}{loading ? ' · updating…' : ''}</p>
+      {today.dailyUntil && <p className="chart-explain">Before {fromDay(today.dailyUntil)}, from each day's figures: its average temperature and how long it heated (Home Control keeps every half hour from then).</p>}
+      {!today.dailyUntil && today.asked && today.from > today.asked + (today.step || 0) && <p className="chart-explain">Home Control has kept this history since {fromDay(today.from)}, so the chart starts there.</p>}
       <nav className="room-picker" aria-label="Room to chart">
         {rooms.length > 1 && <button className="chip" aria-pressed={isAll} onClick={() => pick(ALL)}>All rooms</button>}
         {rooms.map((r) => <button key={r.id} className="chip" aria-pressed={!isAll && r.id === room.id} onClick={() => pick(r.id)}>{r.name}</button>)}
@@ -411,7 +565,7 @@ export function TodayChart({ state, today, error }) {
           <span><i className="sw sw-room" />In the room</span>
           <span><i className="sw sw-target" />Target</span>
           {today.outside && <span><i className="sw sw-out" />Outside</span>}
-          {state.boiler.entity && <span><i className="sw sw-fire" />Boiler firing</span>}
+          <span><i className="sw sw-heat-sm" />{room.name} heating</span>
         </div>
       )}
 
@@ -420,20 +574,20 @@ export function TodayChart({ state, today, error }) {
           <table className="data-table">
             {isAll ? (
               <>
-                <caption className="sr-only">{mInfo.title} in each room, every hour</caption>
+                <caption className="sr-only">{mInfo.title} in each room</caption>
                 <thead><tr><th>Time</th>{series.map((s) => <th key={s.id}>{s.name}</th>)}<th>Boiler</th></tr></thead>
                 <tbody>
-                  {today.times.map((t, i) => ({ t, i })).filter(({ i }) => i % 12 === 0).reverse().map(({ t, i }) => (
-                    <tr key={t}><td>{clock(t, tz)}</td>{series.map((s) => <td key={s.id}>{fmt(s.values[i])}</td>)}<td>{firingAt(t) ? (whyFiring(t)?.text || 'Firing') : ''}</td></tr>
+                  {today.times.map((t, i) => ({ t, i })).filter(({ i }) => i % rowEvery === 0).reverse().map(({ t, i }) => (
+                    <tr key={t}><td>{when(t)}</td>{series.map((s) => <td key={s.id}>{fmt(s.values[i])}</td>)}<td>{long ? hmText(minutesIn(today.boilerRuns, t, t + rowMs)) : firingAt(t) ? (whyFiring(t)?.text || 'Firing') : ''}</td></tr>
                   ))}
                 </tbody>
               </>
             ) : (
               <>
-                <thead><tr><th>Time</th><th>In the room</th><th>Target</th>{today.outside && <th>Outside</th>}<th>Boiler</th></tr></thead>
+                <thead><tr><th>Time</th><th>In the room</th><th>Target</th>{today.outside && <th>Outside</th>}<th>Heating</th></tr></thead>
                 <tbody>
-                  {today.times.map((t, i) => ({ t, i })).filter(({ i }) => i % 12 === 0).reverse().map(({ t, i }) => (
-                    <tr key={t}><td>{clock(t, tz)}</td><td>{deg(room.temps[i])}</td><td>{deg(room.targets[i])}</td>{today.outside && <td>{deg(outside[i])}</td>}<td>{firingAt(t) ? 'Firing' : ''}</td></tr>
+                  {today.times.map((t, i) => ({ t, i })).filter(({ i }) => i % rowEvery === 0).reverse().map(({ t, i }) => (
+                    <tr key={t}><td>{when(t)}</td><td>{deg(room.temps[i])}</td><td>{deg(room.targets[i])}</td>{today.outside && <td>{deg(outside[i])}</td>}<td>{long ? hmText(minutesIn(room.calls, t, t + rowMs)) : minutesIn(room.calls, t, t + rowMs) > 0 ? 'Heating' : ''}</td></tr>
                   ))}
                 </tbody>
               </>
@@ -443,18 +597,27 @@ export function TodayChart({ state, today, error }) {
       ) : (
         <div className="chart" ref={ref}>
           {geo && <svg width={width} height={total} role="img"
-            aria-label={isAll ? `${mInfo.title} in each room over the last 24 hours, with when each room called for heat` : `${room.name}: temperature, target and outside over the last 24 hours`}
+            aria-label={isAll ? `${mInfo.title} in each room, ${rangeTitle.toLowerCase()}, with when each room called for heat` : `${room.name}: temperature, target, outside and when it heated, ${rangeTitle.toLowerCase()}`}
             onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHover(null)}>
-            {today.boilerRuns.map(([a, b], k) => (
+            {isAll && today.boilerRuns.map(([a, b], k) => (
               <rect key={k} className="fire-band" x={tx(Math.max(a, today.from))} y={m.t} width={Math.max(1.5, tx(Math.min(b, today.to)) - tx(Math.max(a, today.from)))} height={(lanes ? total - 4 : H - m.b) - m.t} />
             ))}
+            {!isAll && (room.calls || []).filter(([a, b]) => b > today.from && a < today.to).map(([a, b], k) => {
+              const x0 = tx(Math.max(a, today.from)); const w = Math.max(1.5, tx(Math.min(b, today.to)) - x0);
+              return (
+                <g key={k}>
+                  <rect className="spark-heat" x={x0} y={m.t} width={w} height={H - m.b - m.t} />
+                  <rect className="spark-heat-edge" x={x0} y={H - m.b - 3} width={w} height="3" />
+                </g>
+              );
+            })}
             {yTicks.map((v) => (
               <g key={v}>
                 <line className={`grid${isAll && metric === 'diff' && v === 0 ? ' zero' : ''}`} x1={m.l} x2={width - m.r} y1={y(v)} y2={y(v)} />
                 <text className="axis" x={m.l - 6} y={y(v) + 4} textAnchor="end">{isAll && metric === 'diff' ? (v === 0 ? '0°' : `${v > 0 ? '+' : '−'}${Math.abs(v)}°`) : `${v}°`}</text>
               </g>
             ))}
-            {xTicks.map(({ t, i }) => <text key={t} className="axis" x={x(i)} y={H - 6} textAnchor="middle">{clock(t, tz)}</text>)}
+            {xTicks.map(({ t, i, label }) => <text key={t} className="axis" x={x(i)} y={H - 6} textAnchor="middle">{label}</text>)}
 
             {isAll ? (
               <>
@@ -514,7 +677,7 @@ export function TodayChart({ state, today, error }) {
           </svg>}
           {hv && geo && (
             <div className="tip" style={{ left: tipLeft, width: tipW }} role="status">
-              <b>{clock(hv.t, tz)}{isAll ? ` · ${mInfo.title.toLowerCase()}` : ''}</b>
+              <b>{when(hv.t)}{isAll ? ` · ${mInfo.title.toLowerCase()}` : ''}</b>
               {isAll ? hv.rows.map((r) => (
                 <span key={r.id} className={dim(r.id).trim()}><i className="sw sw-line" style={{ '--c': r.color }} />{r.name}{r.calling && <i className="tip-heat" title="calling for heat" aria-label="calling for heat" />} <em>{fmt(r.v)}</em></span>
               )) : (
@@ -522,12 +685,13 @@ export function TodayChart({ state, today, error }) {
                   <span><i className="sw sw-room" />In the room <em>{deg(hv.temp)}</em></span>
                   <span><i className="sw sw-target" />Target <em>{deg(hv.target)}</em></span>
                   {today.outside && <span><i className="sw sw-out" />Outside <em>{deg(hv.out)}</em></span>}
+                  {long ? (hv.heat > 0 && <span><i className="sw sw-heat-sm" />Heated <em>{hmText(hv.heat)}</em></span>) : hv.heat > 0 && <span><i className="sw sw-heat-sm" />Heating</span>}
                 </>
               )}
               {isAll && hv.why && (
                 <span className="tip-why"><i className={`sw ${hv.why.fire ? 'sw-fire' : 'sw-heat-sm'}`} />{hv.why.text}</span>
               )}
-              {hv.fire && !(isAll && hv.why) && <span><i className="sw sw-fire" />Boiler firing</span>}
+              {hv.fire && !(isAll && hv.why) && <span><i className="sw sw-fire" />{long ? `Boiler ${hmText(minutesIn(today.boilerRuns, hv.t, hv.t + (today.step || 0)))}` : 'Boiler firing'}</span>}
             </div>
           )}
         </div>

@@ -10,6 +10,7 @@ import { DailyLog, buildInsights } from './insights.js';
 import { buildRoomStats } from './roomstats.js';
 import { PredictionLog } from './predictions.js';
 import { HeatLossWatch } from './heatloss.js';
+import { LongLog, buildHistory } from './longlog.js';
 
 export function createHeating({ client, dataDir, log, lightingSummary = () => null }) {
   const store = new Store(dataDir);
@@ -25,10 +26,13 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
   engine.targetLog.keepDays = keep('detailDays', 7);
   engine.callLog.keepDays = keep('detailDays', 7);
   engine.dailyLog.keepDays = keep('dailyDays', 400);
+  engine.longLog = new LongLog(dataDir);
+  engine.longLog.keepDays = keep('dailyDays', 400);
   store.pruneLog();
   let insightsCache = { at: 0, data: null };
   let roomStatsCache = { at: 0, data: null };
   let todayCache = { at: 0, hours: 0, data: null };
+  let historyCache = { at: 0, key: '', data: null };
 
   function extras() {
     const s = store.data.settings;
@@ -157,7 +161,7 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
         return json(res, 200, { entries: store.logBefore(before, limit), total: store.log.length }), true;
       }
       if (p === '/api/storage' && req.method === 'GET') {
-        const files = ['heating.json', 'activity.json', 'daily.json', 'targets.json', 'calls.json', 'lighting.json'].map((name) => {
+        const files = ['heating.json', 'activity.json', 'daily.json', 'history.json', 'targets.json', 'calls.json', 'lighting.json'].map((name) => {
           try { return { name, bytes: fs.statSync(path.join(dataDir, name)).size }; } catch { return { name, bytes: 0 }; }
         });
         const days = Object.keys(engine.dailyLog.days || {}).sort();
@@ -166,6 +170,23 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
           activity: { entries: store.log.length, oldest: store.log[store.log.length - 1]?.at ?? null },
           daily: { days: days.length, oldest: days[0] || null },
         }), true;
+      }
+      // the History chart: ?hours=N (the last N hours), or ?from=&to= (epoch ms)
+      if (p === '/api/history' && req.method === 'GET') {
+        const nowMs = Date.now();
+        const hours = Number(url.searchParams.get('hours'));
+        let from = Number(url.searchParams.get('from'));
+        let to = Number(url.searchParams.get('to')) || nowMs;
+        if (Number.isFinite(hours) && hours > 0) { to = nowMs; from = nowMs - Math.min(hours, 24 * 1100) * 3600000; }
+        if (!Number.isFinite(from) || from <= 0) return json(res, 400, { error: 'Choose a start time' }), true;
+        to = Math.min(to, nowMs);
+        if (!(to > from)) return json(res, 400, { error: 'Choose a start before the end' }), true;
+        // (the same range asked for within a minute: from the last answer)
+        const key = `${Math.round(from / 60000)}|${Math.round(to / 60000)}`;
+        if (historyCache.key !== key || nowMs - historyCache.at > 60000 || url.searchParams.has('fresh')) {
+          historyCache = { at: nowMs, key, data: await buildHistory(engine, { from, to }) };
+        }
+        return json(res, historyCache.data?.error ? 502 : 200, historyCache.data), true;
       }
       if (p === '/api/today' && req.method === 'GET') {
         const hours = Math.min(48, Math.max(6, Number(url.searchParams.get('hours')) || 24));
@@ -279,6 +300,19 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
   function start() {
     engine.start();
     modelTimer = setTimeout(modelLoop, 8000);
+    // the History chart's half-hourly figures: fill in from Home Assistant's history what wasn't
+    // kept (the first time, the last 10 days; after a restart, the time the app was stopped)
+    let tries = 0;
+    const fillNow = async () => {
+      if (!ha.connected) { if (++tries < 20) setTimeout(fillNow, 30000).unref?.(); return; } // Home Assistant still starting
+      const last = engine.longLog.lastAt();
+      const from = Math.max(Date.now() - 10 * 86400000, last != null ? last + 30 * 60000 : 0);
+      try {
+        const n = await engine.longLog.fillFromHistory(engine, { from });
+        if (n) log(`History: filled in ${n} half hours from Home Assistant's history`);
+      } catch (e) { log(`History: couldn't fill in from Home Assistant: ${e.message}`); }
+    };
+    setTimeout(fillNow, Number(process.env.HC_HISTORY_FILL_MS) || 60000).unref?.();
     modelTimer.unref?.();
   }
 
@@ -287,6 +321,7 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
     try { store.flushLog(); } catch {}
     try { engine.targetLog.flush(); } catch {}
     try { engine.dailyLog.flush(); } catch {}
+    try { engine.longLog.flush(); } catch {}
     try { engine.callLog.flush(); } catch {}
     try { engine.predictionLog.flush(); } catch {}
     try { await engine.handBack(); } catch {}
