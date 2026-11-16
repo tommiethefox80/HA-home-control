@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, deg, fmtTime } from './lib.js';
+import { useScrub } from '../scrub.js';
 
 // ---------- data ----------
 export function useToday(enabled) {
@@ -129,6 +130,8 @@ export function SideCards({ state, today }) {
 // The last 24 hours outside, under the Outside card's number (like each room card's day graph).
 function OutsideSpark({ today, now, tz }) {
   const [hv, setHv] = useState(null);
+  const moveRef = useRef(null);
+  const scrub = useScrub((e) => moveRef.current?.(e), () => setHv(null));
   const d = useMemo(() => {
     const series = today?.outside?.series;
     if (!series || !today.times?.length) return null;
@@ -161,9 +164,10 @@ function OutsideSpark({ today, now, tz }) {
     for (const p of d.pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
     setHv({ ...best, f: d.x(best.t) / 1440 });
   };
+  moveRef.current = onMove;
   return (
-    <div className="spark out-spark">
-      <div className="spark-plot" onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHv(null)}>
+    <div className="spark out-spark scrub-area">
+      <div className="spark-plot scrub" {...scrub}>
         <svg viewBox="0 0 1440 40" preserveAspectRatio="none" role="img" aria-label="Outside temperature over the last 24 hours">
           {d.midnight && <line className="out-midnight" x1={d.x(d.midnight)} x2={d.x(d.midnight)} y1="0" y2="40" />}
           <path className="spark-line out-line" d={d.path} />
@@ -363,6 +367,8 @@ export function TodayChart({ state, today: day, error: dayError }) {
   const series = useMemo(() => (isAll ? roomSeries(rooms, metric) : []), [isAll, rooms, metric]);
   const [ref, width] = useWidth();
   const [hover, setHover] = useState(null);
+  const chartMove = useRef(null);
+  const scrub = useScrub((e) => chartMove.current?.(e), () => setHover(null));
   const [table, setTable] = useState(false);
   const tz = state.timeZone;
   const span = today ? today.to - today.from : DAYMS;
@@ -483,6 +489,7 @@ export function TodayChart({ state, today: day, error: dayError }) {
     if (i < 0 || i >= geo.n) return setHover(null);
     setHover(i);
   };
+  chartMove.current = onMove;
   const firingAt = (t) => today.boilerRuns.some(([a, b]) => t >= a && t <= b + (long ? (today.step || 0) - 1 : 0));
   const callAt = (r, t) => (r.calls || []).find(([a, b]) => t >= a && t <= b);
   const callersAt = (t) => rooms.map((r) => ({ r, c: callAt(r, t) })).filter((x) => x.c).sort((p, q) => p.c[0] - q.c[0])
@@ -595,10 +602,10 @@ export function TodayChart({ state, today: day, error: dayError }) {
           </table>
         </div>
       ) : (
-        <div className="chart" ref={ref}>
-          {geo && <svg width={width} height={total} role="img"
+        <div className="chart scrub-area" ref={ref}>
+          {geo && <svg width={width} height={total} role="img" className="scrub"
             aria-label={isAll ? `${mInfo.title} in each room, ${rangeTitle.toLowerCase()}, with when each room called for heat` : `${room.name}: temperature, target, outside and when it heated, ${rangeTitle.toLowerCase()}`}
-            onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHover(null)}>
+            {...scrub}>
             {isAll && today.boilerRuns.map(([a, b], k) => (
               <rect key={k} className="fire-band" x={tx(Math.max(a, today.from))} y={m.t} width={Math.max(1.5, tx(Math.min(b, today.to)) - tx(Math.max(a, today.from)))} height={(lanes ? total - 4 : H - m.b) - m.t} />
             ))}

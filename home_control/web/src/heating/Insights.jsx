@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, deg, fmtTime } from './lib.js';
+import { useScrub } from '../scrub.js';
 
 // ---------- formatting ----------
 const sym = (u) => ({ GBP: '£', EUR: '€', USD: '$' }[u] ?? '');
@@ -32,6 +33,8 @@ function useWidth() {
 function DailyBars({ days, value, format, colorVar, label, avg, tip }) {
   const [ref, width] = useWidth();
   const [hover, setHover] = useState(null);
+  const moveRef = useRef(null);
+  const scrub = useScrub((e) => moveRef.current?.(e), () => setHover(null));
   const H = 190;
   const m = { l: 44, r: 8, t: 10, b: 24 };
   const vals = days.map(value).filter((v) => v != null);
@@ -48,11 +51,12 @@ function DailyBars({ days, value, format, colorVar, label, avg, tip }) {
     const i = Math.floor((e.clientX - r.left - m.l) / bw);
     setHover(i >= 0 && i < n ? i : null);
   };
+  moveRef.current = onMove;
   const h = hover != null ? days[hover] : null;
   return (
-    <div className="chart" ref={ref} style={{ minHeight: H }}>
+    <div className="chart scrub-area" ref={ref} style={{ minHeight: H }}>
       {width > 0 && (
-        <svg width={width} height={H} role="img" aria-label={label} onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHover(null)}>
+        <svg width={width} height={H} role="img" aria-label={label} className="scrub" {...scrub}>
           {ticks.map((v) => (
             <g key={v}>
               <line className="grid" x1={m.l} x2={width - m.r} y1={y(v)} y2={y(v)} />

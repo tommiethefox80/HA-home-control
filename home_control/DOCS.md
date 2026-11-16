@@ -291,7 +291,7 @@ While it runs, the button shows the time left. When it ends, or when you press *
 
 ## Today, gas and outside
 
-Each room's card has a small graph of today: the room's temperature since midnight, with orange shading where that room was calling for heat, plus how many times it fired and for how long ("Fired 3 times · 2h 10m today") and the day's low and high. It sits right above the schedule strip on the same 00:00–24:00 scale, so you can see the room warming during each scheduled period. Tap or hover for the exact time and temperature. The Boiler card shows how many times the boiler itself fired today.
+Each room's card has a small graph of today: the room's temperature since midnight, with orange shading where that room was calling for heat, plus how many times it fired and for how long ("Fired 3 times · 2h 10m today") and the day's low and high. It sits right above the schedule strip on the same 00:00–24:00 scale, so you can see the room warming during each scheduled period. Tap or hover for the exact time and temperature. On a phone, touch and hold the graph, or drag along it, to move along the day; the reading stays a few seconds after you lift your finger. (The same works on every chart in the app.) The Boiler card shows how many times the boiler itself fired today.
 
 Turn the graph and the fired count on or off in **Settings → Heating → Room cards** (for everyone in the house). With only the count on, cards show just the "Fired…" line.
 

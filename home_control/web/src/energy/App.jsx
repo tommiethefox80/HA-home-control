@@ -6,6 +6,7 @@ import { Icon, Sheet, Toggle, Field, Notice, Chips } from '../lighting/ui.jsx';
 import { goDashboard } from '../lighting/lib.js';
 import { SettingsFrame, settingsPage } from '../SettingsFrame.jsx';
 import { api, useLiveState, clock, when, span, dayWord, money, pence, kwh, hoursText, BAND, watts } from './lib.js';
+import { useScrub } from '../scrub.js';
 
 const TABS = [
   { id: 'today', label: 'Today', icon: 'bolt' },
@@ -206,6 +207,8 @@ function PriceChart({ state }) {
   const [pick, setPick] = useState(null);
   const [list, setList] = useState(false);
   const ref = useRef(null);
+  const moveRef = useRef(null);
+  const scrub = useScrub((e) => moveRef.current?.(e), () => setPick(null));
   const W = 720; const Hh = 170; const top = 14; const bottom = 4;
   const from = rates[0].s; const to = rates[rates.length - 1].e;
   const maxP = Math.max(5, ...rates.map((r) => r.p));
@@ -235,6 +238,7 @@ function PriceChart({ state }) {
     const i = rates.findIndex((r) => r.s <= t && t < r.e);
     if (i >= 0) setPick(i);
   };
+  moveRef.current = onMove;
   const r = shown != null ? rates[shown] : null;
   const legend = [...new Set(rates.map((x2) => x2.b))].filter(Boolean);
   const order = ['free', 'cheap', 'standard', 'peak'];
@@ -249,11 +253,11 @@ function PriceChart({ state }) {
           <p className="en-tip" aria-live="polite">
             {r ? <><strong>{span(r.s, r.e, tz, state.now)}</strong> · {pence(r.p)}{r.b ? ` · ${BAND[r.b].word}` : ''}{r.adj ? ' (car charging)' : ''}{shown === nowIdx ? ' · now' : ''}</> : ' '}
           </p>
-          <div className="en-plot">
+          <div className="en-plot scrub-area">
           <span className="en-ymax" aria-hidden="true">{pence(maxP)}</span>
-          <svg ref={ref} className="en-svg" viewBox={`0 0 ${W} ${Hh}`} preserveAspectRatio="none" role="img" tabIndex={0}
+          <svg ref={ref} className="en-svg scrub" viewBox={`0 0 ${W} ${Hh}`} preserveAspectRatio="none" role="img" tabIndex={0}
             aria-label={`Half-hourly electricity prices from ${pence(Math.min(...rates.map((q) => q.p)))} to ${pence(maxP)}. Use the arrow keys to read each one.`}
-            onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setPick(null)}
+            {...scrub}
             onKeyDown={(e) => { if (e.key === 'ArrowRight') { step(1); e.preventDefault(); } if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); } }}>
             {[0.5, 1].map((f) => { const p = minP + (maxP - minP) * f; return <line key={f} className="en-grid" x1="0" x2={W} y1={y(p)} y2={y(p)} />; })}
             {best && <rect className="en-best" x={x(best.start)} y={top - 10} width={Math.max(2, x(best.end) - x(best.start))} height={Hh - top - bottom + 10} rx="4" />}
@@ -558,7 +562,7 @@ function History({ state }) {
             {!table ? (
               <>
                 <p className="en-tip" aria-live="polite">{p ? <><strong>{dayWord(p.day, tz)}</strong>{costs ? ` · ${money(val(p), cur)}` : ''} · electricity {costs && p.elecCost != null ? `${money(p.elecCost, cur)}, ` : ''}{kwh(p.elecKwh)}{data.gasUnit ? ` · gas ${p.gasCost != null ? `${money(p.gasCost, cur)}, ` : ''}${p.gasKwh != null ? `${Math.round(p.gasKwh * 10) / 10} ${data.gasUnit}` : '–'}` : ''}</> : 'Hover over or tap a day'}</p>
-                <div className="en-daybars" role="img" aria-label={`${costs ? 'Cost' : 'Electricity used'} each day for the last ${n} days`} onPointerLeave={() => setPick(null)}>
+                <div className="en-daybars scrub-area" role="img" aria-label={`${costs ? 'Cost' : 'Electricity used'} each day for the last ${n} days`} onPointerLeave={() => setPick(null)}>
                   {data.list.map((d, i) => (
                     <button type="button" key={d.day} className={`en-daybar${i === pick ? ' en-on' : ''}`} onPointerEnter={() => setPick(i)} onFocus={() => setPick(i)} onClick={() => setPick(i)} aria-label={`${dayWord(d.day, tz)}: ${costs ? money(val(d), cur) : kwh(d.elecKwh)}`}>
                       {costs && data.gasCosts ? (

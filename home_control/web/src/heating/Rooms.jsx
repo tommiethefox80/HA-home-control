@@ -156,7 +156,7 @@ function RoomCard({ z, state, onOpen, notify, today }) {
   };
 
   return (
-    <article className={`room${z.enabled ? '' : ' disabled'}`} style={{ '--heat': thermal(target) }}>
+    <article className={`room scrub-area${z.enabled ? '' : ' disabled'}`} style={{ '--heat': thermal(target) }}>
       <button className="room-name" onClick={onOpen} aria-label={`${z.name}: details and boost`}>
         {z.name}
         {z.calling && !z.blocked && <span className="calling"><Icon.flame />Heating</span>}

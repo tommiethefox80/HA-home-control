@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.16.1
+- **Fixed: reading a chart on a phone.** On iPhone, touching and holding a room card's graph (or any chart) selected the text beside it instead of showing the reading, and the reading vanished as soon as you lifted your finger. Now touch and hold, or drag along the chart, to move the reading; it stays a few seconds after you lift your finger, and nothing gets selected. Up and down still scrolls the page.
+
 ## 1.16.0
 - **Heating history, as far back as you like.** The chart under the rooms (the last 24 hours until now) has a choice of range: the last 6 or 12 hours, 24 hours, 2, 3, 7, 14, 30 or 90 days, the last year, or chosen dates. Pick a room for its temperature, target and outside with shading where it heated, as on its card, or All rooms to compare them; above the chart, how long it heated, its average temperature, the boiler's hours and the outside average. A room's page has **Its heating history**.
 - Home Assistant keeps detailed history for about 10 days, so Home Control now keeps its own record every half hour (each room's temperature, target and minutes heated, outside and the boiler), as long as the daily totals (400 days to start with). The last 10 days are filled in from Home Assistant's history the first time, and any gap after the app's been stopped. Before the record starts, a range of two weeks or more is drawn in days from the daily totals.

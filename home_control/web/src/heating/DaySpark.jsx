@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useScrub } from '../scrub.js';
 import { deg } from './lib.js';
 
 // A small "today" graph for a room card: the room's temperature since midnight, with shading
@@ -19,6 +20,8 @@ const WHY = { preheat: 'warming early', boost: 'boost', hold: 'hold', manual: 'c
 // heating, where it should be done).
 export default function DaySpark({ room, today, tz, current, next = null, show = { spark: true, fires: true } }) {
   const [hv, setHv] = useState(null);
+  const moveRef = useRef(null);
+  const scrub = useScrub((e) => moveRef.current?.(e), () => setHv(null));
   const d = useMemo(() => {
     if (!room || !today?.dayStart) return null;
     const start = today.dayStart;
@@ -75,14 +78,15 @@ export default function DaySpark({ room, today, tz, current, next = null, show =
     const call = !best.predicted && d.calls.find(([a, b]) => best.t >= a && best.t <= b);
     setHv({ ...best, f: (best.t - d.start) / DAY, heating: !!call, why: call ? WHY[call[2]] || null : null, target: call?.[3] ?? null });
   };
+  moveRef.current = onMove;
 
   return (
-    <div className="spark">
+    <div className="spark scrub-area">
       <div className="spark-head">
         <span className="spark-label"><i className="sw-heat" aria-hidden="true" /><span>{summary}</span></span>
         <span className="num">{deg(d.lo)}–{deg(d.hi)}</span>
       </div>
-      <div className="spark-plot" onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHv(null)}>
+      <div className="spark-plot scrub" {...scrub}>
         <svg viewBox={`0 0 1440 ${H}`} preserveAspectRatio="none" role="img"
           aria-label={`${room.name} today: between ${deg(d.lo)} and ${deg(d.hi)}, ${heated ? `heated for ${hm(heated)}` : 'not heated yet'}${showFires && fired ? `, fired ${times(fired)}` : ''}`}>
           {d.calls.map(([a, b], k) => (
