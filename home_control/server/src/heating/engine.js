@@ -714,7 +714,7 @@ export class Engine extends EventEmitter {
     for (const h of this.heatLoss?.elevated?.() || []) {
       if (h.dismissed) continue;
       const v = views.find((x) => x.id === h.id && x.enabled);
-      if (v) out.push({ key: `loss-${v.id}`, room: v.name, dismiss: `heatloss/${v.id}`, text: `${v.name} has been losing heat at least ${h.percent}% faster than usual over the last two days, allowing for the weather${h.windMatched ? ' and the wind' : ''}. Check for a window or trickle vent left open, or a new draught.` });
+      if (v) out.push({ key: `loss-${v.id}`, room: v.name, dismiss: `heatloss/${v.id}`, text: `${v.name} has been losing heat at least ${h.percent}% faster than on its days as cold${h.outside != null && h.coldMatched ? ` (about ${Math.round(h.outside)}° outside)` : ''} over the last two days, allowing for the weather${h.windMatched ? ' and the wind' : ''}. Check for a window or trickle vent left open, or a new draught.` });
     }
     const b = this.s.boiler;
     if (b.entity) {
@@ -1123,7 +1123,7 @@ export class Engine extends EventEmitter {
     }
     if (which === 'heatloss') {
       const e = extra || { room: 'Bedroom', percent: 45 };
-      return { title: `${e.room}: losing heat faster`, message: `${e.room} has been losing heat at least ${e.percent}% faster than usual over the last two days, allowing for the weather. Worth checking for a window or trickle vent left open, or a new draught.` };
+      return { title: `${e.room}: losing heat faster`, message: `${e.room} has been losing heat at least ${e.percent}% faster than on its days as cold, over the last two days. Worth checking for a window or trickle vent left open, or a new draught.` };
     }
     if (which === 'window') {
       const e = extra || { room: 'Kitchen', drop: 1.2, until: Date.now() + 20 * 60000 };
@@ -1194,7 +1194,7 @@ export class Engine extends EventEmitter {
   heatLossAlert(zoneId, percent) {
     const zone = this.zones.find((z) => z.id === zoneId);
     if (!zone?.enabled) return;
-    this.note(`${zone.name}: losing heat at least ${percent}% faster than usual over the last two days, allowing for the weather`);
+    this.note(`${zone.name}: losing heat at least ${percent}% faster than on its days as cold over the last two days`);
     this.#alert('heatloss', [], null, false, { room: zone.name, percent });
   }
 

@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.16.2
+- **Fixed: rooms "losing heat 200% faster than usual" as the weather turns cold.** Heat loss is measured from the air, but most of a room's warmth is in its walls and furniture. On cold days they sit cooler under the heated air, so the air falls into them faster once the radiators go off, and the heating runs more often, so the stretches with no heat come sooner after it. With nothing wrong, a room reads a quarter faster in mid-November than in mid-October, and two-thirds faster in a cold snap, and the check compared that with the milder month before. Now each room's last two days are compared only with its own days that were as cold or colder (over the last two months), so the first cold spell of the winter builds its cold-weather usual rather than raising notices. Each of the two days also has to be at least half the threshold faster on its own, so one odd day isn't enough. In a simulated autumn the old check raised a notice for an unchanged room more than half the time; now it doesn't, and it still finds a new draught as often. Notices already showing go when the next check runs (within half an hour), with a line in Activity saying why.
+
 ## 1.16.1
 - **Fixed: reading a chart on a phone.** On iPhone, touching and holding a room card's graph (or any chart) selected the text beside it instead of showing the reading, and the reading vanished as soon as you lifted your finger. Now touch and hold, or drag along the chart, to move the reading; it stays a few seconds after you lift your finger, and nothing gets selected. Up and down still scrolls the page.
 

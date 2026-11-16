@@ -254,9 +254,10 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
       const skip = engine.unusualDays(60);
       engine.heatLoss.update(data, Date.now(), { skip });
       const enabled = store.data.zones.filter((z) => z.enabled);
-      const { alerts, normal } = engine.heatLoss.check(enabled.map((z) => z.id), { percent: store.data.settings.heatLoss?.percent ?? 40, tz: ha.timeZone || 'UTC', skip });
+      const { alerts, normal, colder = [] } = engine.heatLoss.check(enabled.map((z) => z.id), { percent: store.data.settings.heatLoss?.percent ?? 40, tz: ha.timeZone || 'UTC', skip });
       for (const a of alerts) engine.heatLossAlert(a.id, a.percent);
       for (const id of normal) { const z = enabled.find((x) => x.id === id); if (z) engine.note(`${z.name}: losing heat at its usual rate again`); }
+      for (const id of colder) { const z = enabled.find((x) => x.id === id); if (z) engine.note(`${z.name}: no longer flagged as losing heat faster; it's colder than any day it has to compare with, so it's learning its cold-weather usual first`); }
       for (const r of data.rooms) {
         r.lossTrend = engine.heatLoss.view(r.id);
         r.correction = engine.predictionLog.scaleFor(r.id);

@@ -1,7 +1,7 @@
 // Heat-loss alerts that the weather can't set off, and dismissing them.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HeatLossWatch, likeForLike } from '../../src/heating/heatloss.js';
+import { HeatLossWatch, likeForLike, asCold } from '../../src/heating/heatloss.js';
 import { coolDowns, windKmh } from '../../src/heating/roomstats.js';
 
 const H = 3600000;
@@ -73,7 +73,7 @@ test('windier than any day it can compare with: not compared at all', () => {
   const r = likeForLike(Array.from({ length: 8 }, () => ({ k: 0.05, wind: 10 })), 60);
   assert.equal(r.windy, true);
   const w = new HeatLossWatch(null);
-  w.update({ rooms: [{ id: 'bed', daily: [...usual({ wind: 10 }), { day: day(1), k: 0.2, kLow: 0.2, n: 3, wind: 65 }] }] }, now);
+  w.update({ rooms: [{ id: 'bed', daily: [...usual({ wind: 10 }), { day: day(1), k: 0.2, kLow: 0.2, n: 3, wind: 65 }, { day: day(0), k: 0.2, kLow: 0.2, n: 1, wind: 62 }] }] }, now);
   assert.deepEqual(w.check(['bed'], { percent: 40, now, tz: 'UTC' }).alerts, []);
   assert.equal(w.view('bed').tooWindy, true);
   // calmer than usual: compared with the calmest days it has (as windy or windier), so it's a fair test
@@ -95,7 +95,7 @@ test('a dismissed notice stays hidden until the room is back to normal, then can
   w.update({ rooms: [{ id: 'kids', daily: [...usual(), ...leaky(now)] }] }, now);
   assert.equal(w.check(['kids'], { now, tz: 'UTC' }).alerts.length, 1);
   assert.equal(w.dismiss('kids', now), true);
-  assert.deepEqual(w.elevated(), [{ id: 'kids', percent: 100, dismissed: true, windMatched: false }]);
+  assert.deepEqual(w.elevated(), [{ id: 'kids', percent: 100, dismissed: true, windMatched: false, coldMatched: false, outside: null }]);
   // a morning with too little to go on doesn't undo it
   const t1 = now + 2 * 86400000;
   w.check(['kids'], { now: t1, tz: 'UTC' });
@@ -117,4 +117,90 @@ test('a dismissed notice stays hidden until the room is back to normal, then can
   assert.equal(w.elevated()[0].dismissed, false);
   // nothing to dismiss when it isn't faster
   assert.equal(new HeatLossWatch(null).dismiss('kids'), false);
+});
+
+test('cold days are compared with the room\'s own days as cold (1.16.2)', () => {
+  // mild October days lose 0.04; the room reads 0.06 on its colder days, with nothing wrong
+  const days = [
+    ...Array.from({ length: 8 }, (_, i) => ({ day: day(i + 2), k: 0.04, kLow: 0.036, n: 3, out: 11 })),
+    ...Array.from({ length: 5 }, (_, i) => ({ day: day(i + 10), k: 0.06, kLow: 0.054, n: 3, out: 3 })),
+  ];
+  const w = new HeatLossWatch(null);
+  w.update({ rooms: [{ id: 'back', daily: [...days, { day: day(1), k: 0.065, kLow: 0.06, n: 2, out: 4 }, { day: day(0), k: 0.066, kLow: 0.061, n: 2, out: 3.5 }] }] }, now);
+  assert.deepEqual(w.check(['back'], { percent: 40, now, tz: 'UTC' }).alerts, [], 'no worse than its other cold days');
+  const v = w.view('back');
+  assert.equal(v.coldMatched, true);
+  assert.equal(v.usualK, 0.06);
+  assert.equal(v.outside, 3.8);
+  // the same rate on a mild day is worth a look
+  w.update({ rooms: [{ id: 'back', daily: [{ day: day(1), k: 0.065, kLow: 0.06, n: 2, out: 11 }, { day: day(0), k: 0.066, kLow: 0.061, n: 2, out: 10.5 }] }] }, now);
+  assert.deepEqual(w.check(['back'], { percent: 40, now, tz: 'UTC' }).alerts.map((a) => a.id), ['back']);
+});
+
+test('colder than any day it has: not compared (the first cold spell builds its usual)', () => {
+  assert.equal(asCold(Array.from({ length: 10 }, () => ({ k: 0.04, out: 11 })), 3).cold, true);
+  assert.equal(asCold(Array.from({ length: 10 }, () => ({ k: 0.04, out: 11 })), 10).cold, false);
+  assert.equal(asCold([{ k: 0.04, out: null }], null).matched, false); // no outside figures: as before
+  const w = new HeatLossWatch(null);
+  const mild = Array.from({ length: 10 }, (_, i) => ({ day: day(i + 2), k: 0.04, kLow: 0.036, n: 3, out: 11 }));
+  // flagged on mild days first
+  w.update({ rooms: [{ id: 'back', daily: [...mild, { day: day(1), k: 0.1, kLow: 0.09, n: 2, out: 10 }, { day: day(0), k: 0.1, kLow: 0.09, n: 2, out: 10 }] }] }, now);
+  assert.equal(w.check(['back'], { now, tz: 'UTC' }).alerts.length, 1);
+  // then a cold snap: no longer compared, said as such rather than "back to its usual"
+  w.update({ rooms: [{ id: 'back', daily: [{ day: day(1), k: 0.12, kLow: 0.11, n: 2, out: 1 }, { day: day(0), k: 0.12, kLow: 0.11, n: 2, out: 0 }] }] }, now);
+  const r = w.check(['back'], { now, tz: 'UTC' });
+  assert.deepEqual([r.alerts, r.normal, r.colder], [[], [], ['back']]);
+  assert.equal(w.view('back').newCold, true);
+});
+
+test('one odd day isn\'t enough: both of the last two days have to be faster', () => {
+  const w = new HeatLossWatch(null);
+  w.update({ rooms: [{ id: 'kids', daily: [...usual(), { day: day(1), k: 0.05, kLow: 0.045, n: 2 }, { day: day(0), k: 0.2, kLow: 0.19, n: 3 }] }] }, now);
+  assert.deepEqual(w.check(['kids'], { now, tz: 'UTC' }).alerts, []);
+  // only today so far: nothing to go on yet
+  const w2 = new HeatLossWatch(null);
+  w2.update({ rooms: [{ id: 'kids', daily: [...usual(), { day: day(0), k: 0.2, kLow: 0.19, n: 3 }] }] }, now);
+  assert.deepEqual(w2.check(['kids'], { now, tz: 'UTC' }).alerts, []);
+});
+
+// A room as it really is: warm air over walls and furniture that hold most of the heat (two parts,
+// not the one Newton's law assumes). Through an autumn that gets colder, with nothing changed,
+// the measured k rises; that mustn't be told as a draught. A window left open must still be.
+function autumn({ days = 45, windowFrom = null } = {}) {
+  const STEP = 5 * 60000; const start = Date.UTC(2026, 9, 1);
+  const sched = (h) => (h >= 6.5 && h < 9 ? 18 : h >= 17 && h < 22.5 ? 20 : 15);
+  const outAt = (t) => { const d = (t - start) / 86400000; return 13 - d * 0.22 + 2.5 * Math.sin(d * 1.3) + 3 * Math.sin(((t / H) % 24 - 9) / 24 * 2 * Math.PI); };
+  const times = []; const temps = []; const outside = []; const heated = [];
+  let Ta = 15; let Tf = 14.5; let calling = false;
+  for (let i = 0; i < days * 288; i++) {
+    const t = start + i * STEP; const target = sched(((t - start) / H) % 24); const To = outAt(t);
+    if (Ta < target - 0.3) calling = true; if (Ta > target + 0.2) calling = false;
+    const vent = windowFrom != null && t >= start + windowFrom * 86400000 ? 0.18 : 0.12;
+    for (let s = 0; s < 5; s++) {
+      const dTa = 1.2 * (Tf - Ta) + vent * (To - Ta) + (calling ? 8 : 0);
+      const dTf = (1.2 * (Ta - Tf) + 0.1 * (To - Tf)) / 12;
+      Ta += dTa / 60; Tf += dTf / 60;
+    }
+    times.push(t); temps.push(Math.round(Ta * 10) / 10); outside.push(To); heated.push(calling);
+  }
+  const cools = coolDowns(times, temps, outside, heated);
+  const by = {};
+  for (const c of cools) if (c.gap >= 5) (by[new Date(c.at).toISOString().slice(0, 10)] ||= []).push(c);
+  const med = (a) => { const v = [...a].sort((x, y) => x - y); const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+  const daily = Object.entries(by).map(([d, cs]) => ({ day: d, k: med(cs.map((c) => c.k)), kLow: med(cs.map((c) => c.kLow)), n: cs.length, wind: null, out: med(cs.map((c) => c.outside)) }));
+  // checked each evening, as the app does every half hour
+  const w = new HeatLossWatch(null); const told = [];
+  for (let d = 0; d < days; d++) {
+    const at = start + d * 86400000 + 23 * H;
+    const key = new Date(at).toISOString().slice(0, 10);
+    w.update({ rooms: [{ id: 'back', daily: daily.filter((x) => x.day <= key && x.day > new Date(at - 7 * 86400000).toISOString().slice(0, 10)) }] }, at);
+    for (const a of w.check(['back'], { now: at, tz: 'UTC' }).alerts) told.push({ day: d, percent: a.percent });
+  }
+  return told;
+}
+
+test('an unchanged room through a colder and colder autumn: no notices; a window left open: told', () => {
+  assert.deepEqual(autumn(), []);
+  const open = autumn({ windowFrom: 38 });
+  assert.ok(open.length >= 1 && open[0].day >= 38 && open[0].day <= 41, JSON.stringify(open));
 });

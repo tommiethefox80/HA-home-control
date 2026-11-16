@@ -227,7 +227,8 @@ export async function buildRoomStats(engine, { days = 7, windEntity = null } = {
     for (const c of cools) if (c.gap >= MIN_GAP) (by[dayOf(c.at)] ||= []).push(c);
     return Object.entries(by).sort().map(([day, cs]) => {
       const winds = cs.map((c) => c.wind).filter((x) => x != null);
-      return { day, k: r4(median(cs.map((c) => c.k))), kLow: r4(median(cs.map((c) => c.kLow ?? c.k))), n: cs.length, wind: winds.length ? r1(median(winds)) : null };
+      const outs = cs.map((c) => c.outside).filter((x) => x != null);
+      return { day, k: r4(median(cs.map((c) => c.k))), kLow: r4(median(cs.map((c) => c.kLow ?? c.k))), n: cs.length, wind: winds.length ? r1(median(winds)) : null, out: outs.length ? r1(median(outs)) : null };
     });
   };
 
