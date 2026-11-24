@@ -96,7 +96,7 @@ Settings → General → **Home Assistant entities** makes your lighting groups,
 | Entity | What it does |
 |---|---|
 | `light.home_control_<group>` (one for each lighting group) | On (at the level its schedule uses at this time of day), off, brightness and warmth, until the group's next scheduled change. Shows the group's state. |
-| `climate.home_control_<room>` (one for each heating room) | A temperature holds until the room's next scheduled change. **Off** snoozes the room (at the frost temperature) until it's turned back on; **Heat** puts it back on its schedule. Shows the room's temperature, what it's aiming for and whether it's heating. |
+| `climate.home_control_<room>` (one for each heating room) | A temperature holds until the room's next scheduled change. **Off** snoozes the room (at the frost temperature) until it's turned back on; **Heat** puts it back on its schedule. Shows the room's temperature, what it's aiming for and whether it's heating, and its humidity if it has a humidity sensor. |
 | `scene.home_control_<scene>` | Runs a lighting scene. |
 | `switch.home_control_away` | Away for the whole house; off goes back to the schedules. |
 | `select.home_control_heating_mode` | Schedules, Away or Heating off. |
@@ -115,7 +115,7 @@ The app keeps these sensors up to date in Home Assistant, for dashboards, automa
 
 | Sensor | State | Attributes |
 |---|---|---|
-| `sensor.home_heating` | Schedules, Away or Off | `boiler` ("Boiler resting, next on about 22:05"), `boiler_on`, `boiler_next` and `boiler_next_rooms` (when it should next fire, and for which rooms), `boiler_until` (while it's on, about when it'll be done), `boiler_today` ("1h 30m"), `boiler_today_minutes`, `boiler_fires_today`, `mode_text`, `boost`, `attention`, and `rooms`: each room's `name`, `temp`, `target`, `calling`, `status`, `next` ("Next heat about 22:05"), `next_why` ("as it cools to 20.7°"), `next_heat` and `heating_until` (times) |
+| `sensor.home_heating` | Schedules, Away or Off | `boiler` ("Boiler resting, next on about 22:05"), `boiler_on`, `boiler_next` and `boiler_next_rooms` (when it should next fire, and for which rooms), `boiler_until` (while it's on, about when it'll be done), `boiler_today` ("1h 30m"), `boiler_today_minutes`, `boiler_fires_today`, `mode_text`, `boost`, `attention`, and `rooms`: each room's `name`, `temp`, `target`, `calling`, `status`, `next` ("Next heat about 22:05"), `next_why` ("as it cools to 20.7°"), `next_heat` and `heating_until` (times), and for rooms with a humidity sensor `humidity` (%), `damp` (`fine`, `watch` or `mould`, from the last week) and `condensation` (true when the windows are likely running wet) |
 | `binary_sensor.home_boiler` | on while the boiler is firing | |
 | `sensor.home_boiler_today` | minutes the boiler has run today (resets at midnight; Home Assistant keeps daily statistics) | `fires`: how many times it started |
 | `sensor.home_boiler_next` | when the boiler should next fire (a timestamp; unknown while it's on, or if nothing needs heat in the next 24 hours) | `rooms`, `reason` ("as it cools to 20.7°"), `on_until` (while it's on) |
@@ -129,7 +129,7 @@ Home Assistant forgets them when it restarts; the app writes them again as soon 
 
 A dashboard card that shows the heating or the lighting at a glance, in the app's colours.
 
-- **Heating:** every room's temperature, what it's aiming for and why, when it next heats ("Next heat about 22:05", or "Heating until about 21:15"), and the boiler, with when it next fires and how long it has run today. Tap it to open the app. Add `next: false` to leave out the next-heat lines.
+- **Heating:** every room's temperature, what it's aiming for and why, when it next heats ("Next heat about 22:05", or "Heating until about 21:15"), and the boiler, with when it next fires and how long it has run today. Tap it to open the app. Add `next: false` to leave out the next-heat lines. Rooms with a humidity sensor show their humidity next to the temperature (in amber when they're damp or the windows will be wet); add `humidity: false` to leave it out.
 - **Lighting:** every group, with a power button and, where its lights dim, minus and plus (in the brightness step from Lighting settings). With **Each light and socket** turned on for the dashboard card (Lighting settings), each one is listed under its group with its own switch and minus and plus; `devices: true` or `devices: false` on a card overrides that for that card. Switching on uses the level the group's schedule uses at that time of day. A change made here counts as a change in Home Assistant by whoever made it, so it lasts until the group's next scheduled change. Tap a group's name, or the title, to open the app.
 - **Which groups it shows:** each group has a **Dashboard** setting (Lighting → Settings → Edit the group): **Show**, **Hide**, or, for a group with a season, show only between its dates (Christmas lights only in December, say). Hidden groups still follow their schedules and are all still in the app.
 
@@ -311,6 +311,9 @@ Under the rooms is a chart of the heating, the last 24 hours to start with. Pick
 - **Temperature** (the default): how warm each room actually was.
 - **Target**: what each room was aiming for. Rooms sharing a target are drawn just apart so none hide.
 - **vs target**: how far above or below its target each room was. A room that sits well below 0° for long spells is struggling to warm.
+- **Humidity**, when any room has a humidity sensor: each of those rooms' humidity.
+
+A room with a humidity sensor has **Temperature** and **Humidity** above its chart. Humidity shows the room's humidity, and how humid the air was against its coldest spots (see [Humidity and damp](#humidity-and-damp)), with a line at 80%. The tooltip and the table have both, and the line above the chart has its average.
 
 Under the All rooms chart, **Calling for heat** has a lane per room, in the same colours, marking when each room asked for heat. The boiler shading runs down through the lanes, so you can see which room set it off. Tap or hover inside a firing period and the readout says what fired the boiler and why, for example "Fired by Lounge (schedule) · then Kitchen (boost)". Rooms that were calling at that moment are marked in the list. The reasons are schedule, warming early, boost, hold, changed on the radiator, away and snooze. The table view's Boiler column says the same. Reasons are recorded from this version on; earlier heat-ups show without one.
 
@@ -320,6 +323,29 @@ Room temperatures and boiler runs come from Home Assistant's history, so the cha
 
 Pick the gas cost sensor and the outside temperature in **Settings → Heating → Gas cost and outside**, or leave them on **Find automatically**. Any sensor that counts today's cost and resets at midnight works, such as Octopus Energy's "Current Accumulative Cost Gas". For outside, use a weather entity or an outdoor thermometer.
 
+## Humidity and damp
+
+Most room thermometers measure humidity too. When a room's thermometer (Settings → Heating → Rooms → Edit → Room thermometer) has a humidity sensor on the same device, or one named the same way (`sensor.lounge_temperature` and `sensor.lounge_humidity`), Home Control uses it. Without a thermometer, a radiator that reports humidity itself is used. Under **Humidity** in the room's settings you can pick another sensor, or **Don't show humidity**.
+
+- **The room card** shows it under the temperature ("62% humidity"), flagged **Damp** when its coldest spots have been damp enough for mould over the last week, or **Condensation** when the windows are likely running wet now.
+- **The room's page** has a Humidity section: the humidity now (under 40% dry, 40 to 60% comfortable, up to 70% humid, then very humid) and its dew point, how humid the air is against the coldest bits of wall right now, whether to expect condensation on the windows, and the last week: its average, its coldest spots' average and how long they were over 80%. When it's damp, what to do about it. The list of devices shows the thermometer, with its temperature and humidity, above the radiators' own readings.
+- **Insights → Damp and condensation** compares the rooms over the last week.
+- **The History chart** has the humidity (above), and the dashboard card shows it beside each room's temperature.
+
+**Why the coldest spots.** Mould doesn't go by the room's humidity but by how humid the air is right against a surface, and the same air is more humid where it's colder. The coldest bits of an outside wall (corners, round the windows, behind wardrobes) are colder than the room, and colder still on a cold night, so a room at 18° and 60% is fine on a mild day but about 80% humid at its corners when it's 0° outside. Mould grows where that stays at 80% or more (the measure in BS 5250 and BS EN ISO 13788). Those spots are taken as three quarters of the way from the outside temperature to the room's (BRE's figure for the least a sound wall should manage; walls in older houses can be colder), and the glass of older double glazing at 0.65.
+
+Over the last week (it needs a day and a half of figures, kept every half hour with the History chart's):
+
+- **Mould risk**: the coldest spots averaged 80% or more.
+- **Damp at times**: they averaged 70% or more, or were over 80% for four hours or more a day (often overnight, when the room is cooler).
+- Otherwise there's no damp to worry about.
+
+Without an outside temperature it goes by the room's own humidity (70% or more on average for mould risk, 60% for damp at times).
+
+**What helps**, roughly in order: open the window wide for 10 to 15 minutes, best in the morning (a short blast loses less heat than a window on the latch all day); keep the door shut and the extractor on when showering or cooking; dry washing outside or in a tumble dryer; a dehumidifier; and a gap between furniture and outside walls. Keeping the room warmer helps too: the room's page says how much a degree would bring its coldest spots down.
+
+When updating, the last 10 days of each room's humidity are filled in from Home Assistant's history, so the week's figures are there straight away.
+
 ## Insights
 
 The **Insights** tab shows the last 30 days:
@@ -328,6 +354,7 @@ The **Insights** tab shows the last 30 days:
 - **Gas cost per day** as a bar chart. Costs come from Home Assistant's long-term statistics, so the history is there from the day you install.
 - **Cost per cold degree.** A day's cold degrees are how far its average outside temperature fell below 15.5°. Dividing the cost by them takes the weather out, so a cold week doesn't look like a bad week. Weather entities only keep about 10 days of history, so this fills in over time (an outdoor thermometer sensor gives the full 30 days).
 - **Boiler hours**, compared week to week once both weeks are recorded.
+- **Damp and condensation**: for rooms with a humidity sensor, see [Humidity and damp](#humidity-and-damp).
 - **Rooms compared**: how fast each room warms, how much it overshoots, how early it now stops, how long it spent heating over the last week, and its average temperature. Useful for spotting a radiator that needs bleeding.
 - **How good the predictions are**: see [When each room heats next](#when-each-room-heats-next).
 - **How each room holds its heat**, from the last week of room, outside and boiler history in Home Assistant (so it has figures from the first day):

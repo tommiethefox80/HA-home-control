@@ -536,3 +536,36 @@ a.chip { color: inherit; text-decoration: none; }
 .range-dates label { display: grid; gap: 3px; font-size: .78rem; color: var(--ink-2); }
 .range-dates .btn { min-height: 38px; }
 .range-sum { margin: 0 0 10px; font-size: .88rem; color: var(--ink-2); }
+
+/* ---------- humidity ---------- */
+:root { --warn: #95560a; --c-hum: #1f8aa6; --c-cold: #8a5a2b; }
+@media (prefers-color-scheme: dark) { :root { --warn: #e6ac5c; --c-hum: #4fb6d1; --c-cold: #d39b62; } }
+.hum-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; margin-top: 3px; font-size: .84rem; font-stretch: 100%; font-weight: 450; letter-spacing: 0; color: var(--ink-2); }
+.hum-line svg { width: 14px; height: 14px; color: var(--c-hum); flex: none; }
+.damp-flag { margin-left: 4px; padding: 1px 7px; border-radius: 999px; font-size: .74rem; font-weight: 650; color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent); }
+.hum-now { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 6px; }
+.hum-big { font-size: 2rem; font-weight: 650; line-height: 1; }
+.hum-level { font-weight: 620; }
+.hum-level.lv-damp, .hum-level.lv-humid { color: var(--warn); }
+.hum-level.lv-ok { color: var(--ok); }
+.hum-dew { font-size: .86rem; color: var(--ink-2); }
+.hum-week { border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-size: .92rem; }
+.hum-week p { margin: 0; }
+.hum-week.v-watch, .hum-week.v-mould { border-left-color: var(--warn); }
+.hum-verdict { display: block; font-weight: 650; margin-bottom: 2px; }
+.hum-week.v-mould .hum-verdict, .hum-week.v-watch .hum-verdict { color: var(--warn); }
+.hum-week.v-fine .hum-verdict { color: var(--ok); }
+.hum-tips { margin: 8px 0; padding-left: 20px; font-size: .9rem; display: grid; gap: 5px; }
+.hum-src { margin: 8px 0 0; font-size: .84rem; color: var(--ink-2); }
+.hum-src .btn.link { padding: 0 2px; min-height: 0; font-size: inherit; }
+td.v-mould, td.v-watch { color: var(--warn); font-weight: 600; }
+td.v-fine { color: var(--ok); }
+.devices .dev-name small { display: block; font-size: .78rem; color: var(--ink-2); }
+/* the History chart's humidity view */
+.sw-hum { border-color: var(--c-hum); border-top-width: 2.5px; }
+.sw-cold { border-color: var(--c-cold); border-top-style: dashed; border-top-width: 2px; }
+.sw-mould { border-color: var(--warn); border-top-style: dashed; border-top-width: 1.5px; }
+.ln-hum { stroke: var(--c-hum); stroke-width: 2.5; }
+.ln-cold { stroke: var(--c-cold); stroke-dasharray: 6 4; }
+.ln-mould { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 3 4; opacity: .8; }
+.dot-hum { fill: var(--c-hum); } .dot-cold { fill: var(--c-cold); }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, thermal, deg, fmtTime, minutesLeft, DAYS, nowLocal } from './lib.js';
 import { Icon, Ribbon, Stepper, Sheet } from './ui.jsx';
 import DaySpark from './DaySpark.jsx';
+import { HumidityLine, HumiditySection, pct } from './Humidity.jsx';
 
 // "18:55", "Wed 18:55", or for more than a week ahead "Wed 21 Oct, 18:55"
 export function fmtUntil(ms, tz) {
@@ -166,6 +167,7 @@ function RoomCard({ z, state, onOpen, notify, today }) {
       <div className="now num">
         {deg(z.current)}
         <small>in the room now</small>
+        <HumidityLine h={z.humidity} />
       </div>
       {locked ? <div /> : <Stepper value={target} onChange={nudge} label={`${z.name} target`} />}
       <div className="status">
@@ -297,8 +299,18 @@ function RoomSheet({ z, state, onClose, notify }) {
         <button type="button" className="btn link" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent('hc-history', { detail: { room: z.id } })); }}>Its heating history</button>
       </div>
 
-      <h3>Radiators</h3>
+      <HumiditySection z={z} onSettings={() => { onClose(); window.location.hash = `#/settings/rooms/${z.id}`; }} />
+
+      <h3>{z.thermometer ? 'Thermometer and radiators' : 'Radiators'}</h3>
       <ul className="devices">
+        {z.thermometer && (
+          <li className="thermo">
+            <span className="dev-name">{z.thermometer.name}<small>room thermometer</small></span>
+            <span className={`meta${z.thermometer.available ? '' : ' bad'}`}>
+              {!z.thermometer.available ? 'Offline' : <>{deg(z.thermometer.current)} now{z.humidity && !z.humidity.fromTrvs ? `, ${pct(z.humidity.now)} humidity` : ''}</>}
+            </span>
+          </li>
+        )}
         {z.trvs.map((t) => (
           <li key={t.entity_id}>
             <span className="dev-name">{t.name}{t.childLock && <LockToggle lock={t.childLock} name={t.name} notify={notify} />}</span>
@@ -311,7 +323,7 @@ function RoomSheet({ z, state, onClose, notify }) {
         ))}
         {z.trvs.length === 0 && <li><span>No radiators linked</span></li>}
       </ul>
-      {z.sensor && <p className="lede" style={{ marginTop: 10 }}>Room temperature comes from a separate thermometer.</p>}
+      {z.sensor && <p className="lede" style={{ marginTop: 10 }}>The room’s temperature comes from the thermometer. The radiators’ own readings, taken right next to them, are shown for comparison.</p>}
     </Sheet>
   );
 }

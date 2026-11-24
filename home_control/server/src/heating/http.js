@@ -11,6 +11,7 @@ import { buildRoomStats } from './roomstats.js';
 import { PredictionLog } from './predictions.js';
 import { HeatLossWatch } from './heatloss.js';
 import { LongLog, buildHistory } from './longlog.js';
+import { findHumidity, isHumiditySensor } from './humidity.js';
 
 export function createHeating({ client, dataDir, log, lightingSummary = () => null }) {
   const store = new Store(dataDir);
@@ -107,11 +108,14 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
       const [domain] = s.entity_id.split('.');
       const a = s.attributes || {};
       const isTempSensor = domain === 'sensor' && a.device_class === 'temperature';
+      const isHumid = !isTempSensor && isHumiditySensor(s.entity_id, s);
       const isMoney = domain === 'sensor' && (a.device_class === 'monetary' || /^(GBP|£|EUR|€|USD|\$)$/.test(a.unit_of_measurement || ''));
-      if (domain === 'climate' || isTempSensor || isMoney || domain === 'weather' || domain === 'switch' || domain === 'input_boolean') {
+      if (domain === 'climate' || isTempSensor || isHumid || isMoney || domain === 'weather' || domain === 'switch' || domain === 'input_boolean') {
         out.push({
           entity_id: s.entity_id, domain, name: a.friendly_name || s.entity_id, state: s.state,
-          kind: isTempSensor ? 'temperature' : isMoney ? 'money' : domain, unit: a.unit_of_measurement || null,
+          kind: isTempSensor ? 'temperature' : isHumid ? 'humidity' : isMoney ? 'money' : domain, unit: a.unit_of_measurement || null,
+          // a thermometer's own humidity sensor (on the same device), for the room editor
+          ...(isTempSensor ? { humidity: findHumidity(ha, s.entity_id) } : {}),
           current: a.current_temperature ?? (isTempSensor ? s.state : undefined),
           integration: a.attribution || null,
         });

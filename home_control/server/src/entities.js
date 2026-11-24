@@ -128,10 +128,14 @@ export function createEntities({ client, house, heating, lighting, dataDir, log 
         const id = `climate_${v.id}`;
         const topic = `${BASE}/climate/${v.id}`;
         const off = v.source === 'snooze';
+        // (by where its humidity comes from, not the reading, so a sensor dropping out doesn't redo the entity)
+        const zone = heating.engine.zones?.find((z) => z.id === v.id);
+        const humid = !!(zone && heating.engine.humiditySources?.(zone)?.length);
         const st = {
           mode: off ? 'off' : 'heat',
           target: v.target ?? null,
           current: v.current ?? null,
+          ...(humid ? { humidity: v.humidity ? Math.round(v.humidity.now) : null } : {}),
           action: off ? 'off' : v.calling ? 'heating' : 'idle',
           status: v.source || null,
         };
@@ -143,6 +147,8 @@ export function createEntities({ client, house, heating, lighting, dataDir, log 
             mode_command_topic: `${topic}/mode/set`, mode_state_topic: `${topic}/state`, mode_state_template: '{{ value_json.mode }}',
             temperature_command_topic: `${topic}/temperature/set`, temperature_state_topic: `${topic}/state`, temperature_state_template: '{{ value_json.target }}',
             current_temperature_topic: `${topic}/state`, current_temperature_template: '{{ value_json.current }}',
+            // its humidity, where it has a humidity sensor
+            ...(humid ? { current_humidity_topic: `${topic}/state`, current_humidity_template: '{{ value_json.humidity }}' } : {}),
             action_topic: `${topic}/state`, action_template: '{{ value_json.action }}',
             json_attributes_topic: `${topic}/state`, json_attributes_template: '{{ {"status": value_json.status} | tojson }}',
             min_temp: 5, max_temp: 30, temp_step: 0.5, precision: 0.1, temperature_unit: 'C',

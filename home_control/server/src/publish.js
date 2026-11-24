@@ -99,6 +99,7 @@ export function heatingState(snap, today = null, panel = null) {
     id: z.id, name: z.name, temp: round1(z.current), target: round1(z.target),
     calling: !!z.calling, enabled: z.enabled !== false, status: roomStatus(z, tz),
     next: nextText(z, tz), next_why: nextWhy(z), next_heat: iso(!z.calling && z.next?.at), heating_until: iso(z.calling && z.next?.until),
+    ...(z.humidity ? { humidity: Math.round(z.humidity.now), damp: z.humidity.week?.verdict || null, condensation: !!z.humidity.windows } : {}),
   }));
   const b = snap.boiler;
   const calling = snap.zones.filter((z) => z.calling).map((z) => z.name);

@@ -3,6 +3,7 @@
 // it works from the moment the add-on is installed.
 import fs from 'node:fs';
 import path from 'node:path';
+import { humidOf, coldSeries } from './humidity.js';
 import { scheduledAt, localWeekPosition } from './schedule.js';
 
 export const STEP = 5 * 60 * 1000; // 5-minute buckets
@@ -194,7 +195,8 @@ export async function buildToday(engine, { hours = 24 } = {}) {
   const boilerId = s.boiler.entity;
 
   const ids = new Set();
-  for (const z of zones) { if (z.sensor) ids.add(z.sensor); else (z.trvs || []).forEach((e) => ids.add(e)); }
+  const humidSrc = Object.fromEntries(zones.map((z) => [z.id, engine.humiditySources?.(z) || []]));
+  for (const z of zones) { if (z.sensor) ids.add(z.sensor); else (z.trvs || []).forEach((e) => ids.add(e)); humidSrc[z.id].forEach((e) => ids.add(e)); }
   if (outsideId) ids.add(outsideId);
   if (boilerId) ids.add(boilerId);
 
@@ -239,6 +241,7 @@ export async function buildToday(engine, { hours = 24 } = {}) {
     for (const [a, b] of runs) onMs += Math.max(0, b - Math.max(a, midnight));
   }
 
+  const outside = outsideId ? sample(rowsFor(result, outsideId), from, to, tempOf(outsideId)) : null;
   const rooms = zones.map((z) => {
     const sources = z.sensor ? [z.sensor] : (z.trvs || []);
     const series = sources.map((id) => sample(rowsFor(result, id), from, to, tempOf(id)));
@@ -266,10 +269,13 @@ export async function buildToday(engine, { hours = 24 } = {}) {
     // an always-open radiator (no TRV of its own) also gets heat when the boiler runs for other rooms
     const open = engine.openRadiator(z);
     const withOthers = open ? heatedWithOthers(runs, calls, dayStart, nowMs) : null;
-    return { id: z.id, name: z.name, temps, targets, calls, heatedToday, firedToday, open, withOthers };
+    // humidity, where the room has it, and how humid its coldest spots were
+    const hs = humidSrc[z.id].map((id) => sample(rowsFor(result, id), from, to, humidOf(id)));
+    const humidity = hs.length ? times.map((_, k) => { const v = hs.map((x) => x[k]).filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; }) : null;
+    const hum = humidity && humidity.some((v) => v != null) ? { humidity, coldSpot: outside ? coldSeries(temps, humidity, outside) : null } : {};
+    return { id: z.id, name: z.name, temps, targets, calls, heatedToday, firedToday, open, withOthers, ...hum };
   });
 
-  const outside = outsideId ? sample(rowsFor(result, outsideId), from, to, tempOf(outsideId)) : null;
   const cost = costId ? await costSummary(ha, costId, !s.costEntity) : null;
 
   return {

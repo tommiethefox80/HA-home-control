@@ -3,8 +3,9 @@
 //
 // Home Assistant keeps detailed history for about 10 days (its recorder), and a Hive radiator's
 // temperature has no long-term statistics, so Home Control keeps its own: every half hour, each
-// room's average temperature and target and the minutes it heated, the outside average and the
-// minutes the boiler fired (history.json, kept as long as the daily figures: Settings → History).
+// room's average temperature, humidity (where it has a humidity sensor) and target and the minutes
+// it heated, the outside average and the minutes the boiler fired (history.json, kept as long as
+// the daily figures: Settings → History).
 // The first time, and after the app has been stopped, the gap is filled in from Home Assistant's
 // history where it still has it.
 //
@@ -17,6 +18,7 @@ import path from 'node:path';
 import { rowsFor, tempOf, detectOutsideEntity } from './history.js';
 import { scheduledAt, localWeekPosition } from './schedule.js';
 import { localDate } from './insights.js';
+import { humidOf, coldSeries } from './humidity.js';
 
 export const HALF = 30 * 60000;
 const H = 3600000; const DAY = 24 * H;
@@ -27,7 +29,7 @@ export class LongLog {
   constructor(dir) {
     this.file = dir ? path.join(dir, 'history.json') : null;
     this.data = { v: 1, step: HALF, start: null, rooms: {}, out: [], boil: [] };
-    this.cur = null;  // the half hour being gathered: { b, rooms: { id: { ts, tn, gs, gn, h } }, os, on, boil }
+    this.cur = null;  // the half hour being gathered: { b, rooms: { id: { ts, tn, gs, gn, hs, hn, h } }, os, on, boil }
     this.last = null;
     this.keepDays = () => 400; // set from Settings → History (as the daily figures)
     if (this.file) {
@@ -54,6 +56,7 @@ export class LongLog {
       if (!v.enabled) continue;
       const r = (c.rooms[v.id] ||= { ts: 0, tn: 0, gs: 0, gn: 0, h: 0 });
       if (v.current != null) { r.ts += v.current * mins; r.tn += mins; }
+      if (v.humidity?.now != null) { r.hs = (r.hs || 0) + v.humidity.now * mins; r.hn = (r.hn || 0) + mins; }
       if (v.target != null) { r.gs += v.target * mins; r.gn += mins; }
       if (v.heating ?? v.calling) r.h += mins;
     }
@@ -64,7 +67,7 @@ export class LongLog {
     if (b < this.data.start) { // (only from filling in from Home Assistant: earlier than anything kept)
       const add = Math.round((this.data.start - b) / HALF);
       const pad = (a) => [...Array(add).fill(null), ...a];
-      for (const r of Object.values(this.data.rooms)) { r.t = pad(r.t); r.g = pad(r.g); r.h = pad(r.h); }
+      for (const r of Object.values(this.data.rooms)) { r.t = pad(r.t); r.g = pad(r.g); r.h = pad(r.h); if (r.rh) r.rh = pad(r.rh); }
       this.data.out = pad(this.data.out); this.data.boil = pad(this.data.boil);
       this.data.start = b;
     }
@@ -75,11 +78,14 @@ export class LongLog {
 
   /** Put one half hour's figures in (from what was gathered, or from Home Assistant's history). */
   put(b, { rooms = {}, out = null, boil = null }, { onlyGaps = false } = {}) {
+    this.rev = (this.rev || 0) + 1; // (anything worked out from the log is out of date)
     const i = this.#index(b);
     const set = (arr, v) => { while (arr.length <= i) arr.push(null); if (!onlyGaps || arr[i] == null) arr[i] = v; };
     for (const [id, r] of Object.entries(rooms)) {
       const a = this.#room(id);
       set(a.t, r.t ?? null); set(a.g, r.g ?? null); set(a.h, r.h ?? null);
+      // (humidity only for rooms that have had it)
+      if (r.rh != null || a.rh) set((a.rh ||= []), r.rh ?? null);
     }
     set(this.data.out, out); set(this.data.boil, boil);
   }
@@ -91,7 +97,7 @@ export class LongLog {
     if (!c) return;
     const rooms = {};
     for (const [id, r] of Object.entries(c.rooms)) {
-      rooms[id] = { t: r.tn ? r1(r.ts / r.tn) : null, g: r.gn ? r1(r.gs / r.gn) : null, h: Math.min(30, Math.round(r.h)) };
+      rooms[id] = { t: r.tn ? r1(r.ts / r.tn) : null, g: r.gn ? r1(r.gs / r.gn) : null, h: Math.min(30, Math.round(r.h)), rh: r.hn ? r1(r.hs / r.hn) : null };
     }
     this.put(c.b, { rooms, out: c.on ? r1(c.os / c.on) : null, boil: Math.min(30, Math.round(c.boil)) });
     this.prune();
@@ -102,7 +108,7 @@ export class LongLog {
     if (this.data.start == null) return;
     const drop = Math.floor((now - this.keepDays() * DAY - this.data.start) / HALF);
     if (drop <= 0) return;
-    for (const r of Object.values(this.data.rooms)) { r.t.splice(0, drop); r.g.splice(0, drop); r.h.splice(0, drop); }
+    for (const r of Object.values(this.data.rooms)) { r.t.splice(0, drop); r.g.splice(0, drop); r.h.splice(0, drop); r.rh?.splice(0, drop); }
     this.data.out.splice(0, drop); this.data.boil.splice(0, drop);
     this.data.start += drop * HALF;
   }
@@ -127,13 +133,13 @@ export class LongLog {
   at(b) {
     if (this.cur && this.cur.b === b) {
       const c = this.cur; const rooms = {};
-      for (const [id, r] of Object.entries(c.rooms)) rooms[id] = { t: r.tn ? r1(r.ts / r.tn) : null, g: r.gn ? r1(r.gs / r.gn) : null, h: Math.round(r.h) };
+      for (const [id, r] of Object.entries(c.rooms)) rooms[id] = { t: r.tn ? r1(r.ts / r.tn) : null, g: r.gn ? r1(r.gs / r.gn) : null, h: Math.round(r.h), rh: r.hn ? r1(r.hs / r.hn) : null };
       return { rooms, out: c.on ? r1(c.os / c.on) : null, boil: Math.round(c.boil) };
     }
     if (this.data.start == null || b < this.data.start) return null;
     const i = Math.round((b - this.data.start) / HALF);
     const rooms = {};
-    for (const [id, r] of Object.entries(this.data.rooms)) if (r.t[i] != null || r.h[i] != null) rooms[id] = { t: r.t[i] ?? null, g: r.g[i] ?? null, h: r.h[i] ?? null };
+    for (const [id, r] of Object.entries(this.data.rooms)) if (r.t[i] != null || r.h[i] != null || r.rh?.[i] != null) rooms[id] = { t: r.t[i] ?? null, g: r.g[i] ?? null, h: r.h[i] ?? null, rh: r.rh?.[i] ?? null };
     const out = this.data.out[i] ?? null; const boil = this.data.boil[i] ?? null;
     return Object.keys(rooms).length || out != null || boil != null ? { rooms, out, boil } : null;
   }
@@ -151,23 +157,33 @@ export class LongLog {
    * the first time, and after the app was stopped. A day at a time, so no one answer is huge.
    */
   async fillFromHistory(engine, { from, to = Date.now() } = {}) {
+    // a room's humidity, the first time it has one: the last 10 days of it from Home Assistant too
+    const want = engine.zones.filter((z) => z.enabled)
+      .map((z) => [z.id, (engine.humiditySources?.(z) || []).join(',')])
+      .filter(([id, src]) => src && this.data.rhDone?.[id] !== src);
+    const rhFrom = want.length ? to - 10 * DAY : Infinity;
+    from = Math.min(from, rhFrom);
     const start = Math.ceil(from / HALF) * HALF;
     const end = Math.floor(to / HALF) * HALF - HALF; // whole half hours, not the one being gathered
-    let filled = 0;
+    let filled = 0; let failed = false;
     for (let a = start; a <= end; a += DAY) {
       const b = Math.min(end + HALF, a + DAY);
       // only where nothing was kept
       const missing = [];
-      for (let t = a; t < b; t += HALF) if (!this.at(t)) missing.push(t);
+      for (let t = a; t < b; t += HALF) {
+        const x = this.at(t);
+        if (!x || (t >= rhFrom && want.some(([id]) => x.rooms[id]?.rh == null))) missing.push(t);
+      }
       if (!missing.length) continue;
       const got = await halfHoursFromHistory(engine, a, b).catch(() => null);
-      if (!got) continue;
+      if (!got) { failed = true; continue; }
       for (const t of missing) {
         const x = got.get(t);
-        if (x && (x.out != null || Object.values(x.rooms).some((r) => r.t != null))) { this.put(t, x, { onlyGaps: true }); filled++; }
+        if (x && (x.out != null || Object.values(x.rooms).some((r) => r.t != null || r.rh != null))) { this.put(t, x, { onlyGaps: true }); filled++; }
       }
     }
-    if (filled) { this.prune(); this.flush(); }
+    if (!failed && want.length) { this.data.rhDone ||= {}; for (const [id, src] of want) this.data.rhDone[id] = src; }
+    if (filled || (!failed && want.length)) { this.prune(); this.flush(); }
     return filled;
   }
 }
@@ -179,7 +195,8 @@ async function halfHoursFromHistory(engine, a, b) {
   const outsideId = s.outsideEntity || detectOutsideEntity(ha);
   const boilerId = s.boiler?.entity;
   const ids = new Set();
-  for (const z of zones) { if (z.sensor) ids.add(z.sensor); else (z.trvs || []).forEach((e) => ids.add(e)); }
+  const humid = Object.fromEntries(zones.map((z) => [z.id, engine.humiditySources?.(z) || []]));
+  for (const z of zones) { if (z.sensor) ids.add(z.sensor); else (z.trvs || []).forEach((e) => ids.add(e)); humid[z.id].forEach((e) => ids.add(e)); }
   if (outsideId) ids.add(outsideId);
   if (boilerId) ids.add(boilerId);
   if (!ids.size) return new Map();
@@ -212,6 +229,8 @@ async function halfHoursFromHistory(engine, a, b) {
     const series = sources.map((id) => at5(rowsFor(res, id), tempOf(id)));
     const temps = series[0] ? series[0].map((_, k) => { const v = series.map((x) => x[k]).filter((x) => x != null); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null; }) : [];
     const t30 = halves(temps);
+    const hs = humid[z.id].map((id) => at5(rowsFor(res, id), humidOf(id)));
+    const rh30 = hs.length ? halves(hs[0].map((_, k) => { const v = hs.map((x) => x[k]).filter((x) => x != null); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null; })) : [];
     // targets: the app's log where it has them, the schedule before that
     const log = engine.targetLog?.data?.[z.id] || [];
     const tg = keys.map((t) => {
@@ -222,7 +241,7 @@ async function halfHoursFromHistory(engine, a, b) {
     const calls = engine.callLog ? engine.callLog.intervals(z.id, a, b) : [];
     const known = engine.callLog && engine.callLog.started <= a && (engine.callLog.zones[z.id]?.[0]?.[0] ?? Infinity) <= a + DAY;
     keys.forEach((t, k) => {
-      map.get(t).rooms[z.id] = { t: t30[k] ?? null, g: tg[k], h: calls.length || known ? minutesIn(calls, t) : null };
+      map.get(t).rooms[z.id] = { t: t30[k] ?? null, g: tg[k], h: calls.length || known ? minutesIn(calls, t) : null, rh: rh30[k] ?? null };
     });
   }
   return map;
@@ -303,6 +322,7 @@ export async function buildHistory(engine, { from, to = Date.now(), now = Date.n
   const n = times.length;
   const temps = Object.fromEntries(zones.map((z) => [z.id, Array(n).fill(null)]));
   const targets = Object.fromEntries(zones.map((z) => [z.id, Array(n).fill(null)]));
+  const humid = Object.fromEntries(zones.map((z) => [z.id, Array(n).fill(null)]));
   const heat = Object.fromEntries(zones.map((z) => [z.id, Array(n).fill(0)]));
   const out = Array(n).fill(null); const boil = Array(n).fill(0);
   // averages of each point's half hours
@@ -319,8 +339,9 @@ export async function buildHistory(engine, { from, to = Date.now(), now = Date.n
     for (const z of zones) {
       const r = x.rooms[z.id];
       if (!r) continue;
-      const q = (a.rooms[z.id] ||= { ts: 0, tn: 0, gs: 0, gn: 0 });
+      const q = (a.rooms[z.id] ||= { ts: 0, tn: 0, gs: 0, gn: 0, hs: 0, hn: 0 });
       if (r.t != null) { q.ts += r.t; q.tn++; }
+      if (r.rh != null) { q.hs += r.rh; q.hn++; }
       if (r.g != null) { q.gs += r.g; q.gn++; }
       if (r.h != null) heat[z.id][k] += r.h;
     }
@@ -331,6 +352,7 @@ export async function buildHistory(engine, { from, to = Date.now(), now = Date.n
       const q = a.rooms[z.id];
       if (q?.tn) temps[z.id][i] = r1(q.ts / q.tn);
       if (q?.gn) targets[z.id][i] = r1(q.gs / q.gn);
+      if (q?.hn) humid[z.id][i] = Math.round(q.hs / q.hn);
     }
   });
   // before the half-hourly log: the daily figures, for points of 6 hours or more
@@ -366,6 +388,7 @@ export async function buildHistory(engine, { from, to = Date.now(), now = Date.n
   const rooms = zones.map((z) => ({
     id: z.id, name: z.name, temps: temps[z.id], targets: targets[z.id], calls: calls(z),
     heatedMinutes: Math.round(heat[z.id].reduce((p, q) => p + q, 0)),
+    ...humiditySeries(temps[z.id], humid[z.id], out),
   }));
   const outsideId = engine.s.outsideEntity || detectOutsideEntity(ha);
   return {
@@ -385,7 +408,8 @@ async function historyPrecise(engine, { from, to, step, tz }) {
   const t0 = Math.floor(from / step) * step;
   const t1 = Math.floor(to / step) * step;
   const ids = new Set();
-  for (const z of zones) { if (z.sensor) ids.add(z.sensor); else (z.trvs || []).forEach((e) => ids.add(e)); }
+  const humidSrc = Object.fromEntries(zones.map((z) => [z.id, engine.humiditySources?.(z) || []]));
+  for (const z of zones) { if (z.sensor) ids.add(z.sensor); else (z.trvs || []).forEach((e) => ids.add(e)); humidSrc[z.id].forEach((e) => ids.add(e)); }
   if (outsideId) ids.add(outsideId);
   if (boilerId) ids.add(boilerId);
   let res = {};
@@ -407,10 +431,13 @@ async function historyPrecise(engine, { from, to, step, tz }) {
     for (const r of rowsFor(res, boilerId)) { const t = Math.max(r.t, t0); if (firing(r) && st == null) st = t; if (!firing(r) && st != null) { runs.push([st, t]); st = null; } }
     if (st != null) runs.push([st, Math.min(Date.now(), t1 + step)]);
   }
+  const outside = outsideId ? at(rowsFor(res, outsideId), tempOf(outsideId)) : null;
   const rooms = zones.map((z) => {
     const sources = z.sensor ? [z.sensor] : (z.trvs || []);
     const series = sources.map((id) => at(rowsFor(res, id), tempOf(id)));
     const temps = times.map((_, k) => { const v = series.map((x) => x[k]).filter((x) => x != null); return v.length ? r1(v.reduce((p, q) => p + q, 0) / v.length) : null; });
+    const hs = humidSrc[z.id].map((id) => at(rowsFor(res, id), humidOf(id)));
+    const humidity = hs.length ? times.map((_, k) => { const v = hs.map((x) => x[k]).filter((x) => x != null); return v.length ? Math.round(v.reduce((p, q) => p + q, 0) / v.length) : null; }) : null;
     const log = engine.targetLog?.data?.[z.id] || [];
     let li = 0; let logged = null;
     const targets = times.map((t) => {
@@ -418,15 +445,20 @@ async function historyPrecise(engine, { from, to, step, tz }) {
       return logged ?? scheduledAt(z.schedule, localWeekPosition(new Date(t), tz))?.temp ?? null;
     });
     const calls = engine.callLog ? engine.callLog.intervals(z.id, t0, Math.min(Date.now(), t1 + step)) : [];
-    return { id: z.id, name: z.name, temps, targets, calls, heatedMinutes: Math.round(calls.reduce((m, [a, b]) => m + (b - a), 0) / 60000) };
+    return { id: z.id, name: z.name, temps, targets, calls, heatedMinutes: Math.round(calls.reduce((m, [a, b]) => m + (b - a), 0) / 60000), ...humiditySeries(temps, humidity, outside) };
   });
-  const outside = outsideId ? at(rowsFor(res, outsideId), tempOf(outsideId)) : null;
   return {
     from: t0, to: t1, end: to, step, times, rooms, boilerRuns: runs,
     boilerMinutes: Math.round(runs.reduce((m, [a, b]) => m + Math.max(0, Math.min(b, to) - Math.max(a, from)), 0) / 60000),
     outside: outsideId && outside.some((v) => v != null) ? { entity: outsideId, series: outside } : null,
     detailFrom: engine.longLog?.firstAt() ?? null, dailyUntil: null, source: 'ha',
   };
+}
+
+/** A room's humidity for the chart, and how humid its coldest spots were (none: left out). */
+export function humiditySeries(temps, humidity, outside) {
+  if (!humidity || !humidity.some((v) => v != null)) return {};
+  return { humidity, coldSpot: outside ? coldSeries(temps, humidity, outside) : null };
 }
 
 export { BAD };

@@ -8,6 +8,7 @@ import { repairUnreachable } from './repair.js';
 import { recordMode, modeLogFromActivity, unusualSpans, daysTouched } from './modelog.js';
 import { detectOutsideEntity, readOutside } from './history.js';
 import { nextHeat, heatingUntil, outsideCurve, toFive } from './forecast.js';
+import { findHumidity, readHumidity, humidityNow, dampWeek } from './humidity.js';
 
 const num = (v) => {
   const n = typeof v === 'number' ? v : parseFloat(v);
@@ -731,6 +732,66 @@ export class Engine extends EventEmitter {
     this.attention = out;
   }
 
+  /**
+   * Where a room's humidity comes from: the sensor chosen for it, or (left automatic) the one on the
+   * same device as its thermometer, or its radiators' own if they report it. zone.humidity: null
+   * automatic, false none, or a sensor.
+   */
+  humidityEntity(zone) {
+    if (zone.humidity === false) return null;
+    if (typeof zone.humidity === 'string') return zone.humidity;
+    const c = (this.humCache ||= new Map());
+    const hit = c.get(zone.id);
+    const now = Date.now();
+    if (hit && hit.key === (zone.sensor || '') && now - hit.at < 10 * 60000) return hit.id;
+    const id = zone.sensor ? findHumidity(this.ha, zone.sensor) : null;
+    c.set(zone.id, { key: zone.sensor || '', at: now, id });
+    return id;
+  }
+
+  /** The entities a room's humidity is read from (for history): its sensor, or its radiators that report it. */
+  humiditySources(zone) {
+    const id = this.humidityEntity(zone);
+    if (id) return [id];
+    if (zone.humidity === false) return [];
+    return (zone.trvs || []).filter((e) => e !== this.s.boiler?.entity && num(this.ha.get(e)?.attributes?.current_humidity) != null);
+  }
+
+  currentHumidity(zone) {
+    const vals = this.humiditySources(zone).map((id) => readHumidity(this.ha, id)).filter((v) => v != null);
+    return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+  }
+
+  /** The last week's damp at the room's coldest spots, from the half-hourly figures (worked out once each half hour). */
+  dampWeekFor(zone, now = Date.now()) {
+    const log = this.longLog;
+    if (!log) return null;
+    const HALF = 30 * 60000;
+    const key = `${log.rev || 0}|${Math.floor(now / HALF)}|${this.humiditySources(zone).join(',')}`;
+    const c = (this.dampCache ||= {});
+    if (c[zone.id]?.key === key) return c[zone.id].v;
+    const pts = [];
+    for (let t = Math.floor((now - 7 * 86400000) / HALF) * HALF; t < now; t += HALF) {
+      const x = log.at(t);
+      const r = x?.rooms?.[zone.id];
+      if (r?.rh != null) pts.push({ at: t, temp: r.t, rh: r.rh, out: x.out });
+    }
+    const v = dampWeek(pts, { tz: this.ha.timeZone });
+    c[zone.id] = { key, v };
+    return v;
+  }
+
+  #humidityView(zone, current) {
+    const rh = this.currentHumidity(zone);
+    if (rh == null) return null;
+    const src = this.humiditySources(zone);
+    return {
+      ...humidityNow({ temp: current, rh, out: this.outsideNow() }),
+      entity: src[0] || null, name: src.length === 1 ? this.#name(src[0]) : null, fromTrvs: !this.humidityEntity(zone),
+      auto: zone.humidity == null, week: this.dampWeekFor(zone),
+    };
+  }
+
   currentTemp(zone) {
     if (zone.sensor) {
       const st = this.ha.get(zone.sensor);
@@ -918,6 +979,8 @@ export class Engine extends EventEmitter {
       current, target: t.temp, source: t.source, until: t.until || null, by: t.by || null, via: t.via || null, forever: !!t.forever,
       snoozedUnder: this.#snoozeUnder(zone.id, now) ? true : false,
       scheduled: t.sched, calling, trvs, sensor: zone.sensor || null, warnings,
+      thermometer: zone.sensor ? { entity_id: zone.sensor, name: this.#name(zone.sensor), available: (() => { const st = this.ha.get(zone.sensor); return !!st && !UNAVAILABLE.has(st.state); })(), current: num(this.ha.get(zone.sensor)?.state) } : null,
+      humidity: this.#humidityView(zone, current),
     };
   }
 
@@ -1156,7 +1219,7 @@ export class Engine extends EventEmitter {
   entityIds() {
     const s = this.s;
     return [
-      ...this.zones.flatMap((z) => [...(z.trvs || []), z.sensor]),
+      ...this.zones.flatMap((z) => [...(z.trvs || []), z.sensor, typeof z.humidity === 'string' ? z.humidity : null]),
       s.boiler?.entity, s.outsideEntity, s.costEntity, ...(s.presence?.people || []),
     ].filter(Boolean);
   }
@@ -1167,6 +1230,7 @@ export class Engine extends EventEmitter {
       let c = false;
       if ((z.trvs || []).includes(from)) { z.trvs = z.trvs.map((e) => (e === from ? to : e)); c = true; }
       if (z.sensor === from) { z.sensor = to; c = true; }
+      if (z.humidity === from) { z.humidity = to; c = true; }
       if (c) hit.push(z.name);
     }
     const s = this.s;
@@ -1467,6 +1531,11 @@ export class Engine extends EventEmitter {
       // null: worked out (no TRV of its own); true/false: set by hand
       openRadiator: input.openRadiator === true || input.openRadiator === false ? input.openRadiator : null,
     };
+    // its humidity: 'auto' (from the thermometer's device), 'none', or a sensor (left as it was if not sent)
+    if (input.humidity !== undefined) {
+      clean.humidity = input.humidity === 'none' || input.humidity === false ? false
+        : /^sensor\.\w+$/.test(input.humidity || '') ? input.humidity : null;
+    }
     // its own Away temperature, or null for the house's (left as it was if not sent)
     if (input.awayTemp !== undefined) {
       const a = input.awayTemp === '' || input.awayTemp == null ? null : num(input.awayTemp);

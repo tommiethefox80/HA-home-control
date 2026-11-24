@@ -78,6 +78,7 @@ function RoomEditor({ room, entities, state, onClose, notify }) {
     openRadiator: room.openRadiator ?? null,
     learn: room.learn || 'suggest',
     awayTemp: room.awayTemp ?? '',
+    humidity: room.humidity === false ? 'none' : typeof room.humidity === 'string' ? room.humidity : 'auto',
   });
   const houseAway = state.settings.awayTemp;
   const live = state.zones.find((z) => z.id === room.id);
@@ -86,6 +87,10 @@ function RoomEditor({ room, entities, state, onClose, notify }) {
   const usedElsewhere = new Set(state.zoneConfig.filter((z) => z.id !== room.id).flatMap((z) => z.trvs));
   const climates = entities.filter((e) => e.domain === 'climate');
   const sensors = entities.filter((e) => e.kind === 'temperature');
+  const humidSensors = entities.filter((e) => e.kind === 'humidity');
+  // left automatic: the humidity sensor on the chosen thermometer's device
+  const autoHumid = entities.find((e) => e.entity_id === (sensors.find((x) => x.entity_id === form.sensor)?.humidity));
+  const trvHumid = !form.sensor && live?.humidity?.fromTrvs;
 
   const toggleTrv = (id) => setForm((f) => ({ ...f, trvs: f.trvs.includes(id) ? f.trvs.filter((x) => x !== id) : [...f.trvs, id] }));
   const save = async () => {
@@ -141,6 +146,16 @@ function RoomEditor({ room, entities, state, onClose, notify }) {
         <select value={form.sensor} onChange={(e) => setForm({ ...form, sensor: e.target.value })}>
           <option value="">Use the radiators’ own readings</option>
           {sensors.map((e) => <option key={e.entity_id} value={e.entity_id}>{e.name} ({deg(Number(e.state))})</option>)}
+        </select>
+      </label>
+
+      <label className="field">
+        <span>Humidity</span>
+        <small>For the damp and condensation check on the room’s page. Most room thermometers measure humidity too, so it’s found on the thermometer’s device.</small>
+        <select value={form.humidity} onChange={(e) => setForm({ ...form, humidity: e.target.value })}>
+          <option value="auto">Automatic{autoHumid ? ` (${autoHumid.name}, ${Math.round(Number(autoHumid.state))}%)` : trvHumid ? ' (the radiators’ own readings)' : form.sensor ? ' (none on the thermometer)' : ' (from a thermometer)'}</option>
+          <option value="none">Don’t show humidity</option>
+          {humidSensors.map((e) => <option key={e.entity_id} value={e.entity_id}>{e.name} ({Number.isFinite(Number(e.state)) ? `${Math.round(Number(e.state))}%` : e.state})</option>)}
         </select>
       </label>
 
@@ -450,7 +465,7 @@ function EmptyHouseAlert({ s, setNotify, targets, test, testing }) {
   );
 }
 
-export default function Settings({ state, notify, focus }) {
+export default function Settings({ state, notify, focus, room: roomId }) {
   const [entities, setEntities] = useState([]);
   // #/settings/boiler opens on that page (#/settings/away, from before the menu, on Away automatically)
   const { item, shown } = settingsPage('heating', focus === 'away' ? 'presence' : focus);
@@ -460,6 +475,11 @@ export default function Settings({ state, notify, focus }) {
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => { api('entities').then(setEntities).catch((e) => notify(e.message, true)); }, [state.haConnected]);
+  // #/settings/rooms/<id> (from a room's page): that room's editor
+  useEffect(() => {
+    const z = roomId && state.zoneConfig.find((x) => x.id === roomId);
+    if (z) setEditing(z);
+  }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!dirty) setS(state.settings); }, [state.settings, dirty]);
 
   const set = (patch) => { setS((x) => ({ ...x, ...patch })); setDirty(true); };
@@ -622,7 +642,7 @@ export default function Settings({ state, notify, focus }) {
         </div>
       )}
 
-      {editing && <RoomEditor room={editing} entities={entities} state={state} onClose={() => setEditing(null)} notify={notify} />}
+      {editing && <RoomEditor room={editing} entities={entities} state={state} onClose={() => { setEditing(null); if (roomId) window.location.hash = '#/settings/rooms'; }} notify={notify} />}
     </SettingsFrame>
   );
 }

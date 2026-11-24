@@ -239,7 +239,7 @@ export default function App({ active = true, switcher }) {
         {state && page === 'schedules' && <Schedules state={state} zoneId={route[1]} notify={notify} />}
         {state && page === 'activity' && <Activity state={state} />}
         {state && page === 'insights' && <Insights state={state} />}
-        {state && page === 'settings' && <Settings state={state} notify={notify} focus={route[1]} />}
+        {state && page === 'settings' && <Settings state={state} notify={notify} focus={route[1]} room={route[2]} />}
       </main>
 
       <nav className="tabs" aria-label="Sections">

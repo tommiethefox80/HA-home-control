@@ -14,7 +14,7 @@
 //
 // Reads sensor.home_heating and sensor.home_lighting, which Home Control 1.1+ writes.
 // Home Control 1.3+ copies this card into Home Assistant and keeps its dashboard resource current.
-const VERSION = '1.16.2';
+const VERSION = '1.17.0';
 const PENDING_MS = 10000; // how long to show a change as done before Home Assistant confirms it
 const STEP_WAIT = 500;    // wait this long after the last minus or plus press before sending
 
@@ -113,6 +113,8 @@ const STYLE = `
   .temps { text-align: right; display: flex; align-items: baseline; gap: 8px; }
   .now { font-size: 1.45rem; font-weight: 650; color: var(--primary-text-color); line-height: 1; }
   .target { font-size: .8rem; font-weight: 650; padding: 3px 8px; border-radius: 8px; color: var(--primary-text-color); }
+  .hum { font-size: .8rem; color: var(--secondary-text-color); }
+  .hum.warn { color: var(--warning-color, #b86e00); font-weight: 650; }
   .note { font-size: .82rem; display: flex; gap: 6px; align-items: flex-start; color: var(--primary-text-color);
     background: rgb(238 132 52 / .12); border-radius: 10px; padding: 7px 10px; }
   .note svg { width: 15px; height: 15px; flex: none; margin-top: 1px; color: rgb(196 66 45); }
@@ -609,6 +611,7 @@ class HomeControlCard extends HTMLElement {
         </div>
         <div class="temps">
           <span class="now num">${deg(r.temp)}</span>
+          ${r.humidity != null && this._config.humidity !== false ? `<span class="hum num${r.damp === 'mould' || r.condensation ? ' warn' : ''}" title="${esc(`${r.humidity}% humidity${r.damp === 'mould' ? ', damp this week' : r.condensation ? ', condensation on the windows likely' : ''}`)}">${r.humidity}%</span>` : ''}
           <span class="target num" style="${c ? `background:${css(c, 0.22)}` : ''}" title="Aiming for ${deg(r.target)}">${deg(r.target)}</span>
         </div>
       </div>`;

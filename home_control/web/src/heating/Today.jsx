@@ -324,7 +324,10 @@ const METRICS = [
   { id: 'temp', label: 'Temperature', title: 'Temperature' },
   { id: 'target', label: 'Target', title: 'Target' },
   { id: 'diff', label: 'vs target', title: 'Above or below target' },
+  { id: 'rh', label: 'Humidity', title: 'Humidity' },
 ];
+const VIEW_KEY = 'hc-chart-view'; // one room: its temperatures, or its humidity
+const pctText = (v) => (v == null ? '–' : `${Math.round(v)}%`);
 // why a room started heating, as recorded with each heat-up
 const WHY = { schedule: 'schedule', preheat: 'warming early', boost: 'boost', hold: 'hold', manual: 'changed on the radiator', away: 'away', snooze: 'snooze', 'no-schedule': 'no schedule' };
 const LANE = 19; // "Calling for heat" lanes under the All rooms chart: name line + bar
@@ -342,6 +345,7 @@ function roomSeries(rooms, metric) {
     color: k < SLOTS ? `var(--s${k + 1})` : 'var(--ink-2)',
     values: metric === 'temp' ? r.temps
       : metric === 'target' ? r.targets
+      : metric === 'rh' ? (r.humidity || r.temps.map(() => null))
       : r.temps.map((v, i) => (v == null || r.targets[i] == null ? null : Math.round((v - r.targets[i]) * 10) / 10)),
   }));
 }
@@ -360,10 +364,16 @@ export function TodayChart({ state, today: day, error: dayError }) {
     : range.label;
   const rooms = today?.rooms || [];
   const [roomId, setRoomId] = useState(() => recall(ROOM_KEY) || ALL);
-  const [metric, setMetric] = useState(() => (METRICS.some((m) => m.id === recall(METRIC_KEY)) ? recall(METRIC_KEY) : 'temp'));
+  const [metric0, setMetric] = useState(() => (METRICS.some((m) => m.id === recall(METRIC_KEY)) ? recall(METRIC_KEY) : 'temp'));
   const [focus, setFocus] = useState(null);
   const isAll = roomId === ALL && rooms.length > 1;
   const room = isAll ? null : rooms.find((r) => r.id === roomId) || rooms[0];
+  // humidity, where any room has it (a room's own, or a measure for All rooms)
+  const anyHumid = rooms.some((r) => r.humidity);
+  const metric = metric0 === 'rh' && !anyHumid ? 'temp' : metric0;
+  const [view0, setView] = useState(() => (recall(VIEW_KEY) === 'rh' ? 'rh' : 'temp'));
+  const rhMode = !isAll && !!room?.humidity && view0 === 'rh';
+  const pctAxis = rhMode || (isAll && metric === 'rh');
   const series = useMemo(() => (isAll ? roomSeries(rooms, metric) : []), [isAll, rooms, metric]);
   const [ref, width] = useWidth();
   const [hover, setHover] = useState(null);
@@ -376,7 +386,7 @@ export function TodayChart({ state, today: day, error: dayError }) {
   const daily = (today?.step || 0) >= DAYMS;
   // a moment on the chart: 14:05 for a day, "Sat 8 Nov, 14:00" for longer, "Sat 8 Nov" for days
   const when = (t) => (!long ? clock(t, tz) : daily ? dayLabel(t, tz, { weekday: 'short', day: 'numeric', month: 'short' }) : `${dayLabel(t, tz, { weekday: 'short', day: 'numeric', month: 'short' })}, ${clock(t, tz)}`);
-  const fmt = metric === 'diff' && isAll ? signed : (v) => deg(v);
+  const fmt = metric === 'diff' && isAll ? signed : isAll && metric === 'rh' ? pctText : (v) => deg(v);
   const mInfo = METRICS.find((m) => m.id === metric);
 
   const pick = (id) => { setRoomId(id); setHover(null); setFocus(null); remember(ROOM_KEY, id); };
@@ -391,6 +401,7 @@ export function TodayChart({ state, today: day, error: dayError }) {
     return () => window.removeEventListener('hc-history', on);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const pickMetric = (id) => { setMetric(id); setHover(null); remember(METRIC_KEY, id); };
+  const pickView = (id) => { setView(id); setHover(null); remember(VIEW_KEY, id); };
 
   const geo = useMemo(() => {
     if (!today || (!room && !isAll) || !width) return null;
@@ -398,11 +409,18 @@ export function TodayChart({ state, today: day, error: dayError }) {
     const m = { l: 34, r: 10, t: 10, b: 24 };
     const n = today.times.length;
     const outside = today.outside?.series || [];
-    const vals = (isAll ? series.flatMap((s) => s.values) : [...room.temps, ...room.targets, ...outside]).filter((v) => v != null);
+    const vals = (isAll ? series.flatMap((s) => s.values)
+      : rhMode ? [...room.humidity, ...(room.coldSpot || []), 80]
+        : [...room.temps, ...room.targets, ...outside]).filter((v) => v != null);
     if (!vals.length) return null;
     let lo;
     let hi;
-    if (isAll && metric === 'diff') {
+    if (pctAxis) {
+      // humidity: in tens, at least 20% tall, never past 0 or 100
+      lo = Math.max(0, Math.floor((Math.min(...vals) - 3) / 10) * 10);
+      hi = Math.min(100, Math.ceil((Math.max(...vals) + 3) / 10) * 10);
+      if (hi - lo < 20) { if (hi + 10 <= 100) hi += 10; if (hi - lo < 20) lo = Math.max(0, hi - 20); }
+    } else if (isAll && metric === 'diff') {
       // always include the zero line ("on target"), at least ±1° either side of it
       lo = Math.min(-1, Math.floor(Math.min(...vals) - 0.3));
       hi = Math.max(1, Math.ceil(Math.max(...vals) + 0.3));
@@ -416,7 +434,7 @@ export function TodayChart({ state, today: day, error: dayError }) {
     const y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
     const tx = (t) => x(((t - today.from) / (today.to - today.from)) * (n - 1));
     const span = hi - lo;
-    const stepDeg = span <= 5 ? 1 : span > 14 ? 4 : 2;
+    const stepDeg = pctAxis ? (span <= 30 ? 5 : 10) : span <= 5 ? 1 : span > 14 ? 4 : 2;
     const yTicks = [];
     for (let v = Math.ceil(lo / stepDeg) * stepDeg; v <= hi; v += stepDeg) yTicks.push(v);
     let xTicks;
@@ -458,7 +476,7 @@ export function TodayChart({ state, today: day, error: dayError }) {
     }
     const total = H + (lanes ? lanes.h : 0);
     return { H, total, m, n, x, y, tx, yTicks, xTicks, outside, labels, lanes };
-  }, [today, room, rooms, isAll, series, metric, width, tz]);
+  }, [today, room, rooms, isAll, series, metric, width, tz, rhMode, pctAxis]);
 
   const head = (
     <div className="chart-head">
@@ -476,7 +494,7 @@ export function TodayChart({ state, today: day, error: dayError }) {
   const boilerMins = minutesIn(today.boilerRuns, today.from, end);
   const sums = isAll
     ? [state.boiler.entity && `Boiler ${hmText(boilerMins)}`, ...rooms.map((r) => `${r.name} ${hmText(minutesIn(r.calls, today.from, end))}`)].filter(Boolean)
-    : [`Heated ${hmText(minutesIn(room.calls, today.from, end))}`, avg(room.temps) != null && `averaging ${deg(avg(room.temps))}`, state.boiler.entity && `boiler ${hmText(boilerMins)}`];
+    : [`Heated ${hmText(minutesIn(room.calls, today.from, end))}`, avg(room.temps) != null && `averaging ${deg(avg(room.temps))}`, avg(room.humidity) != null && `humidity ${pctText(avg(room.humidity))}`, state.boiler.entity && `boiler ${hmText(boilerMins)}`];
   const outAvg = avg(today.outside?.series);
   const fromDay = (t) => dayLabel(t, tz, { day: 'numeric', month: 'short' });
 
@@ -516,10 +534,11 @@ export function TodayChart({ state, today: day, error: dayError }) {
     heat: !isAll && room ? minutesIn(room.calls, today.times[hover], today.times[hover] + (today.step || 0)) : 0,
     ...(isAll
       ? {
-        rows: series.map((s, k) => ({ ...s, v: s.values[hover], calling: !!callAt(rooms[k], today.times[hover]) })).sort((a, b) => (b.v ?? -1e9) - (a.v ?? -1e9)),
+        rows: series.map((s, k) => ({ ...s, v: s.values[hover], calling: !!callAt(rooms[k], today.times[hover]) }))
+          .filter((r, k) => metric !== 'rh' || rooms[k].humidity).sort((a, b) => (b.v ?? -1e9) - (a.v ?? -1e9)),
         why: whyFiring(today.times[hover]),
       }
-      : { temp: room.temps[hover], target: room.targets[hover], out: outside[hover] }),
+      : { temp: room.temps[hover], target: room.targets[hover], out: outside[hover], rh: room.humidity?.[hover], cold: room.coldSpot?.[hover] }),
   } : null;
   // table rows: every hour for a day, every 3 hours, 12 hours or day for longer (with the time heated in each)
   const rowMs = !long ? HOUR : span <= 3.6 * DAYMS ? 3 * HOUR : span <= 16 * DAYMS ? 12 * HOUR : DAYMS;
@@ -535,6 +554,7 @@ export function TodayChart({ state, today: day, error: dayError }) {
   // shared targets show as a striped band; exact values are in the tooltip and table.
   const nudge = (id) => (series.findIndex((s) => s.id === id) - (series.length - 1) / 2) * 2.5;
   const title = isAll ? `All rooms: ${mInfo.title.toLowerCase()}` : `the ${room.name}`;
+  const shownSeries = isAll && metric === 'rh' ? series.filter((_, k) => rooms[k].humidity) : series;
 
   return (
     <section className="chart-card" ref={cardRef} aria-label={`${rangeTitle} in ${title}`}>
@@ -551,21 +571,38 @@ export function TodayChart({ state, today: day, error: dayError }) {
       {isAll && (
         <div className="metric-row">
           <div className="seg" role="group" aria-label="What to show for each room">
-            {METRICS.map((mm) => <button key={mm.id} aria-pressed={metric === mm.id} onClick={() => pickMetric(mm.id)}>{mm.label}</button>)}
+            {METRICS.filter((mm) => mm.id !== 'rh' || anyHumid).map((mm) => <button key={mm.id} aria-pressed={metric === mm.id} onClick={() => pickMetric(mm.id)}>{mm.label}</button>)}
           </div>
           {metric === 'diff' && <p className="metric-note">Above the 0° line: warmer than its target. Below: cooler.</p>}
+          {metric === 'rh' && <p className="metric-note">Rooms with a humidity sensor. 40 to 60% is comfortable.</p>}
+        </div>
+      )}
+      {!isAll && room.humidity && (
+        <div className="metric-row">
+          <div className="seg" role="group" aria-label="What to show">
+            <button aria-pressed={!rhMode} onClick={() => pickView('temp')}>Temperature</button>
+            <button aria-pressed={rhMode} onClick={() => pickView('rh')}>Humidity</button>
+          </div>
+          {rhMode && <p className="metric-note">{room.coldSpot ? 'The coldest spots (corners, round the windows) worked out from the room and outside temperatures. Mould grows where they stay over 80%.' : '40 to 60% is comfortable.'}</p>}
         </div>
       )}
 
       {isAll ? (
         <div className="legend-row" aria-hidden={table}>
-          {series.map((s) => (
+          {shownSeries.map((s) => (
             <button key={s.id} className={`legend-btn${dim(s.id)}`} aria-pressed={focus === s.id}
               onClick={() => setFocus((f) => (f === s.id ? null : s.id))} title={focus === s.id ? 'Show every room' : `Highlight ${s.name}`}>
               <i className="sw sw-line" style={{ '--c': s.color }} />{s.name}
             </button>
           ))}
           {state.boiler.entity && <span><i className="sw sw-fire" />Boiler firing</span>}
+        </div>
+      ) : rhMode ? (
+        <div className="legend-row" aria-hidden={table}>
+          <span><i className="sw sw-hum" />Humidity</span>
+          {room.coldSpot && <span><i className="sw sw-cold" />Coldest spots</span>}
+          {room.coldSpot && <span><i className="sw sw-mould" />80%</span>}
+          <span><i className="sw sw-heat-sm" />{room.name} heating</span>
         </div>
       ) : (
         <div className="legend-row" aria-hidden={table}>
@@ -582,19 +619,19 @@ export function TodayChart({ state, today: day, error: dayError }) {
             {isAll ? (
               <>
                 <caption className="sr-only">{mInfo.title} in each room</caption>
-                <thead><tr><th>Time</th>{series.map((s) => <th key={s.id}>{s.name}</th>)}<th>Boiler</th></tr></thead>
+                <thead><tr><th>Time</th>{shownSeries.map((s) => <th key={s.id}>{s.name}</th>)}<th>Boiler</th></tr></thead>
                 <tbody>
                   {today.times.map((t, i) => ({ t, i })).filter(({ i }) => i % rowEvery === 0).reverse().map(({ t, i }) => (
-                    <tr key={t}><td>{when(t)}</td>{series.map((s) => <td key={s.id}>{fmt(s.values[i])}</td>)}<td>{long ? hmText(minutesIn(today.boilerRuns, t, t + rowMs)) : firingAt(t) ? (whyFiring(t)?.text || 'Firing') : ''}</td></tr>
+                    <tr key={t}><td>{when(t)}</td>{shownSeries.map((s) => <td key={s.id}>{fmt(s.values[i])}</td>)}<td>{long ? hmText(minutesIn(today.boilerRuns, t, t + rowMs)) : firingAt(t) ? (whyFiring(t)?.text || 'Firing') : ''}</td></tr>
                   ))}
                 </tbody>
               </>
             ) : (
               <>
-                <thead><tr><th>Time</th><th>In the room</th><th>Target</th>{today.outside && <th>Outside</th>}<th>Heating</th></tr></thead>
+                <thead><tr><th>Time</th><th>In the room</th><th>Target</th>{today.outside && <th>Outside</th>}{room.humidity && <th>Humidity</th>}{room.coldSpot && <th>Coldest spots</th>}<th>Heating</th></tr></thead>
                 <tbody>
                   {today.times.map((t, i) => ({ t, i })).filter(({ i }) => i % rowEvery === 0).reverse().map(({ t, i }) => (
-                    <tr key={t}><td>{when(t)}</td><td>{deg(room.temps[i])}</td><td>{deg(room.targets[i])}</td>{today.outside && <td>{deg(outside[i])}</td>}<td>{long ? hmText(minutesIn(room.calls, t, t + rowMs)) : minutesIn(room.calls, t, t + rowMs) > 0 ? 'Heating' : ''}</td></tr>
+                    <tr key={t}><td>{when(t)}</td><td>{deg(room.temps[i])}</td><td>{deg(room.targets[i])}</td>{today.outside && <td>{deg(outside[i])}</td>}{room.humidity && <td>{pctText(room.humidity[i])}</td>}{room.coldSpot && <td>{pctText(room.coldSpot[i])}</td>}<td>{long ? hmText(minutesIn(room.calls, t, t + rowMs)) : minutesIn(room.calls, t, t + rowMs) > 0 ? 'Heating' : ''}</td></tr>
                   ))}
                 </tbody>
               </>
@@ -604,7 +641,7 @@ export function TodayChart({ state, today: day, error: dayError }) {
       ) : (
         <div className="chart scrub-area" ref={ref}>
           {geo && <svg width={width} height={total} role="img" className="scrub"
-            aria-label={isAll ? `${mInfo.title} in each room, ${rangeTitle.toLowerCase()}, with when each room called for heat` : `${room.name}: temperature, target, outside and when it heated, ${rangeTitle.toLowerCase()}`}
+            aria-label={isAll ? `${mInfo.title} in each room, ${rangeTitle.toLowerCase()}, with when each room called for heat` : rhMode ? `${room.name}: humidity${room.coldSpot ? ' and at its coldest spots' : ''}, and when it heated, ${rangeTitle.toLowerCase()}` : `${room.name}: temperature, target, outside and when it heated, ${rangeTitle.toLowerCase()}`}
             {...scrub}>
             {isAll && today.boilerRuns.map(([a, b], k) => (
               <rect key={k} className="fire-band" x={tx(Math.max(a, today.from))} y={m.t} width={Math.max(1.5, tx(Math.min(b, today.to)) - tx(Math.max(a, today.from)))} height={(lanes ? total - 4 : H - m.b) - m.t} />
@@ -621,7 +658,7 @@ export function TodayChart({ state, today: day, error: dayError }) {
             {yTicks.map((v) => (
               <g key={v}>
                 <line className={`grid${isAll && metric === 'diff' && v === 0 ? ' zero' : ''}`} x1={m.l} x2={width - m.r} y1={y(v)} y2={y(v)} />
-                <text className="axis" x={m.l - 6} y={y(v) + 4} textAnchor="end">{isAll && metric === 'diff' ? (v === 0 ? '0°' : `${v > 0 ? '+' : '−'}${Math.abs(v)}°`) : `${v}°`}</text>
+                <text className="axis" x={m.l - 6} y={y(v) + 4} textAnchor="end">{pctAxis ? `${v}%` : isAll && metric === 'diff' ? (v === 0 ? '0°' : `${v > 0 ? '+' : '−'}${Math.abs(v)}°`) : `${v}°`}</text>
               </g>
             ))}
             {xTicks.map(({ t, i, label }) => <text key={t} className="axis" x={x(i)} y={H - 6} textAnchor="middle">{label}</text>)}
@@ -666,6 +703,19 @@ export function TodayChart({ state, today: day, error: dayError }) {
                   </g>
                 )}
               </>
+            ) : rhMode ? (
+              <>
+                {room.coldSpot && <line className="ln-mould" x1={m.l} x2={width - m.r} y1={y(80)} y2={y(80)} />}
+                {room.coldSpot && <path className="ln ln-cold" d={linePath(room.coldSpot, x, y)} />}
+                <path className="ln ln-hum" d={linePath(room.humidity, x, y)} />
+                {hv && (
+                  <g>
+                    <line className="cross" x1={x(hover)} x2={x(hover)} y1={m.t} y2={H - m.b} />
+                    {hv.cold != null && <circle className="dot dot-cold" cx={x(hover)} cy={y(hv.cold)} r="4" />}
+                    {hv.rh != null && <circle className="dot dot-hum" cx={x(hover)} cy={y(hv.rh)} r="4.5" />}
+                  </g>
+                )}
+              </>
             ) : (
               <>
                 {today.outside && <path className="ln ln-out" d={linePath(outside, x, y)} />}
@@ -687,11 +737,20 @@ export function TodayChart({ state, today: day, error: dayError }) {
               <b>{when(hv.t)}{isAll ? ` · ${mInfo.title.toLowerCase()}` : ''}</b>
               {isAll ? hv.rows.map((r) => (
                 <span key={r.id} className={dim(r.id).trim()}><i className="sw sw-line" style={{ '--c': r.color }} />{r.name}{r.calling && <i className="tip-heat" title="calling for heat" aria-label="calling for heat" />} <em>{fmt(r.v)}</em></span>
-              )) : (
+              )) : rhMode ? (
+                <>
+                  <span><i className="sw sw-hum" />Humidity <em>{pctText(hv.rh)}</em></span>
+                  {room.coldSpot && <span><i className="sw sw-cold" />Coldest spots <em>{pctText(hv.cold)}</em></span>}
+                  <span><i className="sw sw-room" />In the room <em>{deg(hv.temp)}</em></span>
+                  {today.outside && <span><i className="sw sw-out" />Outside <em>{deg(hv.out)}</em></span>}
+                  {long ? (hv.heat > 0 && <span><i className="sw sw-heat-sm" />Heated <em>{hmText(hv.heat)}</em></span>) : hv.heat > 0 && <span><i className="sw sw-heat-sm" />Heating</span>}
+                </>
+              ) : (
                 <>
                   <span><i className="sw sw-room" />In the room <em>{deg(hv.temp)}</em></span>
                   <span><i className="sw sw-target" />Target <em>{deg(hv.target)}</em></span>
                   {today.outside && <span><i className="sw sw-out" />Outside <em>{deg(hv.out)}</em></span>}
+                  {hv.rh != null && <span><i className="sw sw-hum" />Humidity <em>{pctText(hv.rh)}</em></span>}
                   {long ? (hv.heat > 0 && <span><i className="sw sw-heat-sm" />Heated <em>{hmText(hv.heat)}</em></span>) : hv.heat > 0 && <span><i className="sw sw-heat-sm" />Heating</span>}
                 </>
               )}

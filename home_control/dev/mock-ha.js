@@ -71,6 +71,11 @@ add('climate.lounge_trv', trv('Lounge radiator', 18, 18.5, ['heat', 'off']), { a
 add('climate.bedroom_trv', trv('Bedroom radiator', 16, 17, ['heat', 'off', 'auto']), { area: 'bedroom', state: 'auto' });
 add('climate.heating', { friendly_name: 'Heating', hvac_modes: ['heat', 'off', 'auto'], temperature: 7, current_temperature: 19, min_temp: 5, max_temp: 32, target_temp_step: 0.5 }, { state: 'auto' });
 add('sensor.lounge_temperature', { friendly_name: 'Lounge temperature', device_class: 'temperature', unit_of_measurement: '°C' }, { area: 'lounge', state: '18.4' });
+// the same monitor's humidity: a second sensor on the thermometer's device (as most are)
+add('sensor.lounge_monitor_humidity', { friendly_name: 'Lounge humidity', device_class: 'humidity', unit_of_measurement: '%' }, { area: 'lounge', state: '62' });
+devices.pop();
+entities[entities.length - 1].device_id = 'dev_sensor_lounge_temperature';
+add('sensor.bathroom_humidity', { friendly_name: 'Bathroom humidity', device_class: 'humidity', unit_of_measurement: '%' }, { area: 'kitchen', state: '71' });
 add('weather.home', { friendly_name: 'Home', temperature: 12, temperature_unit: '°C' }, { state: 'cloudy' });
 add('zone.home', { friendly_name: 'Home', latitude: 53.26, longitude: -2.52, radius: 100 }, { state: '0' });
 
@@ -416,6 +421,15 @@ function simulateWeek(end) {
       const rr = (day.rooms[r.name] ||= { callMin: 0, tempSum: 0, tempN: 0 });
       if (r.calling) rr.callMin += 5;
       rr.tempSum += r.T * 5; rr.tempN += 5;
+      // the lounge's humidity: the same moisture in the air (a dew point of about 9.5°, more in the
+      // evening with cooking), so it rises as the room cools
+      if (r.name === 'Lounge') {
+        const { h } = local(t);
+        const dew = 9.5 + 1.2 * Math.sin(((h - 15) / 24) * 2 * Math.PI) + (h >= 18 && h < 20 ? 1.2 : 0);
+        const es = (x) => 6.112 * Math.exp((17.62 * x) / (243.12 + x));
+        const rh = Math.min(99, Math.round((100 * es(dew)) / es(r.T)));
+        history.push({ entity: 'sensor.lounge_monitor_humidity', t, s: String(rh), a: { unit_of_measurement: '%', device_class: 'humidity' } });
+      }
       for (const id of r.ids) {
         const cur = Math.round(r.T * 10) / 10;
         if (id.startsWith('sensor.')) history.push({ entity: id, t, s: String(cur), a: { unit_of_measurement: '°C' } });

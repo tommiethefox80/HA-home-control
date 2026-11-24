@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, deg, fmtTime } from './lib.js';
 import { useScrub } from '../scrub.js';
+import { DampCheck } from './Humidity.jsx';
 
 // ---------- formatting ----------
 const sym = (u) => ({ GBP: '£', EUR: '€', USD: '$' }[u] ?? '');
@@ -229,6 +230,7 @@ export default function Insights({ state }) {
         {data.trackedDays < 7 && <p className="chart-explain" style={{ marginTop: 8 }}>Heating time and averages fill in as the app records them ({data.trackedDays} of 7 days so far).</p>}
       </section>
 
+      <DampCheck state={state} />
       <RoomHeat />
       <PredictionCheck tz={state.timeZone} />
     </>
