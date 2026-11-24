@@ -23,6 +23,7 @@ export function statusLine(z, tz) {
     case 'preheat': return <>Warming early to reach <b>{deg(z.target)}</b> by {z.readyBy}</>;
     case 'ease-off': return <>Easing off early for <b>{deg(z.target)}</b> at {at(next)}</>;
     case 'window': return <>Window open? Heating paused until {fmtTime(z.until, tz)}</>;
+    case 'quiet': return <>Thermometer not reporting: heating off, frost protection at {deg(z.target)}</>;
     case 'hold': return <>Held at <b>{deg(z.target)}</b> until {fmtTime(z.until, tz)}</>;
     case 'manual': return <>Changed on {z.by || 'the radiator'} to <b>{deg(z.target)}</b> until {fmtTime(z.until, tz)}</>;
     case 'snooze': return <>Snoozed at <b>{deg(z.target)}</b> {z.forever ? 'until you turn it back on' : `until ${fmtUntil(z.until, tz)}`}</>;
@@ -243,6 +244,25 @@ function SnoozeSection({ z, state, run, busy }) {
   );
 }
 
+/** The room's thermometer has stopped reporting: what the room is doing meanwhile, and what to check. */
+function QuietThermometer({ z, tz, onClose }) {
+  const q = z.thermometer.quiet;
+  const since = q.heard ? ` since ${fmtTime(q.heard, tz)}` : '';
+  return (
+    <div className="boost-running quiet-box" style={{ marginBottom: 12 }}>
+      <p>
+        <b>{z.thermometer.name} {q.reason === 'offline' ? 'is offline' : `hasn't reported${since}`}</b>
+        {q.reason === 'heating' && ', though the room has been heating and its radiators have warmed'}.{' '}
+        {q.action === 'off'
+          ? <>Its last reading ({deg(z.thermometer.current)}) is out of date, so {z.name}'s heating is off (frost protection) until it reports again.</>
+          : <>Its last reading ({deg(z.thermometer.current)}) is out of date, so {z.name} is going by its radiators' own readings ({deg(z.trvTemp ?? z.current)} now) until it reports again. They read a little warm, being next to the radiator.</>}
+      </p>
+      <p>Press its button to wake it, or check its batteries and connection (for Zigbee, <i>Last seen</i> on its device page in Home Assistant). Home Control goes back to it as soon as it reports.</p>
+      <a className="btn link" href={`#/settings/rooms/${z.id}`} onClick={onClose}>Choose another thermometer</a>
+    </div>
+  );
+}
+
 function RoomSheet({ z, state, onClose, notify }) {
   const [boostTemp, setBoostTemp] = useState(Math.max(21, Math.ceil(z.target + 1)));
   const [busy, setBusy] = useState(false);
@@ -270,6 +290,7 @@ function RoomSheet({ z, state, onClose, notify }) {
         </div>
       )}
 
+      {z.thermometer?.quiet && <QuietThermometer z={z} tz={tz} onClose={onClose} />}
       {z.source === 'window' && (
         <div className="boost-running" style={{ marginBottom: 12 }}>
           <p>{z.name} dropped {z.windowPause ? `${Math.round((z.windowPause.from - z.windowPause.to) * 10) / 10}°` : 'sharply'} in a few minutes, so its heating is paused until {fmtTime(z.until, tz)}.</p>
@@ -306,8 +327,10 @@ function RoomSheet({ z, state, onClose, notify }) {
         {z.thermometer && (
           <li className="thermo">
             <span className="dev-name">{z.thermometer.name}<small>room thermometer</small></span>
-            <span className={`meta${z.thermometer.available ? '' : ' bad'}`}>
-              {!z.thermometer.available ? 'Offline' : <>{deg(z.thermometer.current)} now{z.humidity && !z.humidity.fromTrvs ? `, ${pct(z.humidity.now)} humidity` : ''}</>}
+            <span className={`meta${z.thermometer.available && !z.thermometer.quiet ? '' : ' bad'}`}>
+              {!z.thermometer.available ? 'Offline'
+                : z.thermometer.quiet ? <>Not heard from{z.thermometer.quiet.heard ? ` since ${fmtTime(z.thermometer.quiet.heard, tz)}` : ''} (last {deg(z.thermometer.current)})</>
+                  : <>{deg(z.thermometer.current)} now{z.humidity && !z.humidity.fromTrvs ? `, ${pct(z.humidity.now)} humidity` : ''}</>}
             </span>
           </li>
         )}

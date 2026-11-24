@@ -246,6 +246,7 @@ A card above the rooms appears only when something needs looking at:
 
 - a room that has been calling for heat for over an hour without warming (a cold radiator, an airlock, or a stuck valve);
 - a radiator valve that's offline, or whose battery is at 20% or less;
+- a room thermometer that's stopped reporting (see [A thermometer that stops reporting](#a-thermometer-that-stops-reporting));
 - the boiler control being offline, or the boiler not reporting that it's heating 10 minutes after being asked;
 - **Hive (or whichever integration your radiators and boiler use) not working in Home Assistant** (see below), first, with a button to open it in Home Assistant.
 
@@ -264,6 +265,20 @@ It's shown first under Needs attention, here and on the dashboard card, instead 
 While the boiler can't be reached, nothing can fire it, so Home Control doesn't count it as running: the top of the Heating page says **Boiler control offline**, a room that wants heat says **Can't heat** (instead of Heating), and that time isn't added to the boiler's or the rooms' heating time in Today, the room cards or Insights, or learned from. The dashboard card and `binary_sensor.home_boiler` show it as unavailable rather than on. It doesn't try to switch the boiler meanwhile; as soon as it can be reached, rooms that still want heat start again.
 
 Before 1.14.2 a room calling for heat during an outage was counted as heating. Once, after updating, Home Control finds when the boiler couldn't be reached in Home Assistant's history (the last 10 days) and takes that time back out of the rooms' records, noted in Activity. The boiler's own time comes from that history, so it's right too.
+
+### A thermometer that stops reporting
+
+A battery thermometer that drops off its network (a Zigbee sensor that's lost its connection, say) keeps showing its last reading in Home Assistant, which only marks it offline hours later (ZHA waits six hours). A room going by that reading could heat all evening: stuck at 18.4° with a 19° target, it never warms up as far as Home Control can tell.
+
+So Home Control watches when each room's thermometer last reported. Home Assistant keeps that as *last reported*, which a report of the same reading updates too (the app reads it through Home Assistant's REST API, as the live connection only says when a reading changes). A thermometer counts as stopped:
+
+- when it's offline (unavailable) in Home Assistant for three minutes or more;
+- when it hasn't reported for an hour and a half (Settings → Heating → How it behaves → **When a room thermometer stops reporting**; many thermometers only report when the reading changes, with a check-in about once an hour, so not much less than an hour);
+- while the room's heating, sooner: after half an hour with nothing from it while the room's radiators have warmed 1.5° by their own readings.
+
+Meanwhile the room goes by its radiators' own readings (the default; they read a little warm, being next to the radiator, so it heats a little less), or has its heating turned off (frost protection) if you choose that in the same place. A room with no readings from its radiators has its heating turned off either way. It's under **Needs attention** (and on the dashboard card), on the room's card, on its page (with what to check, and a link to choose another thermometer), in Activity, and in Home Assistant's notifications (turn that off, or turn on a phone alert, in Settings → Heating → Phone alerts). Nothing is learned from the radiators' readings meanwhile, and open-window detection waits.
+
+As soon as the thermometer reports again, the room goes back to it, and the notification clears. To get one reporting again, press its button to wake it; for Zigbee, *Last seen* on its device page in Home Assistant says when it was last heard. A battery sensor talks through a nearby mains-powered Zigbee device (a plug or bulb), so one losing power (a bulb switched off at the wall) can cut it off.
 
 ### Changes made on a radiator
 
@@ -385,7 +400,7 @@ Every half hour the app works out each room's heat loss for each day (from its s
 
 ## Phone alerts
 
-In **Settings → Heating → Phone alerts** you can have Home Assistant notify a device when the heating comes on, when it goes off, when a window looks open, when a room loses heat faster than usual, and when Hive stops working in Home Assistant (and again when it's working). Each alert has its own switch and its own device, chosen from your `notify` services: a phone running the Home Assistant app (`notify.mobile_app_…`), or a notify group to reach several devices at once. **Send test** sends a sample straight away.
+In **Settings → Heating → Phone alerts** you can have Home Assistant notify a device when the heating comes on, when it goes off, when a window looks open, when a room loses heat faster than usual, when a room's thermometer stops reporting (and when it's back), and when Hive stops working in Home Assistant (and again when it's working). Each alert has its own switch and its own device, chosen from your `notify` services: a phone running the Home Assistant app (`notify.mobile_app_…`), or a notify group to reach several devices at once. **Send test** sends a sample straight away.
 
 The "on" alert names the rooms that fired the boiler and their temperatures. The "off" alert says how long the boiler ran. Alerts replace each other on the phone rather than stacking up. They follow the boiler's minimum run and rest times, so a boiler that cycles a lot will send a lot of alerts.
 

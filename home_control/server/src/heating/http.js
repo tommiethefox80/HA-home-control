@@ -13,9 +13,9 @@ import { HeatLossWatch } from './heatloss.js';
 import { LongLog, buildHistory } from './longlog.js';
 import { findHumidity, isHumiditySensor } from './humidity.js';
 
-export function createHeating({ client, dataDir, log, lightingSummary = () => null }) {
+export function createHeating({ client, dataDir, log, lightingSummary = () => null, restBase = null, token = null }) {
   const store = new Store(dataDir);
-  const ha = new HaClient({ client, log });
+  const ha = new HaClient({ client, log, restBase, token });
   const engine = new Engine(ha, store, log);
   engine.targetLog = new TargetLog(dataDir);
   engine.dailyLog = new DailyLog(dataDir);

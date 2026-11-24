@@ -41,7 +41,7 @@ function today(tz) {
 export function roomStatus(z, tz) {
   const base = baseStatus(z, tz);
   // below its target but not heating: say when it will
-  if (!z.enabled || !z.waiting || z.startAt == null || ['off', 'window'].includes(z.source)) return base;
+  if (!z.enabled || !z.waiting || z.startAt == null || ['off', 'window', 'quiet'].includes(z.source)) return base;
   const wait = z.coasting ? 'Warming from leftover heat' : `Heats again below ${deg(z.startAt)}`;
   return z.source === 'schedule' || !z.source ? `${wait} · ${base.replace(/^On schedule, /, '')}` : `${base} · ${wait.toLowerCase()}`;
 }
@@ -58,6 +58,7 @@ function baseStatus(z, tz) {
     case 'preheat': return `Warming early to reach ${deg(z.target)} by ${z.readyBy}`;
     case 'ease-off': return `Easing off early for ${deg(z.target)} at ${at(next)}`;
     case 'window': return `Window open? Heating paused until ${clock(z.until, tz)}`;
+    case 'quiet': return `Thermometer not reporting: heating off, frost protection at ${deg(z.target)}`;
     case 'hold': return `Held at ${deg(z.target)} until ${clock(z.until, tz)}`;
     case 'manual': return `Changed on ${z.by || 'the radiator'} to ${deg(z.target)} until ${clock(z.until, tz)}`;
     case 'snooze': return `Snoozed at ${deg(z.target)} ${z.forever ? 'until you turn it back on' : `until ${clock(z.until, tz)}`}`;

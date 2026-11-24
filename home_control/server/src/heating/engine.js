@@ -38,6 +38,9 @@ export class Engine extends EventEmitter {
     this.views = [];
     this.heatSess = {};            // zoneId -> { at, temp, outside, target } while calling (warm-up learning)
     this.tempHist = new Map();     // zoneId -> [{ t, v }] recent readings (open-window detection)
+    this.reported = new Map();     // thermometer -> when it last reported (from Home Assistant's REST API: last_reported)
+    this.lastPoll = new Map();     // thermometer -> when that was last asked
+    this.trvHist = new Map();      // zoneId -> [{ t, v }] its radiators' own readings, the last 3 hours
     this.callSince = {};           // zoneId -> { at, temp } when it started calling (stuck-radiator check)
     this.attention = [];
     this.startedAt = Date.now();
@@ -279,6 +282,8 @@ export class Engine extends EventEmitter {
     if (this.rt.mode === 'off') return { temp: this.s.frostTemp, source: 'off', sched };
     const win = this.rt.windowPause?.[zone.id];
     if (win && win.until > now) return { temp: this.s.frostTemp, source: 'window', until: win.until, sched };
+    // its thermometer has stopped reporting, and the house setting (or no radiator readings to go by) says off
+    if (this.rt.quiet?.[zone.id] && this.quietAction(zone) === 'off') return { temp: this.s.frostTemp, source: 'quiet', since: this.rt.quiet[zone.id].since, sched };
     if (ov && ov.until > now) return { temp: ov.temp, source: ov.kind, until: ov.until, by: ov.by, via: ov.via, forever: !!ov.forever, sched };
     if (this.rt.mode === 'away' && !(this.rt.awayUntil && this.rt.awayUntil <= now)) return { temp: this.awayTempFor(zone), source: 'away', until: this.rt.awayUntil, sched };
     if (!sched) return { temp: this.s.frostTemp, source: 'no-schedule', sched };
@@ -328,6 +333,7 @@ export class Engine extends EventEmitter {
     const took = mins ? `, after ${mins} min${since.temp != null && current != null ? ` (from ${d(since.temp)})` : ''}` : '';
     if (current == null) return `${zone.name}: stopped heating, no temperature reading${took}`;
     if (t.source === 'off') return `${zone.name}: stopped heating, the heating is off${took}`;
+    if (t.source === 'quiet') return `${zone.name}: stopped heating, its thermometer isn't reporting${took}`;
     // warming early, and warm already: ready for the scheduled time
     const was = (this.views || []).find((v) => v.id === zone.id);
     if (was?.source === 'preheat' && current >= was.target - (was.stopMargin ?? 0) - 0.05) {
@@ -699,6 +705,10 @@ export class Engine extends EventEmitter {
     const mins = (ms) => Math.round(ms / 60000 / TS);
     for (const v of views) {
       if (!v.enabled) continue;
+      const q = this.rt.quiet?.[v.id];
+      if (q && !covered(q.sensor)) {
+        out.push({ key: `quiet-${v.id}`, room: v.name, text: `${this.#name(q.sensor)} (${v.name}'s thermometer) ${q.reason === 'offline' ? 'is offline' : `hasn't reported${q.heard ? ` since ${this.#sinceTime(q.heard)}` : ''}`}, so ${this.quietAction(this.zones.find((z) => z.id === v.id) || {}) === 'off' ? 'the room\'s heating is off (frost protection)' : 'the room is going by its radiators\' own readings'} until it does. Wake it (press its button) or check its batteries and connection.` });
+      }
       const cs = this.callSince[v.id];
       if (v.heating && cs && now - cs.at > 60 * 60000 * TS && v.current != null && v.current - cs.temp < 0.2) {
         out.push({ key: `stuck-${v.id}`, room: v.name, text: `${v.name} has been calling for heat for ${mins(now - cs.at)} min without warming (${cs.temp}° then, ${v.current}° now). Check its radiator is getting hot and the valve isn't stuck.` });
@@ -796,12 +806,138 @@ export class Engine extends EventEmitter {
     if (zone.sensor) {
       const st = this.ha.get(zone.sensor);
       const v = st && !UNAVAILABLE.has(st.state) ? num(st.state) : null;
+      // a thermometer that's stopped reporting: its last reading is out of date, so the radiators' own
+      if (this.rt.quiet?.[zone.id]) return this.trvTemp(zone) ?? v;
       if (v != null) return v;
     }
+    return this.trvTemp(zone);
+  }
+
+  /** The average of a room's radiators' own readings (own: leaving out the boiler's thermostat). */
+  trvTemp(zone, { own = false } = {}) {
     const vals = (zone.trvs || [])
+      .filter((e) => !own || e !== this.s.boiler?.entity)
       .map((e) => num(this.ha.get(e)?.attributes?.current_temperature))
       .filter((v) => v != null);
     return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+  }
+
+  // ---- a room thermometer that's stopped reporting ----
+  // A battery sensor that drops off its network (Zigbee, say) keeps its last reading in Home
+  // Assistant, which only marks it unavailable hours later (ZHA: 6 hours). Going by that reading,
+  // a room below its target calls for heat all along. So the app watches when each thermometer last
+  // reported (Home Assistant's last_reported: a report of the same value counts too).
+
+  /** What happens while a room's thermometer is quiet: 'trvs' (its radiators' own readings) or 'off' (frost protection). */
+  quietAction(zone) {
+    const a = this.s.quietSensor?.action === 'off' ? 'off' : 'trvs';
+    return a === 'trvs' && this.trvTemp(zone) == null ? 'off' : a; // (nothing else to go by)
+  }
+
+  /** When a thermometer last reported. */
+  heardAt(id) {
+    const st = this.ha.get(id);
+    const t = (x) => { const v = Date.parse(x || ''); return Number.isFinite(v) ? v : 0; };
+    return Math.max(st ? Math.max(t(st.last_reported), t(st.last_updated), t(st.last_changed)) : 0, this.reported.get(id) || 0);
+  }
+
+  // Home Assistant's websocket only says when a value changes; a report of the same value updates
+  // last_reported, read with its REST API. Asked about thermometers not heard from for 5 minutes,
+  // once a minute each.
+  #pollReports(now) {
+    if (!this.ha.fetchState || !this.ha.connected) return;
+    for (const z of this.zones) {
+      const id = z.enabled && z.sensor;
+      if (!id || now - this.heardAt(id) < 5 * 60000 || now - (this.lastPoll.get(id) || 0) < 60000) continue;
+      this.lastPoll.set(id, now);
+      this.ha.fetchState(id).then((st) => {
+        const r = Date.parse(st?.last_reported || st?.last_updated || '');
+        if (!Number.isFinite(r) || r <= (this.reported.get(id) || 0)) return;
+        this.reported.set(id, r);
+        if (this.rt.quiet?.[z.id] && r > this.rt.quiet[z.id].heard + 1000) this.requestTick(100);
+      }).catch(() => {});
+    }
+  }
+
+  /** Is a room's thermometer quiet: unavailable, not heard from for a while, or silent while its radiators warm? */
+  #checkQuiet(zone, now) {
+    const Q = (this.rt.quiet ||= {});
+    const q = Q[zone.id];
+    const id = zone.enabled ? zone.sensor : null;
+    // its radiators' own readings, for "they've warmed and it's said nothing"
+    const own = this.trvTemp(zone, { own: true });
+    const h = this.trvHist.get(zone.id) || [];
+    if (own != null && (!h.length || now - h[h.length - 1].t >= 60000)) h.push({ t: now, v: own });
+    while (h.length && now - h[0].t > 3 * 3600000) h.shift();
+    this.trvHist.set(zone.id, h);
+    if (!id) { if (q) this.#quietEnd(zone, q, null); return; }
+    const st = this.ha.get(id);
+    const offline = !st || (UNAVAILABLE.has(st.state) && this.#gone(id));
+    const heard = this.heardAt(id);
+    if (q) {
+      if (q.sensor !== id) this.#quietEnd(zone, q, null);
+      else if (!offline && st && !UNAVAILABLE.has(st.state) && heard > q.heard + 1000) this.#quietEnd(zone, q, num(st.state));
+      return;
+    }
+    if (st && UNAVAILABLE.has(st.state) && !offline) return; // a blip (Home Assistant restarting)
+    const minutes = Number(this.s.quietSensor?.minutes) || 90;
+    let reason = null;
+    if (offline) reason = 'offline';
+    else if (heard && now - heard >= minutes * 60000 * TS) reason = 'long';
+    else if (heard) {
+      // heating for half an hour, its radiators 1.5° warmer than when it last reported, and nothing from it
+      const cs = this.callSince[zone.id];
+      const then = h.filter((x) => x.t <= heard + 2 * 60000).pop();
+      if (cs && now - cs.at >= 30 * 60000 * TS && now - heard >= 30 * 60000 * TS && then && own != null && own - then.v >= 1.5) reason = 'heating';
+    }
+    if (!reason) return;
+    const heatingFor = this.callSince[zone.id] ? Math.round((now - this.callSince[zone.id].at) / 60000 / TS) : 0;
+    Q[zone.id] = { since: now, heard: heard || null, sensor: id, reason, value: st ? num(st.state) : null };
+    // what was learned from its readings so far doesn't carry across to the radiators' (and back)
+    this.#readingsSwitched(zone, now);
+    this.store.save();
+    const name = this.#name(id);
+    const what = this.quietAction(zone) === 'off' ? 'its heating is off (frost protection) until it does' : 'it\'s going by its radiators\' own readings until it does';
+    const when = heard ? ` since ${this.#sinceTime(heard)}` : '';
+    const why = reason === 'offline' ? `${name} is offline in Home Assistant`
+      : reason === 'heating' ? `${name} hasn't reported${when}, though the room's been heating for ${heatingFor} min and its radiators have warmed`
+        : `${name} hasn't reported${when}`;
+    const text = `${zone.name}: ${why}, so ${what}`;
+    this.note(text);
+    this.log(text);
+    this.#quietNotify(zone, true, text);
+    this.requestTick(100);
+  }
+
+  #quietEnd(zone, q, value) {
+    delete this.rt.quiet[zone.id];
+    this.#readingsSwitched(zone, Date.now());
+    this.store.save();
+    const name = this.#name(q.sensor);
+    const text = value == null
+      ? `${zone.name}: stopped waiting for ${name} (no longer its thermometer)`
+      : `${zone.name}: ${name} is reporting again (${value}°), so the room goes by it again`;
+    this.note(text);
+    this.#quietNotify(zone, false, text);
+    this.requestTick(100);
+  }
+
+  /** The room's readings come from somewhere else now: open-window detection and learning start afresh. */
+  #readingsSwitched(zone, now) {
+    this.tempHist.delete(zone.id);
+    delete this.heatSess[zone.id];
+    if (this.rt.coast?.[zone.id]) this.rt.coast[zone.id].done = true;
+    if (this.callSince[zone.id]) this.callSince[zone.id] = { ...this.callSince[zone.id], temp: this.currentTemp(zone) };
+  }
+
+  #quietNotify(zone, quiet, text) {
+    const cfg = this.s.notify?.quiet || {};
+    const nid = `home_control_thermometer_${zone.id}`;
+    if (cfg.ha !== false) {
+      if (quiet) this.#call('persistent_notification', 'create', { notification_id: nid, title: `${zone.name}: thermometer not reporting`, message: `${text}.\n\nWake it (press its button) or check its connection; Home Control goes back to it as soon as it reports.` });
+      else this.#call('persistent_notification', 'dismiss', { notification_id: nid });
+    }
+    this.#alert('quiet', [], null, false, { title: quiet ? `${zone.name}: thermometer not reporting` : `${zone.name}: thermometer back`, message: text });
   }
 
   // ---- housekeeping ----
@@ -847,6 +983,8 @@ export class Engine extends EventEmitter {
     const next = Math.min(...Object.values(this.rt.overrides).map((o) => o.until), Infinity);
     if (next - now < 30000) { clearTimeout(this.expiryTimer); this.expiryTimer = setTimeout(() => this.tick(), Math.max(200, next - now + 50)); }
     if (this.ha.connected) { this.#presence(now); this.#awayBack(now); }
+    this.#pollReports(now);
+    if (this.ha.connected) for (const zone of this.zones) this.#checkQuiet(zone, now);
     const views = [];
     for (const zone of this.zones) views.push(this.#runZone(zone, now));
     this.#forecast(views, now);
@@ -914,10 +1052,13 @@ export class Engine extends EventEmitter {
     const real = calling && !!zone.enabled && this.canHeat(zone);
     this.heatingReal.set(zone.id, real);
     if (calling && !real) delete this.heatSess[zone.id]; // a heat-up cut short like this teaches nothing
+    const quiet = this.rt.quiet?.[zone.id] || null;
+    if (zone.enabled && quiet) warnings.push(`${this.#name(quiet.sensor)} hasn't reported${quiet.heard ? ` since ${this.#sinceTime(quiet.heard)}` : ''}: ${this.quietAction(zone) === 'off' ? 'heating off until it does' : 'going by the radiators until it does'}`);
     if (zone.enabled) {
-      this.#trackCoast(zone, wasReal, real, current, t.temp, now, { stop, margin });
-      if (t.source !== 'window') this.#trackWarm(zone, wasReal, real, current, t.temp, now);
-      this.#trackWindow(zone, current, now);
+      // (not learned from the radiators' own readings while the thermometer's quiet)
+      if (!quiet) this.#trackCoast(zone, wasReal, real, current, t.temp, now, { stop, margin });
+      if (t.source !== 'window' && !quiet) this.#trackWarm(zone, wasReal, real, current, t.temp, now);
+      if (!quiet) this.#trackWindow(zone, current, now);
       if (real && !wasReal) this.callSince[zone.id] = { at: now, temp: current };
       if (!real) delete this.callSince[zone.id];
     }
@@ -979,7 +1120,13 @@ export class Engine extends EventEmitter {
       current, target: t.temp, source: t.source, until: t.until || null, by: t.by || null, via: t.via || null, forever: !!t.forever,
       snoozedUnder: this.#snoozeUnder(zone.id, now) ? true : false,
       scheduled: t.sched, calling, trvs, sensor: zone.sensor || null, warnings,
-      thermometer: zone.sensor ? { entity_id: zone.sensor, name: this.#name(zone.sensor), available: (() => { const st = this.ha.get(zone.sensor); return !!st && !UNAVAILABLE.has(st.state); })(), current: num(this.ha.get(zone.sensor)?.state) } : null,
+      thermometer: zone.sensor ? {
+        entity_id: zone.sensor, name: this.#name(zone.sensor),
+        available: (() => { const st = this.ha.get(zone.sensor); return !!st && !UNAVAILABLE.has(st.state); })(),
+        current: num(this.ha.get(zone.sensor)?.state), heard: this.heardAt(zone.sensor) || null,
+        quiet: quiet ? { since: quiet.since, heard: quiet.heard, reason: quiet.reason, action: this.quietAction(zone) } : null,
+      } : null,
+      trvTemp: zone.sensor ? this.trvTemp(zone) : null,
       humidity: this.#humidityView(zone, current),
     };
   }
@@ -1188,6 +1335,9 @@ export class Engine extends EventEmitter {
       const e = extra || { room: 'Bedroom', percent: 45 };
       return { title: `${e.room}: losing heat faster`, message: `${e.room} has been losing heat at least ${e.percent}% faster than on its days as cold, over the last two days. Worth checking for a window or trickle vent left open, or a new draught.` };
     }
+    if (which === 'quiet') {
+      return extra || { title: 'Bedroom: thermometer not reporting', message: 'Bedroom: Bedroom temperature hasn\'t reported since 18:53, so it\'s going by its radiators\' own readings until it does. (This is a test.)' };
+    }
     if (which === 'window') {
       const e = extra || { room: 'Kitchen', drop: 1.2, until: Date.now() + 20 * 60000 };
       return { title: `${e.room}: window open?`, message: `${e.room} dropped ${e.drop}° in a few minutes, so its heating is paused until ${this.#fmtTime(e.until)}.` };
@@ -1290,11 +1440,11 @@ export class Engine extends EventEmitter {
       this.note(`Sent a test "Heating on, everyone's out" alert to ${cfg.services.join(', ')}`);
       return;
     }
-    if (!['on', 'off', 'window', 'heatloss', 'integration'].includes(which)) throw new Error('Unknown alert');
+    if (!['on', 'off', 'window', 'heatloss', 'integration', 'quiet'].includes(which)) throw new Error('Unknown alert');
     const calling = this.views.filter((v) => v.enabled && v.calling);
     const sample = calling.length ? calling : this.views.filter((v) => v.enabled).slice(0, 1);
     if (!this.#alert(which, sample, which === 'off' ? 42 : null, true)) throw new Error('Pick a device first');
-    this.note(`Sent a test "${{ on: 'Heating on', off: 'Heating off', window: 'Window open', heatloss: 'Losing heat faster', integration: 'Hive isn\'t working' }[which]}" alert to ${this.s.notify[which].service}`);
+    this.note(`Sent a test "${{ on: 'Heating on', off: 'Heating off', window: 'Window open', heatloss: 'Losing heat faster', integration: 'Hive isn\'t working', quiet: 'Thermometer not reporting' }[which]}" alert to ${this.s.notify[which].service}`);
   }
 
   boilerView() {
@@ -1353,6 +1503,13 @@ export class Engine extends EventEmitter {
 
   #fmtTime(ms) {
     return new Intl.DateTimeFormat('en-GB', { timeZone: this.ha.timeZone, weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
+  }
+
+  /** "18:53" today, "Mon 18:53" before. */
+  #sinceTime(ms) {
+    const day = (t) => new Intl.DateTimeFormat('en-CA', { timeZone: this.ha.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t));
+    if (day(ms) !== day(Date.now())) return this.#fmtTime(ms);
+    return new Intl.DateTimeFormat('en-GB', { timeZone: this.ha.timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
   }
 
   // On shutdown: hand Hive devices back to their own schedules so nothing is
@@ -1623,7 +1780,10 @@ export class Engine extends EventEmitter {
       // the integration behind the devices not working: a phone alert, and Home Assistant's notifications (on unless turned off)
       const ig = input.notify.integration ?? s.notify?.integration ?? {};
       const integration = { ...clean(ig), ha: ig.ha !== false };
-      s.notify = { on: clean(input.notify.on), off: clean(input.notify.off), window: clean(input.notify.window), heatloss: clean(input.notify.heatloss), empty, integration };
+      // a room thermometer that's stopped reporting: likewise
+      const qq = input.notify.quiet ?? s.notify?.quiet ?? {};
+      const quiet = { ...clean(qq), ha: qq.ha !== false };
+      s.notify = { on: clean(input.notify.on), off: clean(input.notify.off), window: clean(input.notify.window), heatloss: clean(input.notify.heatloss), empty, integration, quiet };
     }
     if (input.retention) {
       const r = input.retention;
@@ -1641,6 +1801,9 @@ export class Engine extends EventEmitter {
     if (input.easeOff) s.easeOff = { enabled: !!input.easeOff.enabled, drop: n(input.easeOff.drop, 0.2, 2, 0.5), maxMinutes: Math.round(n(input.easeOff.maxMinutes, 10, 120, 60)) };
     if (input.together) s.together = { enabled: !!input.together.enabled, minutes: Math.round(n(input.together.minutes, 5, 90, 30)) };
     if (input.heatLoss) s.heatLoss = { percent: Math.round(n(input.heatLoss.percent, 15, 200, 40)) };
+    if (input.quietSensor) {
+      s.quietSensor = { action: input.quietSensor.action === 'off' ? 'off' : 'trvs', minutes: Math.round(n(input.quietSensor.minutes, 15, 720, 90)) };
+    }
     if (input.window) {
       s.window = {
         enabled: !!input.window.enabled,

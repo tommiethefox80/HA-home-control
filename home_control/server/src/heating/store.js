@@ -35,6 +35,8 @@ const DEFAULTS = () => ({
       empty: { enabled: false, services: [], minutes: 120 },
       // Hive (or the integration behind the devices) not working; ha: in Home Assistant's notifications too
       integration: { enabled: false, service: '', ha: true },
+      // a room thermometer that's stopped reporting; ha: in Home Assistant's notifications too
+      quiet: { enabled: false, service: '', ha: true },
     },
     retention: { activityDays: 30, detailDays: 7, dailyDays: 400 },     // how long the add-on keeps its own history
     cards: { spark: true, fires: true },                                 // room cards: today's mini graph, times fired today
@@ -43,6 +45,7 @@ const DEFAULTS = () => ({
     together: { enabled: false, minutes: 30 },                           // fire rooms together: start rooms due within `minutes`
     heatLoss: { percent: 40 },                                           // heat-loss alerts: this much faster than usual
     window: { enabled: true, drop: 1, minutes: 10, pauseMinutes: 20 },   // open window detection
+    quietSensor: { action: 'trvs', minutes: 90 },                        // a room thermometer not reporting: go by its radiators (or 'off')
     presence: { enabled: false, people: [], delayMinutes: 15, nearMiles: 2 }, // away automatically
   },
   zones: [],

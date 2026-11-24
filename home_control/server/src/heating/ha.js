@@ -5,9 +5,11 @@
 import { EventEmitter } from 'node:events';
 
 export class HaClient extends EventEmitter {
-  constructor({ client, log }) {
+  constructor({ client, log, restBase = null, token = null }) {
     super();
     this.client = client;
+    this.restBase = restBase;
+    this.token = token;
     this.log = log || console.log;
     this.states = new Map();
     this.config = null;
@@ -95,6 +97,20 @@ export class HaClient extends EventEmitter {
   }
 
   get(entityId) { return this.states.get(entityId); }
+
+  /**
+   * One entity's state from Home Assistant's REST API, with last_reported: when the device last
+   * reported, even the same value (the websocket only says when something changes).
+   */
+  async fetchState(entityId) {
+    if (!this.restBase || !this.token) return null;
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const res = await fetch(`${this.restBase}/states/${entityId}`, { headers: { Authorization: `Bearer ${this.token}` }, signal: ctl.signal });
+      return res.ok ? await res.json() : null;
+    } finally { clearTimeout(t); }
+  }
 
   get timeZone() { return this.config?.time_zone || process.env.TZ || 'Europe/London'; }
 }

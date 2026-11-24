@@ -520,6 +520,14 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify({ message: 'Entity removed.' }));
   }
+  if (req.method === 'GET' && m) { // as Home Assistant: one state, with last_reported (a report of the same value too)
+    if (!/^Bearer \S+/.test(req.headers.authorization || '')) { res.writeHead(401); return res.end(); }
+    const st = states.get(m[1]);
+    if (!st) { res.writeHead(404, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ message: 'Entity not found.' })); }
+    const reported = [st._reported, st.last_updated].filter(Boolean).sort().pop();
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ ...publicState(st), last_reported: reported }));
+  }
   if (req.method === 'POST' && m) {
     if (!/^Bearer \S+/.test(req.headers.authorization || '')) { res.writeHead(401); return res.end(); }
     let raw = ''; for await (const c of req) raw += c;
@@ -730,6 +738,18 @@ createServer(async (req, res) => {
     return done({ ok: true, state: publicState(states.get(body.entity)) });
   }
   if (req.url === '/sensor') { setState(body.entity, { state: body.state, attrs: body.attrs }); return done({ ok: true }); }
+  // a device reporting the same value again: Home Assistant updates last_reported only (no state_changed)
+  if (req.url === '/report') { const st = states.get(body.entity); if (st) st._reported = nowIso(); return done({ ok: !!st }); }
+  // a device last heard from `minutes` ago (as if it had stopped reporting then): its times set back
+  if (req.url === '/quiet') {
+    const st = states.get(body.entity);
+    if (!st) return done({ ok: false });
+    const then = new Date(Date.now() - body.minutes * 60000).toISOString();
+    const old = publicState(st);
+    Object.assign(st, { last_changed: then, last_updated: then, _reported: then });
+    fireEvent('state_changed', { entity_id: body.entity, old_state: old, new_state: publicState(st) }, st.context);
+    return done({ ok: true });
+  }
   // a radiator's setpoint changed outside Home Control ({ context: { parent_id } }: by an automation)
   if (req.url === '/integration') return done(setIntegration(body));
   if (req.url === '/notifications') return done(Object.fromEntries(NOTIFICATIONS));

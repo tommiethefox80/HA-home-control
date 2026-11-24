@@ -67,7 +67,7 @@ const lightingSummary = () => {
   for (const g of lighting.engine.data.groups) for (const id of g.devices) if (lighting.engine.states.get(id)?.state === 'on') on++;
   return { groups, on, paused: !!lighting.store.data.paused };
 };
-const heating = createHeating({ client, dataDir: DATA_DIR, log: plain, lightingSummary });
+const heating = createHeating({ client, dataDir: DATA_DIR, log: plain, lightingSummary, restBase: REST_BASE, token: HA_TOKEN });
 lighting = createLighting({ client, dataDir: DATA_DIR, log: logObj, house });
 const cameras = createCameras({ client, dataDir: DATA_DIR, log: logObj, house, restBase: REST_BASE, token: HA_TOKEN, mediaDir: MEDIA_DIR, haMediaDir: HA_MEDIA_DIR, panel: panelPath });
 const wifi = createWifi({ client, dataDir: DATA_DIR, log: logObj, house, restBase: REST_BASE, token: HA_TOKEN });

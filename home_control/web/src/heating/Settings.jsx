@@ -359,6 +359,7 @@ const ALERTS = [
   ['off', 'When the heating goes off', 'e.g. "Heating off: no rooms need heat now, so the boiler has stopped. It ran for 42 min."'],
   ['window', 'When a window looks open', 'e.g. "Kitchen: window open? Kitchen dropped 1.2° in a few minutes, so its heating is paused until 21:05."'],
   ['heatloss', 'When a room loses heat faster than usual', 'e.g. "Bedroom has been losing heat 45% faster than usual over the last two days." Usually a window or trickle vent left open, or a new draught.'],
+  ['quiet', 'When a room thermometer stops reporting', 'e.g. "Bedroom: Bedroom temperature hasn\'t reported since 18:53, so it\'s going by its radiators\' own readings until it does." And when it\'s back.'],
   ['integration', 'When Hive stops working in Home Assistant', 'e.g. "Hive isn\'t working in Home Assistant: it failed to set up." Also when it needs signing in again, keeps retrying, or all its devices drop out; and when it\'s working again. (Whichever integration your radiators and boiler use.)'],
 ];
 
@@ -377,7 +378,7 @@ function PhoneAlerts({ s, set, setNotify, targets, saveFirst, dirty, notify }) {
   return (
     <section className="section">
       <h2>Phone alerts</h2>
-      <p>Get a notification from the Home Assistant app when the boiler starts or stops, when a window looks open, or when a room starts losing heat faster than usual, or when Hive stops working in Home Assistant. Pick a group service to alert several phones at once.</p>
+      <p>Get a notification from the Home Assistant app when the boiler starts or stops, when a window looks open, when a room starts losing heat faster than usual, when a room's thermometer stops reporting, or when Hive stops working in Home Assistant. Pick a group service to alert several phones at once.</p>
       {ALERTS.map(([which, label, example]) => {
         const cfg = n[which] || {};
         const custom = cfg.service && !known.has(cfg.service);
@@ -404,6 +405,12 @@ function PhoneAlerts({ s, set, setNotify, targets, saveFirst, dirty, notify }) {
               <label className="toggle" style={{ marginTop: 6 }}>
                 <input type="checkbox" checked={cfg.ha !== false} onChange={(e) => setNotify('integration', { ha: e.target.checked })} />
                 <span>Also in Home Assistant's notifications<small>Shown in Home Assistant's notifications (the bell), with a link to fix it, and cleared when it's working again. It's always under Needs attention here and on the dashboard card.</small></span>
+              </label>
+            )}
+            {which === 'quiet' && (
+              <label className="toggle" style={{ marginTop: 6 }}>
+                <input type="checkbox" checked={cfg.ha !== false} onChange={(e) => setNotify('quiet', { ha: e.target.checked })} />
+                <span>Also in Home Assistant's notifications<small>Shown in Home Assistant's notifications (the bell) and cleared when it reports again. It's always under Needs attention here and on the dashboard card. What the room does meanwhile is under How it behaves.</small></span>
               </label>
             )}
             {which === 'heatloss' && (
@@ -626,6 +633,20 @@ export default function Settings({ state, notify, focus, room: roomId }) {
         <label className="toggle">
           <input type="checkbox" checked={s.takeOverTrvMode} onChange={(e) => set({ takeOverTrvMode: e.target.checked })} />
           <span>Switch radiators to manual mode<small>Stops Hive’s own schedules overriding this app. Recommended.</small></span>
+        </label>
+        <div className="field" style={{ marginTop: 10 }}>
+          <span>When a room thermometer stops reporting</span>
+          <small>A battery thermometer that drops off its network (Zigbee, say) keeps showing its last reading, and Home Assistant only marks it offline hours later, so a room going by it could heat all evening. Home Control counts it as stopped when it hasn't reported for this long, or straight away when it's offline. While the room's heating, it doesn't wait that long: half an hour with nothing from it while the radiators have warmed 1.5° is enough. It's under Needs attention, in Activity and (see Phone alerts) on your phone, and the room goes back to it as soon as it reports.</small>
+          <div className="choice-row" role="group" aria-label="What the room does meanwhile" style={{ marginTop: 6 }}>
+            <button type="button" className="chip" aria-pressed={(s.quietSensor?.action || 'trvs') === 'trvs'} onClick={() => set({ quietSensor: { minutes: 90, ...s.quietSensor, action: 'trvs' } })}>Go by its radiators</button>
+            <button type="button" className="chip" aria-pressed={s.quietSensor?.action === 'off'} onClick={() => set({ quietSensor: { minutes: 90, ...s.quietSensor, action: 'off' } })}>Turn its heating off</button>
+          </div>
+          <small style={{ marginTop: 6 }}>{s.quietSensor?.action === 'off' ? 'The room drops to frost protection until its thermometer reports again.' : 'The room uses its radiators\' own readings until its thermometer reports again. They read a little warm, being next to the radiator, so it heats a little less. A room with no readings from its radiators has its heating turned off.'}</small>
+        </div>
+        <label className="field">
+          <span>Not heard from for (minutes)</span>
+          <small>Many thermometers only report when the reading changes, with a check-in about once an hour, so not much less than an hour (an hour and a half to start with).</small>
+          <input type="number" min="15" max="720" step="5" value={s.quietSensor?.minutes ?? 90} onChange={(e) => set({ quietSensor: { action: 'trvs', ...s.quietSensor, minutes: numIn(e.target.value) } })} />
         </label>
         <label className="field" style={{ marginTop: 10 }}>
           <span>Wait before re-sending a command (seconds)</span>
