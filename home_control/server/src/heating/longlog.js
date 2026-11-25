@@ -308,7 +308,7 @@ export async function buildHistory(engine, { from, to = Date.now(), now = Date.n
   const dataFrom = Math.min(detailFrom ?? Infinity, firstCall);
   if (step < DAY && dataFrom > from + step) {
     const days = Object.keys(engine.dailyLog?.days || {});
-    const earlier = days.some((k) => k >= localDate(from, tz) && k < localDate(dataFrom, tz));
+    const earlier = days.some((k) => k >= localDate(from, tz) && k < localDate(Math.min(dataFrom, to), tz)); // (nothing kept yet: Infinity)
     if (earlier && span >= 14 * DAY) step = DAY;
     else if (dataFrom < to) { from = dataFrom; step = Math.max(HALF, stepFor(to - from)); } // (finer, for what's left)
   }

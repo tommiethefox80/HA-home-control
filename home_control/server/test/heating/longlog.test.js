@@ -166,3 +166,15 @@ test('before the half-hourly figures start: two weeks or more in days, a shorter
   assert.equal(week.step, HALF);
   assert.ok(week.from >= now - 3 * D - HALF && week.asked === now - 7 * D, 'starts where the half hours do');
 });
+
+test('nothing kept yet (the first minute after installing), only daily figures: no error', async () => {
+  const log = new LongLog(null);
+  const now = Date.UTC(2026, 10, 15, 8, 0);
+  const daily = { '2026-11-14': { boilerMin: 60, outSum: 0, outN: 0, rooms: { bed: { callMin: 60, tempSum: 18 * 1440, tempN: 1440 } } } };
+  const week = await buildHistory(engineWith(log, { daily }), { from: now - 7 * D, to: now, now });
+  assert.equal(week.step, HALF);
+  assert.ok(week.rooms[0].temps.every((v) => v == null));
+  const month = await buildHistory(engineWith(log, { daily }), { from: now - 30 * D, to: now, now });
+  assert.equal(month.step, D);
+  assert.ok(month.rooms[0].temps.some((v) => v === 18));
+});

@@ -753,9 +753,12 @@ export class Engine extends EventEmitter {
     const c = (this.humCache ||= new Map());
     const hit = c.get(zone.id);
     const now = Date.now();
-    if (hit && hit.key === (zone.sensor || '') && now - hit.at < 10 * 60000) return hit.id;
+    // (worked out again once Home Assistant's device list has arrived: just after the app starts it
+    // may not have, and then it's only by name; and a minute later if nothing was found)
+    const key = `${zone.sensor || ''}|${this.ha.registry ? 'devices' : 'names'}`;
+    if (hit && hit.key === key && now - hit.at < (hit.id ? 10 : 1) * 60000) return hit.id;
     const id = zone.sensor ? findHumidity(this.ha, zone.sensor) : null;
-    c.set(zone.id, { key: zone.sensor || '', at: now, id });
+    c.set(zone.id, { key, at: now, id });
     return id;
   }
 

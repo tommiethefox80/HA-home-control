@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.18.1
+- **Fixed: a room's humidity missing for a while after an update.** Just after the app starts, Home Assistant's list of which sensors belong to which device may not have arrived yet; the app then matched the thermometer's humidity sensor by name, which a "temp" in the device's name threw (a monitor named "Heidi And Annie's Temp Monitor"), and it didn't look again for 10 minutes. Now the name match goes by the end of the thermometer's ID, and it looks again as soon as the device list arrives.
+- Fixed: the History chart could say "Invalid time value" for a week or more in the first minute after installing, before Home Control had kept anything.
+
 ## 1.18.0
 - **A room thermometer that stops reporting is noticed.** A battery thermometer that drops off its network (Zigbee, say) keeps showing its last reading, and Home Assistant only marks it offline hours later (ZHA: six hours), so a room going by it could heat all evening: a reading stuck at 18.4° in a room aiming for 19° keeps the boiler on. Home Control now watches when each room's thermometer last reported (a report of the same reading counts too), and counts it as stopped when it hasn't reported for an hour and a half, when it's offline in Home Assistant, or, while the room's heating, after half an hour with nothing from it while the radiators have warmed 1.5°.
 - Meanwhile the room goes by its radiators' own readings (they read a little warm, being next to the radiator, so it heats a little less), or, if you'd rather, its heating is turned off (frost protection): Settings → Heating → How it behaves → **When a room thermometer stops reporting**, with how long counts. A room with no readings from its radiators has its heating turned off. As soon as the thermometer reports again, the room goes back to it.

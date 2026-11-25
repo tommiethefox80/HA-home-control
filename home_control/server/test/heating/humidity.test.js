@@ -54,6 +54,20 @@ test('found on the thermometer\'s device, or named the same way', () => {
   assert.equal(findHumidity(ha, null), null);
 });
 
+test('found by name too, before Home Assistant\'s device list has arrived: a "temp" in the device\'s name doesn\'t throw it', () => {
+  // (Tom's: a ZHA monitor named "Heidi And Annie's Temp Monitor")
+  const states = new Map([
+    ['sensor.heidi_and_annie_s_temp_monitor_temperature', { state: '18.1', attributes: { device_class: 'temperature' } }],
+    ['sensor.heidi_and_annie_s_temp_monitor_humidity', { state: '64.2', attributes: { device_class: 'humidity', unit_of_measurement: '%' } }],
+    ['sensor.heidi_and_annie_s_temp_monitor_battery', { state: '100', attributes: { device_class: 'battery', unit_of_measurement: '%' } }],
+    ['sensor.temp_lounge', { state: '19', attributes: { device_class: 'temperature' } }],
+    ['sensor.lounge_humidity', { state: '55', attributes: { device_class: 'humidity', unit_of_measurement: '%' } }],
+  ]);
+  const ha = { states, companionFor: () => null };
+  assert.equal(findHumidity(ha, 'sensor.heidi_and_annie_s_temp_monitor_temperature'), 'sensor.heidi_and_annie_s_temp_monitor_humidity');
+  assert.equal(findHumidity(ha, 'sensor.temp_lounge'), 'sensor.lounge_humidity');
+});
+
 // a week of half hours: each night 23:00–07:00 the room at nightT and nightRh, the day 20° and 50%
 function week({ nightT, nightRh, out = 3, now = Date.UTC(2026, 10, 24, 12) }) {
   const pts = [];
@@ -127,4 +141,33 @@ test('kept every half hour with the temperature, filled in where it was missing,
   assert.ok(bed.humidity.filter((v) => v === 60).length > 300);
   assert.ok(bed.coldSpot.filter((v) => v === 80).length > 300, 'at 0° outside, 18° and 60% is 80% at the coldest spots');
   assert.equal(d.rooms[1].humidity, undefined, 'none for a room without');
+});
+
+test('just after the app starts: looked for again as soon as Home Assistant\'s device list arrives', async () => {
+  const { EventEmitter } = await import('node:events');
+  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+  const { Engine } = await import('../../src/heating/engine.js');
+  const { Store } = await import('../../src/heating/store.js');
+  const { PredictionLog } = await import('../../src/heating/predictions.js');
+  // a monitor whose humidity sensor can't be told from its name, only by being on the same device
+  const states = new Map([
+    ['sensor.nursery_thermo', { entity_id: 'sensor.nursery_thermo', state: '19', attributes: { device_class: 'temperature' } }],
+    ['sensor.aqara_9f3e_humidity', { entity_id: 'sensor.aqara_9f3e_humidity', state: '58', attributes: { device_class: 'humidity', unit_of_measurement: '%' } }],
+    ['climate.nursery', { entity_id: 'climate.nursery', state: 'heat', attributes: { current_temperature: 19.5, temperature: 19 } }],
+  ]);
+  const ha = Object.assign(new EventEmitter(), {
+    states, timeZone: 'UTC', connected: false, registry: null,
+    get: (id) => states.get(id), callService: () => Promise.resolve(), childLockFor: () => null,
+    companionFor(id, t) { const dev = this.registry?.get(id); if (!dev) return null; for (const [e, d] of this.registry) if (d === dev && e !== id && t(e, states.get(e))) return e; return null; },
+  });
+  const store = new Store(fs.mkdtempSync(path.join(os.tmpdir(), 'hc-hum-')));
+  const flat = Object.fromEntries(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((d) => [d, [{ time: '00:00', temp: 19 }]]));
+  store.data.zones = [{ id: 'n', name: 'Nursery', enabled: true, trvs: ['climate.nursery'], sensor: 'sensor.nursery_thermo', schedule: flat }];
+  const engine = new Engine(ha, store, () => {});
+  engine.predictionLog = new PredictionLog(null);
+  await engine.tick();
+  assert.equal(engine.views[0].humidity, null, 'not yet: no device list, and the names don\'t match');
+  ha.registry = new Map([['sensor.nursery_thermo', 'd1'], ['sensor.aqara_9f3e_humidity', 'd1'], ['climate.nursery', 'd2']]);
+  await engine.tick();
+  assert.equal(engine.views[0].humidity?.now, 58, 'straight away, not 10 minutes later');
 });

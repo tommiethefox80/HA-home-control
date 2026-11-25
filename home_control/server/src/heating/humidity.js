@@ -113,11 +113,21 @@ export function findHumidity(ha, sensorId) {
   const any = isHumiditySensor;
   const same = ha.companionFor?.(sensorId, any);
   if (same) return same;
-  const stem = sensorId.split('.')[1].replace(/(^|_)(temperature|temp)(_|$)/, '$1').replace(/_+$/, '');
-  if (stem.length < 3) return null;
-  const exact = `sensor.${stem}_humidity`;
-  if (ha.states.has(exact) && any(exact, ha.states.get(exact))) return exact;
-  for (const [id, st] of ha.states) if (id.startsWith(`sensor.${stem}_`) && any(id, st)) return id;
+  // by name (before Home Assistant's device list has arrived, or without it): the thermometer's ID
+  // without its last "temperature" (sensor.heidi_and_annie_s_temp_monitor_temperature →
+  // heidi_and_annie_s_temp_monitor), then without its first "temp" (sensor.temp_lounge → lounge)
+  const obj = sensorId.split('.')[1];
+  const stems = [...new Set([
+    obj.replace(/_(temperature|temp)$/, ''),
+    obj.replace(/(^|_)(temperature|temp)(_|$)/, '$1').replace(/_+$/, ''),
+  ])].filter((x) => x !== obj && x.length >= 3);
+  for (const stem of stems) {
+    const exact = `sensor.${stem}_humidity`;
+    if (ha.states.has(exact) && any(exact, ha.states.get(exact))) return exact;
+  }
+  for (const stem of stems) {
+    for (const [id, st] of ha.states) if (id.startsWith(`sensor.${stem}_`) && any(id, st)) return id;
+  }
   return null;
 }
 

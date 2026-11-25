@@ -186,7 +186,7 @@ export function createHeating({ client, dataDir, log, lightingSummary = () => nu
         to = Math.min(to, nowMs);
         if (!(to > from)) return json(res, 400, { error: 'Choose a start before the end' }), true;
         // (the same range asked for within a minute: from the last answer)
-        const key = `${Math.round(from / 60000)}|${Math.round(to / 60000)}`;
+        const key = `${Math.round(from / 60000)}|${Math.round(to / 60000)}|${engine.longLog.rev || 0}`; // (and again once filled in)
         if (historyCache.key !== key || nowMs - historyCache.at > 60000 || url.searchParams.has('fresh')) {
           historyCache = { at: nowMs, key, data: await buildHistory(engine, { from, to }) };
         }
